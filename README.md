@@ -34,7 +34,7 @@ npm install
 npm run dev
 ```
 
-### License
+## License
 This project is released under a Source-Available, Non-Commercial License.
 
 The source code is provided for reference, personal study, and non-commercial evaluation. Any commercial use, including deployment in a business environment or hotel without explicit authorization, is strictly prohibited.
