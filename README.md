@@ -23,14 +23,18 @@ To run the signaling server and the client interface locally:
 ```bash
 git clone [https://github.com/your-username/hotel-reception-app.git](https://github.com/your-username/hotel-reception-app.git)
 cd hotel-reception-app
-2. Install dependencies
-Bash
+```
+### 2. Install dependencies
+```bash
 # Use npm or pip depending on the chosen backend
 npm install
-3. Start the local development server
-Bash
+```
+### 3. Start the local development server
+```bash
 npm run dev
-License
+```
+
+### License
 This project is released under a Source-Available, Non-Commercial License.
 
 The source code is provided for reference, personal study, and non-commercial evaluation. Any commercial use, including deployment in a business environment or hotel without explicit authorization, is strictly prohibited.
