@@ -173,17 +173,8 @@ export function VoiceMessageBubble({ src, duration = 0, isMine }) {
     }, [src]);
 
     const animateBars = (active) => {
-        barAnims.forEach((anim, i) => {
-            if (active) {
-                Animated.loop(Animated.sequence([
-                    Animated.timing(anim, { toValue: BARS[i], duration: 200 + i * 20, useNativeDriver: false }),
-                    Animated.timing(anim, { toValue: 0.2, duration: 200 + i * 20, useNativeDriver: false }),
-                ])).start();
-            } else {
-                anim.stopAnimation();
-                Animated.timing(anim, { toValue: BARS[i] * 0.5, duration: 200, useNativeDriver: false }).start();
-            }
-        });
+        // Bar animation is used only for the active recording now, but since we removed it from playback, 
+        // this is kept just in case it's called somewhere, but does nothing for playback.
     };
 
     const togglePlay = () => {
@@ -232,18 +223,12 @@ export function VoiceMessageBubble({ src, duration = 0, isMine }) {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.waveformWrap} activeOpacity={1} onPress={handleSeek}>
-                <View style={styles.waveform}>
-                    {barAnims.map((anim, i) => {
-                        const filled = progress * BAR_COUNT > i;
-                        return (
-                            <Animated.View key={i} style={[styles.bar, {
-                                backgroundColor: filled ? accentColor : (isMine ? 'rgba(201,168,76,0.25)' : 'rgba(255,255,255,0.12)'),
-                                transform: [{ scaleY: anim }]
-                            }]} />
-                        );
-                    })}
-                </View>
-                <View style={[styles.scrubberDot, { left: `${progress * 100}%`, backgroundColor: accentColor }]} pointerEvents="none" />
+                {/* Background track line */}
+                <View style={[styles.waveLineTrack, { backgroundColor: isMine ? 'rgba(201,168,76,0.3)' : 'rgba(255,255,255,0.15)' }]} />
+                {/* Active progress line */}
+                <View style={[styles.waveLineFill, { width: `${progress * 100}%`, backgroundColor: accentColor }]} pointerEvents="none" />
+                {/* Scrubber Dot */}
+                <View style={[styles.scrubberDot, { left: `calc(${progress * 100}% - 4px)`, backgroundColor: accentColor }]} pointerEvents="none" />
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.speedBtn} onPress={changeSpeed}>
@@ -268,10 +253,10 @@ const styles = StyleSheet.create({
     voiceBubble: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.06)' },
     voiceBubbleMine: { backgroundColor: 'rgba(201,168,76,0.12)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' },
     playBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-    waveformWrap: { width: 100, height: 32, justifyContent: 'center', position: 'relative' },
-    waveform: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 32 },
-    bar: { flex: 1, borderRadius: 2, width: 2 },
-    scrubberDot: { position: 'absolute', width: 6, height: 6, borderRadius: 3, top: '50%', marginTop: -3, marginLeft: -3, zIndex: 10 },
-    speedBtn: { backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 6, paddingVertical: 4, borderRadius: 6 },
-    speedTxt: { color: '#C9A84C', fontSize: 10, fontWeight: '800' },
+    waveformWrap: { width: 120, height: 36, justifyContent: 'center', position: 'relative' },
+    waveLineTrack: { position: 'absolute', top: '50%', left: 0, right: 0, height: 4, marginTop: -2, borderRadius: 2 },
+    waveLineFill: { position: 'absolute', top: '50%', left: 0, height: 4, marginTop: -2, borderRadius: 2 },
+    scrubberDot: { position: 'absolute', width: 10, height: 10, borderRadius: 5, top: '50%', marginTop: -5 },
+    speedBtn: { backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+    speedTxt: { color: '#C8C4B8', fontSize: 11, fontWeight: '800' },
 });

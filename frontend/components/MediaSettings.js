@@ -28,7 +28,7 @@ const CustomSelect = ({ value, options, onChange }) => {
             </TouchableOpacity>
 
             {open && (
-                <View style={{ position: 'absolute', top: '100%', left: -34, right: -1, marginTop: 4, backgroundColor: '#0C0B0A', borderWidth: 1, borderColor: '#C9A84C', borderRadius: 8, maxHeight: 180, zIndex: 100, overflow: 'hidden' }}>
+                <View style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, backgroundColor: '#0C0B0A', borderWidth: 1, borderColor: '#C9A84C', borderRadius: 8, maxHeight: 180, zIndex: 100, overflow: 'hidden' }}>
                     <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
                         {options.map(opt => (
                             <TouchableOpacity
@@ -124,7 +124,7 @@ export default function MediaSettings({ visible, onClose, user }) {
                             <TouchableOpacity onPress={onClose}><Icon name="x" size={20} color="#554E40" /></TouchableOpacity>
                         </View>
 
-                        <ScrollView style={styles.scroll}>
+                        <View style={styles.scroll}>
                             {activeTab === 'profilo' ? (
                                 <View style={styles.form}>
                                     <View style={styles.avatarSection}>
@@ -189,7 +189,7 @@ export default function MediaSettings({ visible, onClose, user }) {
                                     ))}
                                 </View>
                             )}
-                        </ScrollView>
+                        </View>
                     </View>
                 </TouchableOpacity>
             </TouchableOpacity>
@@ -199,9 +199,9 @@ export default function MediaSettings({ visible, onClose, user }) {
 
 const styles = StyleSheet.create({
     overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
-    container: { width: 800, height: 500, backgroundColor: '#100E0C', borderRadius: 20, flexDirection: 'row', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
+    container: { width: 800, minHeight: 500, backgroundColor: '#100E0C', borderRadius: 20, flexDirection: 'row', overflow: 'visible', borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
 
-    sidebar: { width: 220, backgroundColor: '#0C0B0A', padding: 24, gap: 4 },
+    sidebar: { width: 220, backgroundColor: '#0C0B0A', padding: 24, gap: 4, borderTopLeftRadius: 20, borderBottomLeftRadius: 20 },
     sidebarLabel: { color: '#3A3630', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
     tab: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 10 },
     tabActive: { backgroundColor: 'rgba(201,168,76,0.1)' },

@@ -31,10 +31,13 @@ const ICON_MAP = {
     // UI
     'chevron-down': { pack: 'feather', name: 'chevron-down' },
     'chevron-right': { pack: 'feather', name: 'chevron-right' },
+    'chevron-left': { pack: 'feather', name: 'chevron-left' },
     'x': { pack: 'feather', name: 'x' },
     'plus': { pack: 'feather', name: 'plus' },
     'more-horizontal': { pack: 'feather', name: 'more-horizontal' },
     'search': { pack: 'feather', name: 'search' },
+    'play': { pack: 'feather', name: 'play' },
+    'pause': { pack: 'feather', name: 'pause' },
     // Hand / Reactions
     'hand': { pack: 'ionicons', name: 'hand-right-outline' },
     'smile': { pack: 'feather', name: 'smile' },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Platform, Dimensions, TouchableOpacity, Text } from 'react-native';
+import { StyleSheet, View, Platform, Dimensions, TouchableOpacity, Text, Animated } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import LoginScreen from './components/LoginScreen';
 import CallScreen from './components/CallScreen';
@@ -27,6 +27,18 @@ export default function App() {
   // Shared socket passed to both HotelChat and CallScreen
   const socketRef = useRef(null);
   const [socketReady, setSocketReady] = useState(false);
+
+  // ── Fluid Animations ───────────────────────────────────────────────────
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    fadeAnim.setValue(0);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, [loading, user]);
 
   // ── Session Persistence ────────────────────────────────────────────────
   useEffect(() => {
@@ -100,20 +112,24 @@ export default function App() {
   };
 
   if (loading) {
-    return <SplashScreen onDone={() => setLoading(false)} />;
+    return (
+      <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
+        <SplashScreen onDone={() => setLoading(false)} />
+      </Animated.View>
+    );
   }
 
   if (!user) {
     return (
-      <View style={styles.root}>
+      <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
         <StatusBar style="light" />
         <LoginScreen onLogin={(userData) => handleLogin(userData)} />
-      </View>
+      </Animated.View>
     );
   }
 
   return (
-    <View style={styles.root}>
+    <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
       <StatusBar style="light" />
 
       <View style={styles.content}>
@@ -146,7 +162,7 @@ export default function App() {
           </View>
         )}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

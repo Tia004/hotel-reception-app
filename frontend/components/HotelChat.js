@@ -31,7 +31,7 @@ const YES_SELECT = Platform.OS === 'web' ? { userSelect: 'text' } : {};
 // ─── Constants ─────────────────────────────────────────────────────────────
 const HOTELS = [
     { id: 'duchessa', name: 'Duchessa Isabella', color: '#C9A84C', desc: 'Hotel 5 stelle Lusso a Ferrara in un palazzo del 500.', contact: '+39 0532 202197' },
-    { id: 'blumen', name: 'Hotel Blumen', color: '#4CAF7D', desc: 'Hotel 3 stelle superior sul lungomare di Viserba.', contact: '+39 0541 734300' },
+    { id: 'blumen', name: 'Hotel Blumen', color: '#4CAF7D', desc: 'Via Mazzini a Bologna', contact: '+39 0541 734300' },
     { id: 'santorsola', name: "Sant'Orsola", color: '#6B7FC4', desc: 'Soggiorni confortevoli nel cuore di Bologna.', contact: '+39 051 341111' },
 ];
 const ALL_CHANNELS = HOTELS.flatMap(h => h.channels = [
@@ -42,6 +42,29 @@ const ALL_CHANNELS = HOTELS.flatMap(h => h.channels = [
 
 const getRecentEmoji = () => { try { return JSON.parse(localStorage.getItem('gsa_recent_emoji') || '[]'); } catch { return []; } };
 const saveRecentEmoji = (l) => { try { localStorage.setItem('gsa_recent_emoji', JSON.stringify(l)); } catch { } };
+
+// ─── Markdown Parser ───────────────────────────────────────────────────────
+const parseMarkdown = (text) => {
+    if (!text) return null;
+    const parts = text.split(/(```[\s\S]*?```|\*\*.*?\*\*|\*.*?\*|^# .*$)/m);
+
+    return parts.map((part, i) => {
+        if (!part) return null;
+        if (part.startsWith('```') && part.endsWith('```')) {
+            return <Text key={i} style={styles.mdCode}>{part.slice(3, -3)}</Text>;
+        }
+        if (part.startsWith('**') && part.endsWith('**')) {
+            return <Text key={i} style={styles.mdBold}>{part.slice(2, -2)}</Text>;
+        }
+        if (part.startsWith('*') && part.endsWith('*')) {
+            return <Text key={i} style={styles.mdItalic}>{part.slice(1, -1)}</Text>;
+        }
+        if (part.startsWith('# ')) {
+            return <Text key={i} style={styles.mdH1}>{part.slice(2)}</Text>;
+        }
+        return <Text key={i}>{part}</Text>;
+    });
+};
 
 // ─── Server Status Badge ──────────────────────────────────────────────────
 const StatusBadge = ({ ping, status }) => {
@@ -112,7 +135,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [messages, setMessages] = useState({});
     const [pinned, setPinned] = useState({});
     const [onlineUsers, setOnlineUsers] = useState([]);
-    const [expanded, setExpanded] = useState({ duchessa: true, blumen: false, santorsola: false, voice: true, saved: false, users: true });
+    const [activeRooms, setActiveRooms] = useState([]);
+    const [expanded, setExpanded] = useState({ duchessa: true, blumen: false, santorsola: false, voice: true, saved: false, users: true, rooms: true });
     const [draft, setDraft] = useState('');
     const [savedChats, setSavedChats] = useState([]);
     const [replyingTo, setReplyingTo] = useState(null);
@@ -137,7 +161,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
     const [leftCollapsed, setLeftCollapsed] = useState(false);
     const [rightCollapsed, setRightCollapsed] = useState(false);
-    const [contextMenu, setContextMenu] = useState(null);
+    const [hoveredMsg, setHoveredMsg] = useState(null);
+    const [infoModal, setInfoModal] = useState(null);
 
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
@@ -172,6 +197,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         });
 
         socket.on('online-users', setOnlineUsers);
+        socket.on('rooms-update', setActiveRooms);
 
         socket.on('channel-poll-update', ({ channelId, messageId, votes }) => {
             setMessages(p => ({
@@ -250,7 +276,6 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const reactMessage = (messageId, emoji) => {
         if (!socket) return;
         socket.emit('react-message', { channelId: activeChannel.id, messageId, emoji });
-        setContextMenu(null);
     };
 
     const vote = (messageId, optionIndex) => {
@@ -263,35 +288,21 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     // ── Rendering ──────────────────────────────────────────────────────
     return (
         <View style={styles.root}>
-            {contextMenu && (
-                <View style={[styles.contextMenu, { top: contextMenu.y, left: contextMenu.x }]}>
-                    {contextMenu.message ? (
-                        <>
-                            <View style={{ flexDirection: 'row', gap: 10, padding: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' }}>
-                                {['👍', '❤️', '😂', '🔥', '👀'].map(e => (
-                                    <TouchableOpacity key={e} onPress={() => reactMessage(contextMenu.message.id, e)}><Text style={{ fontSize: 18 }}>{e}</Text></TouchableOpacity>
-                                ))}
-                            </View>
-                            <TouchableOpacity style={styles.contextMenuItem} onPress={() => { setReplyingTo(contextMenu.message); setContextMenu(null); }}>
-                                <Icon name="message-square" size={14} color="#C9A84C" /><Text style={styles.contextMenuTxt}>Rispondi</Text>
+            {infoModal && (
+                <Modal visible transparent animationType="fade" onRequestClose={() => setInfoModal(null)}>
+                    <TouchableOpacity style={styles.modalOverlay} onPress={() => setInfoModal(null)}>
+                        <TouchableOpacity activeOpacity={1} style={styles.infoModalBox}>
+                            <Text style={styles.infoTitle}>Dettagli Messaggio</Text>
+                            <Text style={styles.infoLabel}>Inviato da: <Text style={{ color: '#C8C4B8' }}>{infoModal.sender}</Text></Text>
+                            <Text style={styles.infoLabel}>Ore: <Text style={{ color: '#C8C4B8' }}>{new Date(infoModal.timestamp).toLocaleString()}</Text></Text>
+                            <Text style={styles.infoLabel}>Visto da: <Text style={{ color: '#C8C4B8' }}>Tutti ({onlineUsers.length})</Text></Text>
+
+                            <TouchableOpacity style={[styles.createBtn, { marginTop: 20 }]} onPress={() => setInfoModal(null)}>
+                                <Text style={styles.createBtnTxt}>Chiudi</Text>
                             </TouchableOpacity>
-                            {contextMenu.message.sender === user.username && !contextMenu.message.voiceData && !contextMenu.message.poll && (
-                                <TouchableOpacity style={styles.contextMenuItem} onPress={() => { setEditingMsg(contextMenu.message); setDraft(contextMenu.message.text); setContextMenu(null); }}>
-                                    <Icon name="edit-2" size={14} color="#C9A84C" /><Text style={styles.contextMenuTxt}>Modifica</Text>
-                                </TouchableOpacity>
-                            )}
-                        </>
-                    ) : (
-                        <>
-                            <TouchableOpacity style={styles.contextMenuItem} onPress={() => setContextMenu(null)}>
-                                <Icon name="info" size={14} color="#C9A84C" /><Text style={styles.contextMenuTxt}>Mostra info</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.contextMenuItem} onPress={() => setContextMenu(null)}>
-                                <Icon name="copy" size={14} color="#C9A84C" /><Text style={styles.contextMenuTxt}>Copia Testo</Text>
-                            </TouchableOpacity>
-                        </>
-                    )}
-                </View>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </Modal>
             )}
 
             {leftCollapsed && !IS_MOBILE && (
@@ -340,6 +351,28 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 ))}
                             </View>
                         ))}
+
+                        {/* Active Voice Rooms Section */}
+                        {activeRooms.length > 0 && (
+                            <View style={{ marginTop: 10 }}>
+                                <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, rooms: !p.rooms }))}>
+                                    <View style={[styles.hotelDot, { backgroundColor: '#6B7FC4' }]} />
+                                    <Text style={styles.hotelLbl}>STANZE ATTIVE</Text>
+                                    <Icon name={expanded.rooms ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
+                                </TouchableOpacity>
+                                {expanded.rooms && activeRooms.map(room => (
+                                    <TouchableOpacity key={room.id}
+                                        style={styles.chRow}
+                                        onPress={() => {
+                                            if (inCall) alert('Sei già in una stanza. Chiudila prima di entrarne in una nuova.');
+                                            else socket.emit('join-room', { roomId: room.id });
+                                        }}>
+                                        <Icon name="volume-2" size={15} color="#6B7FC4" />
+                                        <Text style={[styles.chName, { color: '#6B7FC4' }]}>{room.name}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        )}
                     </ScrollView>
 
                     {/* Bottom controls / Crea Stanza */}
@@ -380,57 +413,82 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     <StatusBadge ping={ping} status={pingStatus} />
                 </View>
 
-                <ScrollView ref={scrollRef} style={styles.messagesScroll} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-                    {(messages[activeChannel.id] || []).map(m => {
-                        const isMine = m.sender === user.username;
-                        const repliedMsg = m.replyTo ? (messages[activeChannel.id] || []).find(rm => rm.id === m.replyTo) : null;
+                <LinearGradient colors={['#0C0B09', '#14120E']} style={{ flex: 1 }}>
+                    <ScrollView ref={scrollRef} style={styles.messagesScroll} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+                        {(messages[activeChannel.id] || []).map(m => {
+                            const isMine = m.sender === user.username;
+                            const repliedMsg = m.replyTo ? (messages[activeChannel.id] || []).find(rm => rm.id === m.replyTo) : null;
 
-                        return (
-                            <View key={m.id} style={[styles.msgRow, isMine && styles.msgRowMine]}>
-                                <TouchableOpacity
-                                    style={[styles.bubbleWrap, isMine ? { alignItems: 'flex-end' } : { alignItems: 'flex-start' }]}
-                                    onLongPress={(e) => { e.preventDefault(); setContextMenu({ x: Math.max(0, e.nativeEvent.pageX - 100), y: e.nativeEvent.pageY, message: m }) }}
-                                    {...(Platform.OS === 'web' ? { onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.pageX, y: e.pageY, message: m }) } } : {})}
-                                >
-                                    {/* Reply banner inside bubble area */}
-                                    {repliedMsg && (
-                                        <View style={styles.repliedBanner}>
-                                            <Icon name="corner-up-left" size={12} color="#554E40" />
-                                            <Text style={styles.repliedBannerTxt} numberOfLines={1}>{repliedMsg.sender}: {repliedMsg.text || 'Contenuto multimediale'}</Text>
-                                        </View>
-                                    )}
-
-                                    <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
-                                        {!isMine && <Text style={styles.msgSender}>{m.sender}</Text>}
-                                        {m.text ? <Text style={styles.msgText}>{m.text}</Text> : null}
-                                        {m.voiceData && <VoiceMessageBubble src={m.voiceData} duration={m.voiceDuration} isMine={isMine} />}
-                                        {m.poll && <PollMessage msg={m} user={user} onVote={vote} />}
-                                        {m.imageData && <Image source={{ uri: m.imageData }} style={styles.msgImg} />}
-
-                                        <View style={styles.msgMeta}>
-                                            {m.edited && <Text style={styles.msgEdited}>(modificato)</Text>}
-                                            <Text style={styles.msgTime}>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                                            {isMine && <Icon name="check" size={12} color="rgba(201,168,76,0.5)" />}
-                                        </View>
-                                    </View>
-
-                                    {/* Reactions */}
-                                    {m.reactions && Object.keys(m.reactions).length > 0 && (
-                                        <View style={styles.reactionsWrap}>
-                                            {Object.entries(m.reactions).map(([emoji, usersArr]) => (
-                                                <TouchableOpacity key={emoji} style={[styles.reactionBadge, usersArr.includes(user.username) && styles.reactionBadgeMy]} onPress={() => reactMessage(m.id, emoji)}>
-                                                    <Text style={styles.reactionEmoji}>{emoji}</Text>
-                                                    <Text style={[styles.reactionCount, usersArr.includes(user.username) && { color: '#C9A84C' }]}>{usersArr.length}</Text>
+                            return (
+                                <View key={m.id} style={[styles.msgRow, isMine && styles.msgRowMine]}>
+                                    <TouchableOpacity
+                                        style={styles.bubbleWrap}
+                                        activeOpacity={1}
+                                        onLongPress={() => setHoveredMsg(hoveredMsg === m.id ? null : m.id)}
+                                        {...(Platform.OS === 'web' ? {
+                                            onMouseEnter: () => setHoveredMsg(m.id),
+                                            onMouseLeave: () => setHoveredMsg(null)
+                                        } : {})}
+                                    >
+                                        {/* Hover Action Menu */}
+                                        {hoveredMsg === m.id && (
+                                            <View style={styles.hoverMenu}>
+                                                <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => reactMessage(m.id, '❤️')}><Text>❤️</Text></TouchableOpacity>
+                                                <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => reactMessage(m.id, '👍')}><Text>👍</Text></TouchableOpacity>
+                                                <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => setReplyingTo(m)}><Icon name="corner-up-left" size={14} color="#A8A090" /></TouchableOpacity>
+                                                {(isMine && !m.poll) && (
+                                                    <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => { setEditingMsg(m); setDraft(m.text || ''); }}>
+                                                        <Icon name="edit-2" size={14} color="#A8A090" />
+                                                    </TouchableOpacity>
+                                                )}
+                                                <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => setInfoModal(m)}>
+                                                    <Icon name="info" size={14} color="#A8A090" />
                                                 </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    )}
-                                </TouchableOpacity>
-                            </View>
-                        );
-                    })}
-                </ScrollView>
+                                            </View>
+                                        )}
+                                        {/* Reply banner inside bubble area */}
+                                        {repliedMsg && (
+                                            <View style={styles.repliedBanner}>
+                                                <Icon name="corner-up-left" size={12} color="#554E40" />
+                                                <Text style={styles.repliedBannerTxt} numberOfLines={1}>{repliedMsg.sender}: {repliedMsg.text || 'Contenuto multimediale'}</Text>
+                                            </View>
+                                        )}
 
+                                        <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                                <Text style={[styles.msgSender, isMine && { color: '#C9A84C' }]}>{m.sender}</Text>
+                                            </View>
+                                            {m.text ? <Text style={styles.msgText}>{parseMarkdown(m.text)}</Text> : null}
+                                            {m.voiceData && <VoiceMessageBubble src={m.voiceData} duration={m.voiceDuration} isMine={isMine} />}
+                                            {m.poll && <PollMessage msg={m} user={user} onVote={vote} />}
+                                            {m.imageData && <Image source={{ uri: m.imageData }} style={styles.msgImg} />}
+
+                                            <View style={styles.msgMeta}>
+                                                {m.edited && <Text style={styles.msgEdited}>(modificato)</Text>}
+                                                <Text style={styles.msgTime}>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                                {isMine && <Icon name="check" size={12} color="rgba(201,168,76,0.5)" />}
+                                            </View>
+                                        </View>
+
+                                        {/* Reactions */}
+                                        {m.reactions && Object.keys(m.reactions).length > 0 && (
+                                            <View style={styles.reactionsWrap}>
+                                                {Object.entries(m.reactions).map(([emoji, usersArr]) => (
+                                                    <TouchableOpacity key={emoji} style={[styles.reactionBadge, usersArr.includes(user.username) && styles.reactionBadgeMy]} onPress={() => reactMessage(m.id, emoji)}>
+                                                        <Text style={styles.reactionEmoji}>{emoji}</Text>
+                                                        <Text style={[styles.reactionCount, usersArr.includes(user.username) && { color: '#C9A84C' }]}>{usersArr.length}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
+                                </View>
+                            );
+                        })}
+                    </ScrollView>
+                </LinearGradient>
+
+                {/* ── Action Banner (Replying/Editing) ── */}
                 <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.06)' }}>
                     {/* Replying / Editing banner */}
                     {(replyingTo || editingMsg) && (
@@ -579,9 +637,13 @@ const styles = StyleSheet.create({
     root: { flex: 1, flexDirection: 'row', backgroundColor: '#0C0B09', ...NO_SELECT, position: 'relative' },
     column: { height: '100%', borderRightWidth: 1, borderRightColor: 'rgba(201,168,76,0.06)' },
 
-    contextMenu: { position: 'absolute', backgroundColor: '#1A1812', borderWidth: 1, borderColor: '#C9A84C', borderRadius: 8, padding: 4, elevation: 5, zIndex: 9999 },
-    contextMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingHorizontal: 16 },
-    contextMenuTxt: { color: '#C8C4B8', fontSize: 14, fontWeight: '600' },
+    hoverMenu: { position: 'absolute', top: -15, right: 10, backgroundColor: '#16140F', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 10, flexDirection: 'row', alignItems: 'center', padding: 4, gap: 4, zIndex: 100 },
+    hoverMenuBtn: { width: 30, height: 30, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
+
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
+    infoModalBox: { width: 300, backgroundColor: '#100E0C', borderRadius: 16, padding: 24, borderWidth: 1, borderColor: '#C9A84C', gap: 8 },
+    infoTitle: { color: '#C9A84C', fontSize: 16, fontWeight: '900', letterSpacing: 1, marginBottom: 12 },
+    infoLabel: { color: '#A8A090', fontSize: 14, fontWeight: '600' },
 
     leftTrapezoid: { position: 'absolute', top: '50%', left: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopRightRadius: 8, borderBottomRightRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderRightWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
     rightTrapezoid: { position: 'absolute', top: '50%', right: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopLeftRadius: 8, borderBottomLeftRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderLeftWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
@@ -640,13 +702,21 @@ const styles = StyleSheet.create({
     statusDetailVal: { fontWeight: '700', fontSize: 12 },
 
     messagesScroll: { flex: 1 },
-    msgRow: { flexDirection: 'row', marginBottom: 12 },
-    msgRowMine: { justifyContent: 'flex-end' },
-    bubble: { maxWidth: '75%', padding: 12, borderRadius: 16 },
-    bubbleOther: { backgroundColor: 'rgba(255,255,255,0.05)', borderTopLeftRadius: 4 },
-    bubbleMine: { backgroundColor: 'rgba(201,168,76,0.12)', borderTopRightRadius: 4, borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)' },
-    msgSender: { color: '#C9A84C', fontSize: 12, fontWeight: '800', marginBottom: 4 },
-    msgText: { color: '#A8A090', fontSize: 16, lineHeight: 22, ...YES_SELECT },
+    msgRow: { flexDirection: 'row', marginBottom: 8, width: '100%', position: 'relative' },
+    msgRowMine: {},
+    bubbleWrap: { maxWidth: '90%', alignItems: 'flex-start' },
+    repliedBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4, opacity: 0.6 },
+    repliedBannerTxt: { color: '#C8C4B8', fontSize: 13, fontWeight: '700' },
+    bubble: { padding: 12, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
+    bubbleOther: { backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)' },
+    bubbleMine: { backgroundColor: 'rgba(201,168,76,0.1)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)' },
+    msgSender: { color: '#6E6960', fontSize: 13, fontWeight: '800' },
+    msgText: { color: '#C8C4B8', fontSize: 15, lineHeight: 22 },
+
+    mdCode: { fontFamily: 'monospace', backgroundColor: '#11100D', padding: 4, borderRadius: 4, color: '#C9A84C' },
+    mdBold: { fontWeight: 'bold', color: '#E8E4D8' },
+    mdItalic: { fontStyle: 'italic' },
+    mdH1: { fontSize: 20, fontWeight: '900', color: '#C9A84C', marginVertical: 4 },
     msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6 },
     msgEdited: { color: '#554E40', fontSize: 10, fontStyle: 'italic', marginRight: 4 },
     msgTime: { color: '#3A3630', fontSize: 11, fontWeight: '600' },
