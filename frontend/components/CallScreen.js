@@ -62,6 +62,7 @@ export default function CallScreen({ user, onLogout }) {
     const [callModalVisible, setCallModalVisible] = useState(false);
     const [settingsVisible, setSettingsVisible] = useState(false);
     const [reactions, setReactions] = useState([]);
+    const [connectionStatus, setConnectionStatus] = useState('Svegliando il server...');
 
     const peerConnection = useRef(null);
     const dataChannel = useRef(null);
@@ -69,14 +70,29 @@ export default function CallScreen({ user, onLogout }) {
     const pendingCandidates = useRef([]); // ICE Candidate queue
 
     useEffect(() => {
-        const s = io(SIGNALING_URL, {
-            transports: ['websocket'], // BUG FIX: Forces WebSockets, bypassing Render HTTP polling blocks
-        });
+        // Wake up Render free-tier server explicitly before Socket.io
+        fetch(`${SIGNALING_URL}/ping`)
+            .then(() => setConnectionStatus('Connessione in corso...'))
+            .catch(() => setConnectionStatus('Errore: Server Non Raggiungibile'));
+
+        // Removed forced websockets to allow fallback to polling on strict proxy networks
+        const s = io(SIGNALING_URL);
         setSocket(s);
 
         s.on('connect', () => {
             console.log("Connected to signaling server as", user.username);
+            setConnectionStatus('Connesso!');
             s.emit('join', user);
+        });
+
+        s.on('connect_error', (err) => {
+            console.log("Connection Error:", err.message);
+            setConnectionStatus(`Errore Connessione: ${err.message}`);
+        });
+
+        s.on('disconnect', (reason) => {
+            console.log("Disconnected:", reason);
+            setConnectionStatus(`Disconnesso: ${reason}`);
         });
 
         s.on('force-disconnect', (data) => {
@@ -312,6 +328,9 @@ export default function CallScreen({ user, onLogout }) {
                         <Text style={styles.logoText}>IN ATTESA</Text>
                         <Text style={styles.waitingText}>NESSUNA COMUNICAZIONE IN CORSO</Text>
                         <Text style={styles.diagnosticText}>Server: {SIGNALING_URL}</Text>
+                        <Text style={[styles.diagnosticText, { color: connectionStatus.includes('Errore') || connectionStatus.includes('Disconnesso') ? '#FF4B4B' : (connectionStatus.includes('Connesso!') ? '#4BFF4B' : '#D4AF37') }]}>
+                            Stato: {connectionStatus}
+                        </Text>
                     </View>
 
                     <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.8}>

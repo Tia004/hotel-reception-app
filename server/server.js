@@ -8,6 +8,9 @@ const app = express();
 app.set('trust proxy', 1); // Necessario per load-balancer HTTPS come Render
 app.use(cors());
 
+// Serve a un semplice ping dal frontend per svegliare il server Render se è in sleep
+app.get('/ping', (req, res) => res.status(200).send('pong'));
+
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
