@@ -1,8 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { mediaDevices } from '../utils/webrtc';
-import Animated, { SlideInDown, FadeIn } from 'react-native-reanimated';
+import Animated, { SlideInDown, FadeIn, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence, withDelay } from 'react-native-reanimated';
+
+const { width, height } = Dimensions.get('window');
+
+// Funky Background Element Animation
+const FunkyShape = ({ color, size, top, left, delay }) => {
+    const rotation = useSharedValue(0);
+    const scale = useSharedValue(1);
+
+    React.useEffect(() => {
+        rotation.value = withDelay(delay, withRepeat(withTiming(360, { duration: 8000, easing: Easing.linear }), -1, false));
+        scale.value = withDelay(delay, withRepeat(withSequence(withTiming(1.4, { duration: 1500 }), withTiming(0.8, { duration: 1500 })), -1, true));
+    }, []);
+
+    const animStyle = useAnimatedStyle(() => {
+        return {
+            transform: [
+                { rotate: `${rotation.value}deg` },
+                { scale: scale.value }
+            ]
+        };
+    });
+
+    return (
+        <Animated.View style={[
+            {
+                position: 'absolute',
+                top, left,
+                width: size, height: size,
+                backgroundColor: color,
+                opacity: 0.9,
+                borderWidth: 5,
+                borderColor: '#000'
+            },
+            animStyle
+        ]} />
+    );
+};
+
 
 export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
     const [videoDevices, setVideoDevices] = useState([]);
@@ -50,9 +88,17 @@ export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
     return (
         <Modal visible={visible} animationType="fade" transparent>
             <View style={styles.overlay}>
+
                 {visible && (
-                    <Animated.View entering={SlideInDown.springify().damping(18)} style={styles.modalContent}>
-                        <Text style={styles.title}>IMPOSTAZIONI MEDIA</Text>
+                    <Animated.View entering={SlideInDown.springify().damping(12)} style={styles.modalContent}>
+                        <View style={styles.backgroundGrid} />
+                        <FunkyShape color="#B2FF05" size={100} top={-20} left={-20} delay={0} />
+                        <FunkyShape color="#00E5FF" size={80} top={100} left={width * 0.8} delay={500} />
+
+                        <View style={styles.headerContainer}>
+                            <Text style={styles.titleShadow}>IMPOSTAZIONI</Text>
+                            <Text style={styles.title}>IMPOSTAZIONI</Text>
+                        </View>
 
                         <View style={styles.settingGroup}>
                             <Text style={styles.label}>FOTOCAMERA</Text>
@@ -61,7 +107,7 @@ export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
                                     selectedValue={selectedVideo}
                                     onValueChange={(val) => setSelectedVideo(val)}
                                     style={styles.picker}
-                                    dropdownIconColor="#739072"
+                                    dropdownIconColor="#000"
                                 >
                                     {videoDevices.map(d => (
                                         <Picker.Item key={d.deviceId} label={d.label || 'Webcam'} value={d.deviceId} />
@@ -71,13 +117,13 @@ export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
                         </View>
 
                         <View style={styles.settingGroup}>
-                            <Text style={styles.label}>MICROFONO</Text>
+                            <Text style={styles.label}>MICROFONO D'INGRESSO</Text>
                             <View style={styles.pickerContainer}>
                                 <Picker
                                     selectedValue={selectedAudioInput}
                                     onValueChange={(val) => setSelectedAudioInput(val)}
                                     style={styles.picker}
-                                    dropdownIconColor="#739072"
+                                    dropdownIconColor="#000"
                                 >
                                     {audioInputDevices.map(d => (
                                         <Picker.Item key={d.deviceId} label={d.label || 'Microfono Esterno'} value={d.deviceId} />
@@ -87,13 +133,13 @@ export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
                         </View>
 
                         <View style={styles.settingGroup}>
-                            <Text style={styles.label}>ALTOPARLANTI</Text>
+                            <Text style={styles.label}>ALTOPARLANTI / USCITA</Text>
                             <View style={styles.pickerContainer}>
                                 <Picker
                                     selectedValue={selectedAudioOutput}
                                     onValueChange={(val) => setSelectedAudioOutput(val)}
                                     style={styles.picker}
-                                    dropdownIconColor="#739072"
+                                    dropdownIconColor="#000"
                                 >
                                     {audioOutputDevices.length > 0 ? audioOutputDevices.map(d => (
                                         <Picker.Item key={d.deviceId} label={d.label || 'Speaker Sistema'} value={d.deviceId} />
@@ -105,11 +151,18 @@ export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
                         </View>
 
                         <View style={styles.buttonRow}>
-                            <TouchableOpacity style={[styles.button, styles.cancelBtn]} onPress={onClose} activeOpacity={0.6}>
-                                <Text style={styles.cancelText}>ANNULLA</Text>
+                            <TouchableOpacity style={styles.cancelWrap} onPress={onClose} activeOpacity={0.8}>
+                                <View style={styles.cancelShadow} />
+                                <View style={styles.cancelFront}>
+                                    <Text style={styles.cancelText}>X ANNULLA</Text>
+                                </View>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.button} onPress={handleApply} activeOpacity={0.8}>
-                                <Text style={styles.buttonText}>APPLICA MODIFICHE</Text>
+
+                            <TouchableOpacity style={styles.applyWrap} onPress={handleApply} activeOpacity={0.8}>
+                                <View style={styles.applyShadow} />
+                                <View style={styles.applyFront}>
+                                    <Text style={styles.buttonText}>APPLICA ➔</Text>
+                                </View>
                             </TouchableOpacity>
                         </View>
                     </Animated.View>
@@ -122,93 +175,109 @@ export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(74, 59, 50, 0.4)', // Warm Espresso Wash
+        backgroundColor: 'rgba(0, 0, 0, 0.85)', // Very dark overlay to contrast neon
         justifyContent: 'center',
         alignItems: 'center',
     },
     modalContent: {
-        width: '90%',
-        maxWidth: 480,
-        backgroundColor: '#F7EDE2', // Soft Peach/Dopamine Base
-        borderRadius: 35, // Organic Squircle
+        width: '95%',
+        maxWidth: 600,
+        backgroundColor: '#FF0055', // Hot Pink
+        borderWidth: 6,
+        borderColor: '#000',
+        shadowColor: '#B2FF05',
+        shadowOffset: { width: -15, height: 15 },
+        shadowOpacity: 1,
+        shadowRadius: 0,
+        elevation: 20,
         padding: 30,
-        shadowColor: '#3A4D39',
-        shadowOffset: { width: 0, height: 20 },
-        shadowOpacity: 0.15,
-        shadowRadius: 40,
-        elevation: 10,
+        overflow: 'hidden',
+        transform: [{ rotate: '-1deg' }] // Tilt
+    },
+    backgroundGrid: {
+        position: 'absolute',
+        width: '200%',
+        height: '200%',
+        opacity: 0.15,
+        borderWidth: 2,
+        borderColor: '#000',
+        borderStyle: 'dashed'
+    },
+    headerContainer: {
+        position: 'relative',
+        marginBottom: 30,
+        alignItems: 'center'
+    },
+    titleShadow: {
+        color: '#000000',
+        fontSize: 40,
+        letterSpacing: -1,
+        fontWeight: '900',
+        position: 'absolute',
+        top: 5, left: 5,
+        fontFamily: 'Courier New'
     },
     title: {
-        color: '#3A4D39', // Forest Green
-        fontSize: 22,
-        letterSpacing: 1,
-        marginBottom: 25,
+        color: '#FFFFFF', // White
+        fontSize: 40,
+        letterSpacing: -1,
         textAlign: 'center',
-        fontWeight: '800'
+        fontWeight: '900',
+        fontFamily: 'Courier New'
     },
     settingGroup: {
         marginBottom: 25,
+        backgroundColor: '#000',
+        padding: 15,
+        borderWidth: 3,
+        borderColor: '#00E5FF', // Cyan
+        transform: [{ rotate: '1deg' }]
     },
     label: {
-        color: '#DDA77B', // Soft Terracotta
-        fontSize: 12,
-        letterSpacing: 1,
+        color: '#B2FF05', // Lime Green
+        fontSize: 16,
+        letterSpacing: 2,
         marginBottom: 10,
-        fontWeight: '700',
+        fontWeight: '900',
         marginLeft: 5,
     },
     pickerContainer: {
-        backgroundColor: '#FFFFFF', // Clean readable white for input
-        borderRadius: 25, // Pill shape
-        overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 3,
-        borderWidth: 1,
-        borderColor: 'rgba(231, 136, 101, 0.15)' // Subtle Terracotta border
+        backgroundColor: '#FFFFFF',
+        borderWidth: 4,
+        borderColor: '#000',
+        // Brutalist shadow trick internally
+        borderBottomWidth: 8,
+        borderRightWidth: 8,
     },
     picker: {
-        color: '#4A3B32',
-        height: 55,
+        color: '#000',
+        height: 60,
+        fontWeight: 'bold',
     },
     buttonRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginTop: 15,
+        marginTop: 20,
+        height: 60
     },
-    button: {
-        backgroundColor: '#739072', // Sage Green primary
-        paddingVertical: 18,
-        paddingHorizontal: 25,
-        borderRadius: 30,
-        flex: 1,
-        alignItems: 'center',
-        marginLeft: 10,
-        shadowColor: '#739072',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.3,
-        shadowRadius: 15,
-        elevation: 5,
-    },
-    cancelBtn: {
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        borderColor: 'rgba(216, 92, 92, 0.4)', // Faded Red edge
-        shadowOpacity: 0,
-        elevation: 0,
-        marginLeft: 0,
-        marginRight: 10,
-    },
+    cancelWrap: { flex: 0.45, position: 'relative' },
+    cancelShadow: { position: 'absolute', top: 5, left: 5, width: '100%', height: '100%', backgroundColor: '#000' },
+    cancelFront: { width: '100%', height: '100%', backgroundColor: '#FFFFFF', borderWidth: 4, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
+
+    applyWrap: { flex: 0.5, position: 'relative' },
+    applyShadow: { position: 'absolute', top: 5, left: 5, width: '100%', height: '100%', backgroundColor: '#000' },
+    applyFront: { width: '100%', height: '100%', backgroundColor: '#B2FF05', borderWidth: 4, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
+
     cancelText: {
-        color: '#D85C5C', // Warm Red text
-        fontWeight: '700',
-        letterSpacing: 0.5,
+        color: '#FF0055', // Hot Pink
+        fontWeight: '900',
+        letterSpacing: 1,
+        fontSize: 18
     },
     buttonText: {
-        color: '#FFFFFF',
-        fontWeight: '800',
-        letterSpacing: 0.5,
+        color: '#000000',
+        fontWeight: '900',
+        letterSpacing: 1,
+        fontSize: 18
     }
 });
