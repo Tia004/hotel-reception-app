@@ -414,14 +414,14 @@ const styles = StyleSheet.create({
         position: 'absolute',
         width: '100%',
         height: '100%',
-        opacity: 0, // Hidden for premium look
+        opacity: 0,
     },
 
     remoteVideoContainer: { flex: 1, backgroundColor: '#050505' },
     remoteVideo: { flex: 1, width: '100%', height: '100%', position: 'absolute' },
-    remoteOverlayGradient: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.3)' },
-    scanlines: { opacity: 0 }, // Removed scanlines
-    brutalistFrame: { opacity: 0 }, // Removed frame
+    remoteOverlayGradient: { flex: 1, backgroundColor: 'rgba(0,0, 0, 0.3)' },
+    scanlines: { opacity: 0 },
+    brutalistFrame: { opacity: 0 },
 
     noCallContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0C', zIndex: 10 },
     headerContainer: { position: 'relative', alignItems: 'center' },
@@ -430,6 +430,7 @@ const styles = StyleSheet.create({
     waitingText: { color: 'rgba(255,255,255,0.4)', fontSize: 12, letterSpacing: 4, fontWeight: '400', marginTop: 15, textTransform: 'uppercase' },
 
     logoutBtn: { position: 'absolute', top: 50, left: 25, zIndex: 100 },
+    logoutBtnGradient: { paddingVertical: 10, paddingHorizontal: 15, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)' },
     logoutText: { color: 'rgba(255,255,255,0.5)', fontWeight: '400', fontSize: 11, letterSpacing: 2 },
 
     pipContainer: {
@@ -467,13 +468,15 @@ const styles = StyleSheet.create({
         shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.5, shadowRadius: 20,
     },
 
-    iconBtn: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', marginRight: 15 },
+    iconBtn: { width: 50, height: 50, borderRadius: 25, marginRight: 15, overflow: 'hidden' },
+    iconBtnGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
     iconText: { fontSize: 22 },
     iconTextOff: { fontSize: 22, opacity: 0.3 },
 
-    mainBtnWrapper: { width: 200, height: 54 },
-    mainBtnGradient: { width: '100%', height: '100%', borderRadius: 100, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+    mainBtnWrapper: { width: 200, height: 54, borderRadius: 27, overflow: 'hidden' },
+    mainBtnGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
     mainBtnText: { color: '#000', fontWeight: '700', letterSpacing: 2, fontSize: 14 },
+    mainBtnTextDark: { color: '#000', fontWeight: '700', letterSpacing: 2, fontSize: 14 },
 
     emojiWrapper: { width: 50, height: 50, marginLeft: 15, justifyContent: 'center', alignItems: 'center' },
     emojiInput: { width: '100%', height: '100%', position: 'absolute', opacity: 0 },
@@ -487,6 +490,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.1)',
         shadowColor: '#000', shadowOffset: { height: 15, width: 0 }, shadowOpacity: 0.8, shadowRadius: 30,
+        overflow: 'hidden'
     },
     modalTitle: { color: '#FFF', fontSize: 16, fontWeight: '400', letterSpacing: 2, marginBottom: 25, textAlign: 'center' },
     noUsersText: { color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginBottom: 20, fontSize: 14, fontStyle: 'italic' },
@@ -501,8 +505,8 @@ const styles = StyleSheet.create({
     userRole: { color: '#D4AF37', fontSize: 12, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
     userName: { color: 'rgba(255,255,255,0.8)', fontSize: 14, marginTop: 4, fontWeight: '400' },
 
-    connectBtn: { width: 90, height: 40 },
-    connectBtnGradient: { width: '100%', height: '100%', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+    connectBtn: { width: 90, height: 40, borderRadius: 20, overflow: 'hidden' },
+    connectBtnGradient: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
     connectBtnText: { color: '#FFF', fontSize: 11, fontWeight: '600', letterSpacing: 1 },
 
     cancelBtn: { marginTop: 30, width: '100%', paddingVertical: 15, alignItems: 'center' },
