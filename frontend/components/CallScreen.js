@@ -41,7 +41,7 @@ const AmbientGlow = ({ color, size, top, left, delay }) => {
                 width: size, height: size,
                 backgroundColor: color,
                 borderRadius: size / 2,
-                filter: [{ blur: 80 }]
+                ...(Platform.OS === 'web' ? { filter: 'blur(80px)' } : { opacity: 0.2, shadowColor: color, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 50 })
             },
             animStyle
         ]} />
