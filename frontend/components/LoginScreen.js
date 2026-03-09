@@ -129,7 +129,7 @@ export default function LoginScreen({ onLogin }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#0A0A0C', // Deep abyss black
+        backgroundColor: '#0C0B09', // Deep v2.5.0 black
         justifyContent: 'center',
         overflow: 'hidden'
     },
@@ -142,17 +142,16 @@ const styles = StyleSheet.create({
         width: '100%',
         maxWidth: 420,
         alignSelf: 'center',
-        borderRadius: 30, // Soft, rounded edges for the "puffy" aesthetic
-        overflow: 'hidden', // Need this to clip the LinearGradient
-        // Subtle outer shadow to lift it off the dark background
+        borderRadius: 30,
+        overflow: 'hidden',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 20 },
         shadowOpacity: 0.8,
         shadowRadius: 30,
         elevation: 25,
-        backgroundColor: 'rgba(20, 20, 25, 0.4)', // Base dark glass tint
+        backgroundColor: 'rgba(20, 18, 16, 0.4)',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)', // Extremely thin, subtle highlight rim
+        borderColor: 'rgba(201,168,76,0.1)',
     },
     formContainer: {
         padding: 40,
@@ -165,7 +164,7 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 34,
-        fontWeight: '300', // Thin, elegant font weight
+        fontWeight: '300',
         color: '#FFFFFF',
         letterSpacing: 4,
         marginBottom: 8,
@@ -173,7 +172,7 @@ const styles = StyleSheet.create({
     },
     subtitle: {
         fontSize: 12,
-        color: '#D4AF37', // Refined gold
+        color: '#C9A84C', // Refined v2.5.0 gold
         fontWeight: '600',
         letterSpacing: 3,
         textTransform: 'uppercase',
@@ -190,24 +189,24 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
     },
     input: {
-        backgroundColor: 'rgba(0,0,0,0.4)', // Deep inset look
+        backgroundColor: 'rgba(0,0,0,0.4)',
         color: '#FFFFFF',
         padding: 18,
         fontSize: 16,
-        borderRadius: 16, // Rounded inner fields
+        borderRadius: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.06)', // Subtle inset rim
+        borderColor: 'rgba(255,255,255,0.06)',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 }, // Inner shadow hack
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.5,
         shadowRadius: 5,
     },
     button: {
         marginTop: 30,
-        borderRadius: 100, // Pill shaped button
-        shadowColor: '#D4AF37',
+        borderRadius: 100,
+        shadowColor: '#C9A84C',
         shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3, // Golden glow under button
+        shadowOpacity: 0.3,
         shadowRadius: 15,
         elevation: 10,
     },
@@ -216,16 +215,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderRadius: 100,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.3)', // Top rim highlight for 3D pill effect
+        borderColor: 'rgba(255,255,255,0.2)',
     },
     buttonText: {
-        color: '#111', // Very dark gray/black depending on gold tone
-        fontWeight: '700',
+        color: '#111',
+        fontWeight: '800',
         fontSize: 15,
         letterSpacing: 2,
     },
     errorText: {
-        color: '#FF6B6B', // Soft coral red instead of harsh hot pink
+        color: '#FF6B6B',
         textAlign: 'center',
         marginBottom: 15,
         fontWeight: '500',
@@ -233,3 +232,4 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5
     }
 });
+

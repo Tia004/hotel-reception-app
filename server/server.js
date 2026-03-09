@@ -51,6 +51,15 @@ function broadcastRooms() {
     io.emit('rooms-update', available);
 }
 
+function broadcastUsers() {
+    const list = Array.from(users.values()).map(u => ({
+        username: u.username, station: u.station,
+        status: u.status || 'online', roomId: u.roomId,
+        bio: u.bio || '', profilePic: u.profilePic || null
+    }));
+    io.emit('online-users', list);
+}
+
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
     console.log(`Connected: ${socket.id}`);
@@ -67,8 +76,9 @@ io.on('connection', (socket) => {
                 users.delete(sid);
             }
         }
-        users.set(socket.id, { id: socket.id, username, station, roomId: null });
+        users.set(socket.id, { id: socket.id, username, station, roomId: null, status: 'online' });
         broadcastRooms();
+        broadcastUsers();
     });
 
     // ── Room Management ──────────────────────────────────────────────────────
@@ -171,7 +181,7 @@ io.on('connection', (socket) => {
     });
 
     // Send a message to a hotel channel
-    socket.on('channel-message', ({ channelId, text, imageData, gifUrl, poll }) => {
+    socket.on('channel-message', ({ channelId, text, imageData, gifUrl, poll, voiceData, voiceDuration }) => {
         const user = users.get(socket.id);
         if (!user || !HOTEL_CHANNELS.includes(channelId)) return;
         const now = Date.now();
@@ -182,7 +192,9 @@ io.on('connection', (socket) => {
             text: text || '',
             imageData: imageData || null,
             gifUrl: gifUrl || null,
-            poll: poll || null,
+            poll: poll ? { ...poll, votes: poll.votes || {}, isMultiple: poll.isMultiple || false } : null,
+            voiceData: voiceData || null,
+            voiceDuration: voiceDuration || 0,
             timestamp: now,
             expiresAt: now + MESSAGE_TTL,
             pinned: false,
@@ -191,14 +203,36 @@ io.on('connection', (socket) => {
         const msgs = channelMessages.get(channelId) || [];
         msgs.push(msg);
         channelMessages.set(channelId, msgs);
-        // Broadcast to EVERYONE in this channel room (including sender for consistency)
         io.to(`channel:${channelId}`).emit('channel-message', { channelId, message: msg });
+    });
+
+    // Poll vote: toggle vote on an option
+    socket.on('channel-poll-vote', ({ channelId, messageId, optionIndex }) => {
+        const user = users.get(socket.id);
+        if (!user) return;
+        const msgs = channelMessages.get(channelId) || [];
+        const msg = msgs.find(m => m.id === messageId);
+        if (!msg || !msg.poll) return;
+        const votes = msg.poll.votes || {};
+        const userId = user.username;
+        // Single choice: remove from all other options first
+        if (!msg.poll.isMultiple) {
+            Object.keys(votes).forEach(k => {
+                if (parseInt(k) !== optionIndex) votes[k] = (votes[k] || []).filter(u => u !== userId);
+            });
+        }
+        if (!votes[optionIndex]) votes[optionIndex] = [];
+        const already = votes[optionIndex].includes(userId);
+        if (already) { votes[optionIndex] = votes[optionIndex].filter(u => u !== userId); }
+        else { votes[optionIndex].push(userId); }
+        msg.poll.votes = votes;
+        io.to(`channel:${channelId}`).emit('channel-poll-update', { channelId, messageId, votes });
     });
 
     // User presence / status broadcast
     socket.on('user-status', ({ status }) => {
         const user = users.get(socket.id);
-        if (user) { user.status = status; io.emit('user-status-update', { socketId: socket.id, username: user.username, status }); }
+        if (user) { user.status = status; broadcastUsers(); }
     });
     socket.on('user-bio', ({ bio }) => {
         const user = users.get(socket.id);
@@ -250,6 +284,7 @@ io.on('connection', (socket) => {
             }
             users.delete(socket.id);
             broadcastRooms();
+            broadcastUsers();
         }
         console.log(`Disconnected: ${socket.id}`);
     });

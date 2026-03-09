@@ -7,6 +7,8 @@ import HotelChat from './components/HotelChat';
 import io from 'socket.io-client';
 import { Icon } from './components/Icons';
 
+import SplashScreen from './components/SplashScreen';
+
 const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'http://192.168.1.46:3000';
 const SESSION_KEY = 'gsa_session';
 const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
@@ -14,15 +16,14 @@ const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 const { width: SCREEN_W } = Dimensions.get('window');
 const IS_MOBILE = SCREEN_W < 768;
 
-// Views
-const VIEW_CALLS = 'calls';
-const VIEW_CHAT = 'chat';
-
 export default function App() {
+  const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
-  const [activeView, setActiveView] = useState(VIEW_CHAT);
   const [sidebarVisible, setSidebarVisible] = useState(!IS_MOBILE);
   const [availableRooms, setAvailableRooms] = useState([]);
+  const [currentRoom, setCurrentRoom] = useState(null);
+  const [isTemp, setIsTemp] = useState(false);
+
   // Shared socket passed to both HotelChat and CallScreen
   const socketRef = useRef(null);
   const [socketReady, setSocketReady] = useState(false);
@@ -54,7 +55,7 @@ export default function App() {
     socketRef.current = s;
 
     s.on('connect', () => {
-      s.emit('join', userData);
+      s.emit('join', { ...userData, profilePic: userData.profilePic || null });
       setSocketReady(true);
     });
     s.on('connect_error', () => setSocketReady(false));
@@ -84,7 +85,12 @@ export default function App() {
     socketRef.current = null;
     setSocketReady(false);
     setUser(null);
+    setCurrentRoom(null);
   };
+
+  if (loading) {
+    return <SplashScreen onDone={() => setLoading(false)} />;
+  }
 
   if (!user) {
     return (
@@ -99,48 +105,32 @@ export default function App() {
     <View style={styles.root}>
       <StatusBar style="light" />
 
-      {/* ── Tab bar (mobile only) ──── */}
-      {IS_MOBILE && (
-        <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={[styles.tabBtn, activeView === VIEW_CHAT && styles.tabBtnActive]}
-            onPress={() => setActiveView(VIEW_CHAT)}
-          >
-            <Icon name="hash" size={20} color={activeView === VIEW_CHAT ? '#D4AF37' : '#72767D'} />
-            <Text style={[styles.tabLabel, activeView === VIEW_CHAT && styles.tabLabelActive]}>Chat</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabBtn, activeView === VIEW_CALLS && styles.tabBtnActive]}
-            onPress={() => setActiveView(VIEW_CALLS)}
-          >
-            <Icon name="video" size={20} color={activeView === VIEW_CALLS ? '#D4AF37' : '#72767D'} />
-            <Text style={[styles.tabLabel, activeView === VIEW_CALLS && styles.tabLabelActive]}>Chiamate</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       <View style={styles.content}>
-        {/* ── Desktop: side-by-side; Mobile: tab-based ── */}
-        {(!IS_MOBILE || activeView === VIEW_CHAT) && (
-          <View style={[styles.chatPane, IS_MOBILE && { flex: 1 }]}>
-            <HotelChat
-              socket={socketRef.current}
-              user={user}
-              sidebarVisible={sidebarVisible}
-              onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
-              availableRooms={availableRooms}
-              onJoinRoom={(roomId) => socketRef.current?.emit('join-room', { roomId })}
-            />
-          </View>
-        )}
+        <View style={styles.chatPane}>
+          <HotelChat
+            socket={socketRef.current}
+            user={user}
+            sidebarVisible={sidebarVisible}
+            onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
+            availableRooms={availableRooms}
+            onJoinRoom={(roomId) => socketRef.current?.emit('join-room', { roomId })}
+            onLogout={handleLogout}
+            inCall={!!currentRoom}
+          />
+        </View>
 
-        {(!IS_MOBILE || activeView === VIEW_CALLS) && (
-          <View style={[styles.callPane, IS_MOBILE && { flex: 1 }]}>
+        {/* ── CALL OVERLAY ── */}
+        {!!currentRoom && (
+          <View style={styles.callOverlay}>
             <CallScreen
               user={user}
               socket={socketRef.current}
               onLogout={handleLogout}
               onRoomsUpdate={setAvailableRooms}
+              roomId={currentRoom}
+              onClose={() => setCurrentRoom(null)}
+              isTempProp={isTemp}
+              onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
             />
           </View>
         )}
@@ -154,26 +144,12 @@ const styles = StyleSheet.create({
   content: { flex: 1, flexDirection: IS_MOBILE ? 'column' : 'row' },
 
   chatPane: {
-    flex: IS_MOBILE ? undefined : 0.45,
-    borderRightWidth: IS_MOBILE ? 0 : 1,
-    borderRightColor: 'rgba(201,168,76,0.08)',
+    flex: 1,
   },
-  callPane: {
-    flex: IS_MOBILE ? undefined : 0.55,
+  callOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    zIndex: 1000,
   },
-
-  // Mobile tab bar
-  tabBar: {
-    flexDirection: 'row', backgroundColor: '#0C0B09',
-    borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.08)',
-    ...(Platform.OS === 'web' ? { paddingTop: 0 } : { paddingTop: 40 }),
-  },
-  tabBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 13,
-    borderBottomWidth: 2, borderBottomColor: 'transparent',
-  },
-  tabBtnActive: { borderBottomColor: '#C9A84C' },
-  tabLabel: { color: '#6E6960', fontSize: 14, fontWeight: '600' },
-  tabLabelActive: { color: '#C9A84C' },
 });
+
