@@ -171,7 +171,7 @@ io.on('connection', (socket) => {
     });
 
     // Send a message to a hotel channel
-    socket.on('channel-message', ({ channelId, text, imageData, gifUrl }) => {
+    socket.on('channel-message', ({ channelId, text, imageData, gifUrl, poll }) => {
         const user = users.get(socket.id);
         if (!user || !HOTEL_CHANNELS.includes(channelId)) return;
         const now = Date.now();
@@ -179,9 +179,10 @@ io.on('connection', (socket) => {
             id: `${socket.id}-${now}`,
             sender: user.username,
             station: user.station,
-            text,
+            text: text || '',
             imageData: imageData || null,
             gifUrl: gifUrl || null,
+            poll: poll || null,
             timestamp: now,
             expiresAt: now + MESSAGE_TTL,
             pinned: false,
@@ -193,6 +194,17 @@ io.on('connection', (socket) => {
         // Broadcast to EVERYONE in this channel room (including sender for consistency)
         io.to(`channel:${channelId}`).emit('channel-message', { channelId, message: msg });
     });
+
+    // User presence / status broadcast
+    socket.on('user-status', ({ status }) => {
+        const user = users.get(socket.id);
+        if (user) { user.status = status; io.emit('user-status-update', { socketId: socket.id, username: user.username, status }); }
+    });
+    socket.on('user-bio', ({ bio }) => {
+        const user = users.get(socket.id);
+        if (user) { user.bio = bio; }
+    });
+
 
     // Pin / unpin a message
     socket.on('pin-message', ({ channelId, messageId }) => {

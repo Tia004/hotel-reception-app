@@ -1,10 +1,10 @@
 /**
- * MediaSettings.js — v2.2.0
- * Profile-only settings modal.
- * - Editable username, bio
- * - Profile picture upload (base64)
- * - Server connection status + ping
- * - No "Dispositivi" tab
+ * MediaSettings.js — v2.4.0
+ * Two-tab settings modal:
+ * - "Profilo": editable username, bio, profile picture, server ping
+ * - "Dispositivi": mic/speaker/camera selectors that sync to CallScreen via
+ *    a gsa-device-change window event (one-way: settings → call, NOT vice-versa)
+ * Gold/black hotel theme. Non-selectable UI text.
  */
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -14,20 +14,33 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from './Icons';
 
-const { height } = Dimensions.get('window');
+const { height, width: W } = Dimensions.get('window');
 const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'http://192.168.1.46:3000';
+const NO_SELECT = Platform.OS === 'web' ? { userSelect: 'none' } : {};
+
+const loadSavedDevices = () => { try { return JSON.parse(localStorage.getItem('gsa_devices') || '{}'); } catch { return {}; } };
+const saveDev = (d) => { try { localStorage.setItem('gsa_devices', JSON.stringify(d)); } catch { } };
+const emitDevChange = (d) => { if (Platform.OS === 'web') window.dispatchEvent(new CustomEvent('gsa-device-change', { detail: d })); };
 
 export default function MediaSettings({ visible, onClose, user }) {
+    const [tab, setTab] = useState('profilo');
     const [ping, setPing] = useState(null);
     const [connStatus, setConnStatus] = useState('Misurazione...');
-    const pingInterval = useRef(null);
+    const pingRef = useRef(null);
 
-    // Editable fields
+    // Profile
     const [editUsername, setEditUsername] = useState(user?.username || '');
     const [editBio, setEditBio] = useState(user?.bio || '');
     const [profilePic, setProfilePic] = useState(user?.profilePic || null);
     const [saved, setSaved] = useState(false);
-    const fileInputRef = useRef(null);
+
+    // Devices
+    const [audioInputs, setAudioInputs] = useState([]);
+    const [audioOutputs, setAudioOutputs] = useState([]);
+    const [videoInputs, setVideoInputs] = useState([]);
+    const [selAudioIn, setSelAudioIn] = useState('');
+    const [selAudioOut, setSelAudioOut] = useState('');
+    const [selVideo, setSelVideo] = useState('');
 
     useEffect(() => {
         if (visible) {
@@ -36,12 +49,15 @@ export default function MediaSettings({ visible, onClose, user }) {
             setProfilePic(user?.profilePic || null);
             setSaved(false);
             startPing();
+            if (Platform.OS === 'web') loadDeviceList();
+            const saved = loadSavedDevices();
+            if (saved.audioIn) setSelAudioIn(saved.audioIn);
+            if (saved.audioOut) setSelAudioOut(saved.audioOut);
+            if (saved.video) setSelVideo(saved.video);
         } else {
-            if (pingInterval.current) clearInterval(pingInterval.current);
+            if (pingRef.current) clearInterval(pingRef.current);
         }
-        return () => {
-            if (pingInterval.current) clearInterval(pingInterval.current);
-        };
+        return () => { if (pingRef.current) clearInterval(pingRef.current); };
     }, [visible]);
 
     const startPing = () => {
@@ -52,156 +68,193 @@ export default function MediaSettings({ visible, onClose, user }) {
                 const ms = Date.now() - t;
                 setPing(ms);
                 setConnStatus(ms < 100 ? 'Eccellente' : ms < 250 ? 'Buono' : 'Lento');
-            } catch {
-                setPing(null);
-                setConnStatus('Disconnesso');
-            }
+            } catch { setPing(null); setConnStatus('Disconnesso'); }
         };
         measure();
-        pingInterval.current = setInterval(measure, 5000);
+        pingRef.current = setInterval(measure, 5000);
+    };
+
+    const loadDeviceList = async () => {
+        try {
+            await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(() => { });
+            const all = await navigator.mediaDevices.enumerateDevices();
+            setAudioInputs(all.filter(d => d.kind === 'audioinput'));
+            setAudioOutputs(all.filter(d => d.kind === 'audiooutput'));
+            setVideoInputs(all.filter(d => d.kind === 'videoinput'));
+        } catch (_) { }
+    };
+
+    const applyDevice = (type, deviceId) => {
+        const newDev = { audioIn: selAudioIn, audioOut: selAudioOut, video: selVideo, [type]: deviceId };
+        if (type === 'audioIn') { setSelAudioIn(deviceId); newDev.audioIn = deviceId; }
+        if (type === 'audioOut') { setSelAudioOut(deviceId); newDev.audioOut = deviceId; }
+        if (type === 'video') { setSelVideo(deviceId); newDev.video = deviceId; }
+        saveDev({ audioIn: newDev.audioIn, audioOut: newDev.audioOut, video: newDev.video });
+        emitDevChange({ audioIn: newDev.audioIn, audioOut: newDev.audioOut, video: newDev.video });
     };
 
     const handleSave = () => {
-        // Update the user object in-place (in a real app, this would call an API)
-        if (user) {
-            user.username = editUsername;
-            user.bio = editBio;
-            user.profilePic = profilePic;
-        }
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
+        if (user) { user.username = editUsername; user.bio = editBio; user.profilePic = profilePic; }
+        setSaved(true); setTimeout(() => setSaved(false), 2000);
     };
 
     const handlePickPhoto = () => {
-        if (Platform.OS === 'web') {
-            // Create hidden file input
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = 'image/*';
-            input.onchange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => setProfilePic(ev.target.result);
-                    reader.readAsDataURL(file);
-                }
-            };
-            input.click();
-        }
+        if (Platform.OS !== 'web') return;
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+        inp.onchange = (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => setProfilePic(ev.target.result); r.readAsDataURL(f); };
+        inp.click();
     };
 
-    const pingColor = connStatus === 'Eccellente' ? '#23A559'
-        : connStatus === 'Buono' ? '#FEE75C'
-            : connStatus === 'Lento' ? '#F0B232'
-                : '#ED4245';
-
+    const pingColor = connStatus === 'Eccellente' ? '#23A559' : connStatus === 'Buono' ? '#C9A84C' : connStatus === 'Lento' ? '#F0B232' : '#ED4245';
     const initials = editUsername ? editUsername.charAt(0).toUpperCase() : '?';
+    const devLabel = (d) => d?.label?.replace(/\(.*?\)/g, '').trim() || d?.deviceId?.slice(0, 14) || '—';
 
     return (
-        <Modal visible={visible} animationType="fade" transparent>
-            <View style={styles.overlay}>
-                <View style={styles.modalWrapper}>
-                    {/* Sidebar */}
-                    <View style={styles.sidebar}>
-                        <Text style={styles.sidebarCategory}>ACCOUNT</Text>
-                        <View style={styles.sidebarItemActive}>
-                            <Icon name="user" size={15} color="#D4AF37" />
-                            <Text style={styles.sidebarItemTextActive}>Profilo</Text>
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+            <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+                <TouchableOpacity activeOpacity={1} onPress={() => { }}
+                    style={[styles.modalWrapper, Platform.OS === 'web' && W >= 600 ? {} : { width: '100%', height: '100%', borderRadius: 0 }]}>
+
+                    {/* Sidebar nav */}
+                    <LinearGradient colors={['#1C1A12', '#12100E']} style={styles.sidebar}>
+                        <Text style={[styles.sideTitle, NO_SELECT]}>IMPOSTAZIONI</Text>
+
+                        <TouchableOpacity style={[styles.navItem, tab === 'profilo' && styles.navItemActive]} onPress={() => setTab('profilo')}>
+                            <Icon name="user" size={17} color={tab === 'profilo' ? '#C9A84C' : '#6E6960'} />
+                            <Text style={[styles.navLabel, tab === 'profilo' && { color: '#C9A84C' }, NO_SELECT]}>Profilo</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={[styles.navItem, tab === 'dispositivi' && styles.navItemActive]} onPress={() => setTab('dispositivi')}>
+                            <Icon name="settings" size={17} color={tab === 'dispositivi' ? '#C9A84C' : '#6E6960'} />
+                            <Text style={[styles.navLabel, tab === 'dispositivi' && { color: '#C9A84C' }, NO_SELECT]}>Dispositivi</Text>
+                        </TouchableOpacity>
+
+                        {/* Connection status at bottom of sidebar */}
+                        <View style={styles.sideBottom}>
+                            <View style={[styles.pingDot, { backgroundColor: pingColor }]} />
+                            <Text style={[styles.pingLabel, NO_SELECT]}>{connStatus}</Text>
+                            {ping !== null && <Text style={[styles.pingMs, NO_SELECT]}>{ping}ms</Text>}
                         </View>
-                    </View>
+                    </LinearGradient>
 
                     {/* Content */}
-                    <View style={styles.content}>
-                        {/* Header */}
-                        <View style={styles.contentHeader}>
-                            <Text style={styles.contentTitle}>Il tuo Profilo</Text>
-                            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                                <Icon name="x" size={18} color="#B5BAC1" />
-                            </TouchableOpacity>
-                        </View>
+                    <ScrollView style={styles.content} contentContainerStyle={styles.contentPad} showsVerticalScrollIndicator={false}>
 
-                        <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollArea}>
+                        {/* Close */}
+                        <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+                            <Icon name="x" size={18} color="#6E6960" />
+                        </TouchableOpacity>
 
-                            {/* Profile Banner + Avatar */}
-                            <View style={styles.bannerArea}>
-                                <LinearGradient colors={['#1a1040', '#0f2040', '#1a0f30']} style={styles.banner} />
-                                <TouchableOpacity onPress={handlePickPhoto} style={styles.avatarWrapper} activeOpacity={0.8}>
-                                    {profilePic ? (
-                                        <Image source={{ uri: profilePic }} style={styles.avatarImg} />
-                                    ) : (
-                                        <LinearGradient colors={['#D4AF37', '#7A6520']} style={styles.avatarGradient}>
-                                            <Text style={styles.avatarInitial}>{initials}</Text>
-                                        </LinearGradient>
-                                    )}
-                                    <View style={styles.avatarEditBadge}>
-                                        <Icon name="camera" size={11} color="#FFF" />
+                        {/* ── PROFILO TAB ── */}
+                        {tab === 'profilo' && (
+                            <View>
+                                <Text style={[styles.sectionTitle, NO_SELECT]}>Il tuo profilo</Text>
+
+                                {/* Avatar */}
+                                <View style={styles.avatarRow}>
+                                    <TouchableOpacity style={styles.avatarWrap} onPress={handlePickPhoto}>
+                                        {profilePic
+                                            ? <Image source={{ uri: profilePic }} style={styles.avatar} />
+                                            : <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                                                <Text style={styles.avatarInitial}>{initials}</Text>
+                                            </View>
+                                        }
+                                        <View style={styles.avatarEdit}><Icon name="camera" size={14} color="#111" /></View>
+                                    </TouchableOpacity>
+                                    <View style={styles.avatarInfo}>
+                                        <Text style={[styles.fieldLabel, NO_SELECT]}>FOTO PROFILO</Text>
+                                        <Text style={[styles.avatarHint, NO_SELECT]}>Clicca sull'avatar per cambiare la foto</Text>
+                                        <Text style={[styles.stationBadge, NO_SELECT]}>{user?.station || 'Receptionist'}</Text>
                                     </View>
+                                </View>
+
+                                {/* Username */}
+                                <Text style={[styles.fieldLabel, NO_SELECT]}>NOME UTENTE</Text>
+                                <TextInput style={[styles.field, Platform.OS === 'web' && { outlineStyle: 'none' }]}
+                                    value={editUsername} onChangeText={setEditUsername} placeholderTextColor="#554E40" />
+
+                                {/* Bio */}
+                                <Text style={[styles.fieldLabel, NO_SELECT]}>BIO</Text>
+                                <TextInput style={[styles.field, styles.fieldMulti, Platform.OS === 'web' && { outlineStyle: 'none' }]}
+                                    value={editBio} onChangeText={setEditBio}
+                                    placeholder="Scrivi qualcosa su di te..." placeholderTextColor="#554E40" multiline numberOfLines={3} />
+
+                                {/* Connection info */}
+                                <View style={styles.connRow}>
+                                    <Text style={[styles.fieldLabel, NO_SELECT]}>CONNESSIONE SERVER</Text>
+                                    <View style={styles.connDetail}>
+                                        <View style={[styles.pingDot, { backgroundColor: pingColor }]} />
+                                        <Text style={[styles.connStatus, NO_SELECT]}>{connStatus}</Text>
+                                        {ping !== null && <Text style={[styles.connPing, NO_SELECT]}>{ping} ms</Text>}
+                                    </View>
+                                </View>
+
+                                <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+                                    <Text style={[styles.saveBtnTxt, NO_SELECT]}>{saved ? '✓ Salvato!' : 'Salva modifiche'}</Text>
                                 </TouchableOpacity>
                             </View>
+                        )}
 
-                            {/* Editable card */}
-                            <View style={styles.profileCard}>
-                                <View style={styles.fieldRow}>
-                                    <Text style={styles.fieldLabel}>NOME UTENTE</Text>
-                                    <TextInput
-                                        style={styles.fieldInput}
-                                        value={editUsername}
-                                        onChangeText={setEditUsername}
-                                        placeholderTextColor="rgba(255,255,255,0.25)"
-                                        maxLength={32}
-                                    />
-                                </View>
+                        {/* ── DISPOSITIVI TAB ── */}
+                        {tab === 'dispositivi' && (
+                            <View style={{ gap: 22 }}>
+                                <Text style={[styles.sectionTitle, NO_SELECT]}>Dispositivi audio e video</Text>
+                                <Text style={[styles.devNote, NO_SELECT]}>
+                                    Seleziona i dispositivi predefiniti. Il cambiamento è applicato immediatamente alla chiamata in corso.
+                                </Text>
 
-                                <View style={styles.fieldDivider} />
-
-                                <View style={styles.fieldRow}>
-                                    <Text style={styles.fieldLabel}>BIO</Text>
-                                    <TextInput
-                                        style={[styles.fieldInput, styles.fieldInputMultiline]}
-                                        value={editBio}
-                                        onChangeText={setEditBio}
-                                        placeholder="Scrivi qualcosa su di te..."
-                                        placeholderTextColor="rgba(255,255,255,0.25)"
-                                        multiline
-                                        numberOfLines={3}
-                                        maxLength={190}
-                                    />
-                                    <Text style={styles.charCount}>{editBio.length}/190</Text>
-                                </View>
-                            </View>
-
-                            {/* Connection info */}
-                            <View style={styles.sectionHeader}>
-                                <Text style={styles.sectionTitle}>CONNESSIONE</Text>
-                            </View>
-                            <View style={styles.infoCard}>
-                                <View style={styles.infoRow}>
-                                    <Text style={styles.infoKey}>Stato</Text>
-                                    <View style={styles.infoValueRow}>
-                                        <View style={[styles.statusDot, { backgroundColor: pingColor }]} />
-                                        <Text style={[styles.infoValue, { color: pingColor }]}>{connStatus}</Text>
+                                {/* Microphone */}
+                                <View>
+                                    <View style={styles.devHeader}>
+                                        <Icon name="mic" size={15} color="#C9A84C" />
+                                        <Text style={[styles.devLabel, NO_SELECT]}>MICROFONO</Text>
                                     </View>
+                                    {audioInputs.length === 0 && <Text style={[styles.devEmpty, NO_SELECT]}>Nessun microfono trovato</Text>}
+                                    {audioInputs.map(d => (
+                                        <TouchableOpacity key={d.deviceId} style={[styles.devOption, selAudioIn === d.deviceId && styles.devOptionActive]}
+                                            onPress={() => applyDevice('audioIn', d.deviceId)}>
+                                            <Text style={[styles.devOptionTxt, selAudioIn === d.deviceId && { color: '#C9A84C' }, NO_SELECT]} numberOfLines={1}>{devLabel(d)}</Text>
+                                            {selAudioIn === d.deviceId && <Icon name="check" size={14} color="#C9A84C" />}
+                                        </TouchableOpacity>
+                                    ))}
                                 </View>
-                                <View style={[styles.infoRow, styles.infoRowLast]}>
-                                    <Text style={styles.infoKey}>Ping</Text>
-                                    <Text style={[styles.infoValue, { color: pingColor }]}>
-                                        {ping !== null ? `${ping} ms` : '— ms'}
-                                    </Text>
+
+                                {/* Speaker */}
+                                <View>
+                                    <View style={styles.devHeader}>
+                                        <Icon name="volume-2" size={15} color="#C9A84C" />
+                                        <Text style={[styles.devLabel, NO_SELECT]}>ALTOPARLANTE</Text>
+                                    </View>
+                                    {audioOutputs.length === 0 && <Text style={[styles.devEmpty, NO_SELECT]}>Nessun altoparlante trovato</Text>}
+                                    {audioOutputs.map(d => (
+                                        <TouchableOpacity key={d.deviceId} style={[styles.devOption, selAudioOut === d.deviceId && styles.devOptionActive]}
+                                            onPress={() => applyDevice('audioOut', d.deviceId)}>
+                                            <Text style={[styles.devOptionTxt, selAudioOut === d.deviceId && { color: '#C9A84C' }, NO_SELECT]} numberOfLines={1}>{devLabel(d)}</Text>
+                                            {selAudioOut === d.deviceId && <Icon name="check" size={14} color="#C9A84C" />}
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+
+                                {/* Camera */}
+                                <View>
+                                    <View style={styles.devHeader}>
+                                        <Icon name="camera" size={15} color="#C9A84C" />
+                                        <Text style={[styles.devLabel, NO_SELECT]}>FOTOCAMERA</Text>
+                                    </View>
+                                    {videoInputs.length === 0 && <Text style={[styles.devEmpty, NO_SELECT]}>Nessuna fotocamera trovata</Text>}
+                                    {videoInputs.map(d => (
+                                        <TouchableOpacity key={d.deviceId} style={[styles.devOption, selVideo === d.deviceId && styles.devOptionActive]}
+                                            onPress={() => applyDevice('video', d.deviceId)}>
+                                            <Text style={[styles.devOptionTxt, selVideo === d.deviceId && { color: '#C9A84C' }, NO_SELECT]} numberOfLines={1}>{devLabel(d)}</Text>
+                                            {selVideo === d.deviceId && <Icon name="check" size={14} color="#C9A84C" />}
+                                        </TouchableOpacity>
+                                    ))}
                                 </View>
                             </View>
-
-                            {/* Save button */}
-                            <TouchableOpacity style={[styles.saveBtn, saved && styles.saveBtnSuccess]} onPress={handleSave} activeOpacity={0.85}>
-                                <Text style={styles.saveBtnText}>{saved ? '✓ Salvato!' : 'Salva Modifiche'}</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity style={styles.closeLink} onPress={onClose}>
-                                <Text style={styles.closeLinkText}>Chiudi</Text>
-                            </TouchableOpacity>
-                        </ScrollView>
-                    </View>
-                </View>
-            </View>
+                        )}
+                    </ScrollView>
+                </TouchableOpacity>
+            </TouchableOpacity>
         </Modal>
     );
 }
@@ -209,69 +262,53 @@ export default function MediaSettings({ visible, onClose, user }) {
 const styles = StyleSheet.create({
     overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
     modalWrapper: {
-        width: Platform.OS === 'web' && Dimensions.get('window').width >= 600 ? '90%' : '100%',
-        maxWidth: 780,
-        height: Platform.OS === 'web' && Dimensions.get('window').height >= 500 ? '85%' : '100%',
-        maxHeight: 620,
-        flexDirection: 'row', borderRadius: Platform.OS === 'web' && Dimensions.get('window').width >= 600 ? 8 : 0,
-        overflow: 'hidden',
-        backgroundColor: '#313338',
+        width: '88%', maxWidth: 760,
+        height: Platform.OS === 'web' && Dimensions.get('window').height >= 500 ? '82%' : '100%',
+        maxHeight: 600, flexDirection: 'row', borderRadius: 10, overflow: 'hidden',
+        backgroundColor: '#1A1812',
         shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.9, shadowRadius: 40,
     },
+    sidebar: { width: 200, padding: 20, gap: 4, justifyContent: 'flex-start' },
+    sideTitle: { color: '#554E40', fontSize: 10, letterSpacing: 2, fontWeight: '700', marginBottom: 14 },
+    navItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 6 },
+    navItemActive: { backgroundColor: 'rgba(201,168,76,0.1)' },
+    navLabel: { color: '#6E6960', fontSize: 15, fontWeight: '500' },
+    sideBottom: { marginTop: 'auto', gap: 4, paddingTop: 20 },
+    pingDot: { width: 8, height: 8, borderRadius: 4 },
+    pingLabel: { color: '#6E6960', fontSize: 12 },
+    pingMs: { color: '#554E40', fontSize: 11 },
 
-    // Sidebar
-    sidebar: { width: 220, backgroundColor: '#2B2D31', paddingTop: 24, paddingHorizontal: 10 },
-    sidebarCategory: { color: 'rgba(255,255,255,0.3)', fontSize: 10, letterSpacing: 2, fontWeight: '700', paddingHorizontal: 10, marginBottom: 2, marginTop: 4 },
-    sidebarItemActive: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 6, backgroundColor: 'rgba(212,175,55,0.12)' },
-    sidebarItemTextActive: { color: '#D4AF37', fontSize: 14, fontWeight: '600' },
+    content: { flex: 1, backgroundColor: '#16140F' },
+    contentPad: { padding: 28, paddingTop: 46 },
+    closeBtn: { position: 'absolute', top: 14, right: 14, padding: 6, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.04)' },
+    sectionTitle: { color: '#C8C4B8', fontSize: 20, fontWeight: '800', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.08)', paddingBottom: 14 },
 
-    // Content
-    content: { flex: 1, backgroundColor: '#313338' },
-    contentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-    contentTitle: { color: '#DCDDDE', fontSize: 18, fontWeight: '700' },
-    closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.06)', justifyContent: 'center', alignItems: 'center' },
+    // Profile
+    avatarRow: { flexDirection: 'row', gap: 18, alignItems: 'flex-start', marginBottom: 20 },
+    avatarWrap: { position: 'relative' },
+    avatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderColor: '#C9A84C' },
+    avatarPlaceholder: { backgroundColor: '#2A2217', justifyContent: 'center', alignItems: 'center' },
+    avatarInitial: { color: '#C9A84C', fontSize: 32, fontWeight: '800' },
+    avatarEdit: { position: 'absolute', bottom: 2, right: 2, backgroundColor: '#C9A84C', borderRadius: 12, width: 24, height: 24, justifyContent: 'center', alignItems: 'center' },
+    avatarInfo: { flex: 1, gap: 5, justifyContent: 'center' },
+    avatarHint: { color: '#554E40', fontSize: 12 },
+    stationBadge: { backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 5, color: '#C9A84C', fontSize: 12, fontWeight: '700', alignSelf: 'flex-start' },
+    fieldLabel: { color: '#6E6960', fontSize: 11, letterSpacing: 1.5, fontWeight: '700', marginBottom: 6, marginTop: 14 },
+    field: { backgroundColor: '#0E0D0C', borderRadius: 7, paddingHorizontal: 14, paddingVertical: 11, color: '#C8C4B8', fontSize: 16, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
+    fieldMulti: { minHeight: 80, textAlignVertical: 'top' },
+    connRow: { marginTop: 16 },
+    connDetail: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+    connStatus: { color: '#C8C4B8', fontSize: 14 },
+    connPing: { color: '#6E6960', fontSize: 13 },
+    saveBtn: { backgroundColor: '#C9A84C', borderRadius: 8, paddingVertical: 13, alignItems: 'center', marginTop: 22 },
+    saveBtnTxt: { color: '#111', fontWeight: '800', fontSize: 15 },
 
-    scrollArea: { flex: 1, paddingHorizontal: 24 },
-
-    // Banner & Avatar
-    bannerArea: { marginTop: 20, marginBottom: 60, position: 'relative' },
-    banner: { height: 100, borderRadius: 8 },
-    avatarWrapper: { position: 'absolute', bottom: -40, left: 16 },
-    avatarImg: { width: 82, height: 82, borderRadius: 41, borderWidth: 5, borderColor: '#313338' },
-    avatarGradient: { width: 82, height: 82, borderRadius: 41, justifyContent: 'center', alignItems: 'center', borderWidth: 5, borderColor: '#313338' },
-    avatarInitial: { color: '#000', fontSize: 34, fontWeight: '800' },
-    avatarEditBadge: { position: 'absolute', bottom: 0, right: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: '#5865F2', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#313338' },
-
-    // Profile card
-    profileCard: { backgroundColor: '#2B2D31', borderRadius: 8, padding: 16, marginBottom: 20 },
-    fieldRow: { paddingVertical: 8 },
-    fieldLabel: { color: 'rgba(255,255,255,0.35)', fontSize: 10, letterSpacing: 2, fontWeight: '700', marginBottom: 8 },
-    fieldInput: {
-        backgroundColor: '#1E1F22', borderRadius: 4, paddingHorizontal: 12, paddingVertical: 10,
-        color: '#DCDDDE', fontSize: 14,
-        ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
-    },
-    fieldInputMultiline: { minHeight: 72, textAlignVertical: 'top', paddingTop: 10 },
-    charCount: { color: 'rgba(255,255,255,0.25)', fontSize: 11, textAlign: 'right', marginTop: 6 },
-    fieldDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 10 },
-
-    // Section header
-    sectionHeader: { marginBottom: 10 },
-    sectionTitle: { color: 'rgba(255,255,255,0.35)', fontSize: 10, letterSpacing: 2, fontWeight: '700' },
-
-    // Info card
-    infoCard: { backgroundColor: '#2B2D31', borderRadius: 8, overflow: 'hidden', marginBottom: 24 },
-    infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
-    infoRowLast: { borderBottomWidth: 0 },
-    infoKey: { color: '#B5BAC1', fontSize: 14 },
-    infoValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    statusDot: { width: 8, height: 8, borderRadius: 4 },
-    infoValue: { fontSize: 14, fontWeight: '600' },
-
-    // Save
-    saveBtn: { backgroundColor: '#5865F2', paddingVertical: 13, borderRadius: 6, alignItems: 'center', marginBottom: 12 },
-    saveBtnSuccess: { backgroundColor: '#23A559' },
-    saveBtnText: { color: '#FFF', fontWeight: '700', fontSize: 14, letterSpacing: 0.5 },
-    closeLink: { alignItems: 'center', paddingVertical: 16, marginBottom: 8 },
-    closeLinkText: { color: 'rgba(255,255,255,0.35)', fontSize: 13 },
+    // Devices
+    devNote: { color: '#6E6960', fontSize: 13, lineHeight: 20, marginTop: -10 },
+    devHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+    devLabel: { color: '#6E6960', fontSize: 11, letterSpacing: 1.5, fontWeight: '700' },
+    devEmpty: { color: '#3A3630', fontSize: 13, fontStyle: 'italic', marginLeft: 4 },
+    devOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: 4, borderWidth: 1, borderColor: 'transparent' },
+    devOptionActive: { backgroundColor: 'rgba(201,168,76,0.08)', borderColor: 'rgba(201,168,76,0.2)' },
+    devOptionTxt: { color: '#A8A090', fontSize: 14, flex: 1, marginRight: 10 },
 });

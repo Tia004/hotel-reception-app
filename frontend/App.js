@@ -22,6 +22,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [activeView, setActiveView] = useState(VIEW_CHAT);
   const [sidebarVisible, setSidebarVisible] = useState(!IS_MOBILE);
+  const [availableRooms, setAvailableRooms] = useState([]);
   // Shared socket passed to both HotelChat and CallScreen
   const socketRef = useRef(null);
   const [socketReady, setSocketReady] = useState(false);
@@ -127,6 +128,8 @@ export default function App() {
               user={user}
               sidebarVisible={sidebarVisible}
               onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
+              availableRooms={availableRooms}
+              onJoinRoom={(roomId) => socketRef.current?.emit('join-room', { roomId })}
             />
           </View>
         )}
@@ -137,6 +140,7 @@ export default function App() {
               user={user}
               socket={socketRef.current}
               onLogout={handleLogout}
+              onRoomsUpdate={setAvailableRooms}
             />
           </View>
         )}
@@ -146,13 +150,13 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0B0B0D' },
+  root: { flex: 1, backgroundColor: '#0C0B09' },
   content: { flex: 1, flexDirection: IS_MOBILE ? 'column' : 'row' },
 
   chatPane: {
     flex: IS_MOBILE ? undefined : 0.45,
     borderRightWidth: IS_MOBILE ? 0 : 1,
-    borderRightColor: 'rgba(0,0,0,0.25)',
+    borderRightColor: 'rgba(201,168,76,0.08)',
   },
   callPane: {
     flex: IS_MOBILE ? undefined : 0.55,
@@ -160,16 +164,16 @@ const styles = StyleSheet.create({
 
   // Mobile tab bar
   tabBar: {
-    flexDirection: 'row', backgroundColor: '#1E1F22',
-    borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.3)',
-    ...(Platform.OS === 'web' ? { paddingTop: 0 } : { paddingTop: 40 }), // safe area
+    flexDirection: 'row', backgroundColor: '#0C0B09',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.08)',
+    ...(Platform.OS === 'web' ? { paddingTop: 0 } : { paddingTop: 40 }),
   },
   tabBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 12,
+    gap: 6, paddingVertical: 13,
     borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
-  tabBtnActive: { borderBottomColor: '#D4AF37' },
-  tabLabel: { color: '#72767D', fontSize: 13, fontWeight: '600' },
-  tabLabelActive: { color: '#D4AF37' },
+  tabBtnActive: { borderBottomColor: '#C9A84C' },
+  tabLabel: { color: '#6E6960', fontSize: 14, fontWeight: '600' },
+  tabLabelActive: { color: '#C9A84C' },
 });

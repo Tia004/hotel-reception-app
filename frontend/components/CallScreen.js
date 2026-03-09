@@ -155,7 +155,7 @@ const CreateRoomModal = ({ visible, onClose, onConfirm }) => {
     );
 };
 
-export default function CallScreen({ user, socket, onLogout }) {
+export default function CallScreen({ user, socket, onLogout, onRoomsUpdate }) {
     const [availableRooms, setAvailableRooms] = useState([]);
     const [currentRoom, setCurrentRoom] = useState(null);
     const [isTemp, setIsTemp] = useState(false);
@@ -213,7 +213,10 @@ export default function CallScreen({ user, socket, onLogout }) {
         if (!socket) return;
         const s = socket;
 
-        const onRoomsUpdate = (rooms) => setAvailableRooms(rooms);
+        const onRoomsUpdate = (rooms) => {
+            setAvailableRooms(rooms);
+            onRoomsUpdate?.(rooms); // lift to App.js for HotelChat sidebar
+        };
         const onRoomCreated = ({ roomId, isTemp: t }) => { setCurrentRoom(roomId); setIsTemp(t); };
         const onRoomJoined = async ({ roomId, peers, isTemp: t }) => {
             setCurrentRoom(roomId);
@@ -287,6 +290,14 @@ export default function CallScreen({ user, socket, onLogout }) {
         startLocalStream();
         loadDevices();
 
+        // Listen for device changes from MediaSettings
+        const handleDeviceChange = (e) => {
+            const { audioIn, audioOut, video } = e.detail || {};
+            startLocalStream(video || null, audioIn || null);
+            if (audioOut) { setSelAudioOut(audioOut); }
+        };
+        if (Platform.OS === 'web') window.addEventListener('gsa-device-change', handleDeviceChange);
+
         return () => {
             s.off('rooms-update', onRoomsUpdate);
             s.off('room-created', onRoomCreated);
@@ -301,8 +312,10 @@ export default function CallScreen({ user, socket, onLogout }) {
             s.off('offer', onOffer);
             s.off('answer', onAnswer);
             s.off('ice-candidate', onIceCandidate);
+            if (Platform.OS === 'web') window.removeEventListener('gsa-device-change', handleDeviceChange);
         };
     }, [socket]);
+
 
     // Chat animation
     useEffect(() => {
