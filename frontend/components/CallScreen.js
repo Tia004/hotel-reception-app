@@ -60,6 +60,7 @@ export default function CallScreen({ user, onLogout }) {
     const peerConnection = useRef(null);
     const dataChannel = useRef(null);
     const currentPeerId = useRef(null);
+    const pendingCandidates = useRef([]); // ICE Candidate queue
 
     useEffect(() => {
         const s = io(SIGNALING_URL);
@@ -82,6 +83,8 @@ export default function CallScreen({ user, onLogout }) {
         s.on('offer', async (data) => {
             if (!peerConnection.current) createPeerConnection(data.caller, s);
             await peerConnection.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            processPendingCandidates(); // Process queued candidates
+
             const answer = await peerConnection.current.createAnswer();
             await peerConnection.current.setLocalDescription(answer);
             s.emit('answer', { target: data.caller, caller: s.id, sdp: answer });
@@ -90,14 +93,20 @@ export default function CallScreen({ user, onLogout }) {
 
         s.on('answer', async (data) => {
             await peerConnection.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            processPendingCandidates(); // Process queued candidates
         });
 
         s.on('ice-candidate', async (data) => {
             if (peerConnection.current) {
-                try {
-                    await peerConnection.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-                } catch (e) {
-                    console.error("Error adding ice candidate", e);
+                if (peerConnection.current.remoteDescription) {
+                    try {
+                        await peerConnection.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    } catch (e) {
+                        console.error("Error adding ice candidate", e);
+                    }
+                } else {
+                    // Queue candidate until remote description is set
+                    pendingCandidates.current.push(data.candidate);
                 }
             }
         });
@@ -111,7 +120,25 @@ export default function CallScreen({ user, onLogout }) {
         };
     }, []);
 
+    const processPendingCandidates = () => {
+        if (peerConnection.current && peerConnection.current.remoteDescription) {
+            pendingCandidates.current.forEach(async (candidate) => {
+                try {
+                    await peerConnection.current.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (e) {
+                    console.error("Error adding queued ice candidate", e);
+                }
+            });
+            pendingCandidates.current = [];
+        }
+    };
+
     const startLocalStream = async (videoDeviceId = null, audioDeviceId = null) => {
+        if (!mediaDevices || !mediaDevices.getUserMedia) {
+            alert("Attenzione: La fotocamera e il microfono sono bloccati. I browser su cellulari richiedono una connessione sicura (HTTPS) per accedere alla fotocamera. Il video in locale funzionerà solo sul server di produzione (es. Render).");
+            return;
+        }
+
         try {
             if (localStream) {
                 localStream.getTracks().forEach(t => t.stop());
