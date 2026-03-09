@@ -4,6 +4,7 @@ import io from 'socket.io-client';
 import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices, RTCView } from '../utils/webrtc';
 import MediaSettings from './MediaSettings';
 import Animated, { FadeIn, FadeInUp, FadeOutDown, SlideInDown, SlideOutDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence, withDelay } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 const SIGNALING_URL = 'http://localhost:3000'; // Hardcoded for prototype
@@ -13,8 +14,6 @@ const configuration = {
         { urls: 'stun:stun.l.google.com:19302' }
     ]
 };
-
-import { LinearGradient } from 'expo-linear-gradient';
 
 // Ambient Glow Animation (Slow breathing instead of chaotic rotation)
 const AmbientGlow = ({ color, size, top, left, delay }) => {
@@ -41,7 +40,7 @@ const AmbientGlow = ({ color, size, top, left, delay }) => {
                 width: size, height: size,
                 backgroundColor: color,
                 borderRadius: size / 2,
-                ...(Platform.OS === 'web' ? { filter: 'blur(80px)' } : { opacity: 0.2, shadowColor: color, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 50 })
+                ...(Platform.OS === 'web' ? { filter: 'blur(80px)', opacity: 0.5 } : { opacity: 0.2, shadowColor: color, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 50 })
             },
             animStyle
         ]} />
@@ -410,94 +409,74 @@ function EmojiContainer({ onSend }) {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#6B38FB', overflow: 'hidden' }, // Electric Purple
+    container: { flex: 1, backgroundColor: '#000', overflow: 'hidden' },
     backgroundGrid: {
         position: 'absolute',
-        width: '200%',
-        height: '200%',
-        opacity: 0.2,
-        borderWidth: 2,
-        borderColor: '#000',
-        borderStyle: 'dashed'
+        width: '100%',
+        height: '100%',
+        opacity: 0, // Hidden for premium look
     },
 
-    remoteVideoContainer: { flex: 1, backgroundColor: '#B2FF05' },
+    remoteVideoContainer: { flex: 1, backgroundColor: '#050505' },
     remoteVideo: { flex: 1, width: '100%', height: '100%', position: 'absolute' },
-    remoteOverlayGradient: { flex: 1, backgroundColor: 'rgba(107, 56, 251, 0.2)' /* Purple tint mix */ },
-    scanlines: {
-        position: 'absolute',
-        top: 0, left: 0, width: '100%', height: '100%',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderWidth: 2,
-        borderColor: '#000',
-        borderStyle: 'dashed', // Cheap CRT scanline simulation based on prior dash techniques
-        opacity: 0.8
-    },
-    brutalistFrame: {
-        position: 'absolute',
-        top: 20, left: 20, right: 20, bottom: 120,
-        borderWidth: 6,
-        borderColor: '#B2FF05',
-        shadowColor: '#000', shadowOffset: { width: 10, height: 10 }, shadowOpacity: 1, shadowRadius: 0
-    },
+    remoteOverlayGradient: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.3)' },
+    scanlines: { opacity: 0 }, // Removed scanlines
+    brutalistFrame: { opacity: 0 }, // Removed frame
 
-    noCallContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#6B38FB', zIndex: 10 },
+    noCallContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0C', zIndex: 10 },
     headerContainer: { position: 'relative', alignItems: 'center' },
-    logoTextShadow: { position: 'absolute', top: 5, left: 5, color: '#B2FF05', fontSize: 50, letterSpacing: -2, fontWeight: '900', transform: [{ rotate: '-3deg' }], fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
-    logoText: { color: '#FFFFFF', fontSize: 50, letterSpacing: -2, fontWeight: '900', marginBottom: 5, transform: [{ rotate: '-3deg' }], zIndex: 2, fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
-    waitingText: { color: '#00E5FF', fontSize: 20, letterSpacing: 4, fontWeight: '900', backgroundColor: '#000', paddingHorizontal: 15, paddingVertical: 5, transform: [{ rotate: '2deg' }] },
+    logoTextShadow: { opacity: 0 },
+    logoText: { color: '#FFFFFF', fontSize: 32, letterSpacing: 6, fontWeight: '200', textAlign: 'center', fontFamily: Platform.OS === 'web' ? 'sans-serif' : (Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif-light') },
+    waitingText: { color: 'rgba(255,255,255,0.4)', fontSize: 12, letterSpacing: 4, fontWeight: '400', marginTop: 15, textTransform: 'uppercase' },
 
-    logoutBtn: { position: 'absolute', top: 60, left: 30, width: 100, height: 50 },
-    logoutBtnShadow: { position: 'absolute', top: 4, left: 4, width: '100%', height: '100%', backgroundColor: '#000', borderWidth: 2, borderColor: '#000' },
-    logoutBtnFront: { width: '100%', height: '100%', backgroundColor: '#FFFFFF', borderWidth: 2, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
-    logoutText: { color: '#FF0055', fontWeight: '900', fontSize: 16 },
+    logoutBtn: { position: 'absolute', top: 50, left: 25, zIndex: 100 },
+    logoutText: { color: 'rgba(255,255,255,0.5)', fontWeight: '400', fontSize: 11, letterSpacing: 2 },
 
     pipContainer: {
         position: 'absolute',
-        top: 60,
+        top: 30,
         right: 30,
-        width: 140,
-        height: 180,
-        backgroundColor: '#FFFFFF',
-        borderWidth: 4,
-        borderColor: '#000',
-        shadowColor: '#000', shadowOffset: { width: 10, height: 10 }, shadowOpacity: 1, shadowRadius: 0,
-        elevation: 8,
-        transform: [{ rotate: '3deg' }] // Funky tilt
+        width: 120,
+        height: 160,
+        backgroundColor: '#000',
+        borderRadius: 20,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.5, shadowRadius: 15,
+        elevation: 10,
     },
     pipVideo: { flex: 1, width: '100%', height: '100%' },
-    pipPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FF0055' },
-    pipPlaceholderText: { color: '#000', fontWeight: '900', fontSize: 18, textAlign: 'center', transform: [{ rotate: '-10deg' }] },
+    pipPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' },
+    pipPlaceholderText: { color: 'rgba(255,255,255,0.3)', fontWeight: '300', fontSize: 12, textAlign: 'center' },
 
-    controlBar: {
+    controlBarWrapper: {
         position: 'absolute',
         bottom: 40,
-        alignSelf: 'center',
-        flexDirection: 'row',
-        backgroundColor: '#FFFFFF',
-        paddingVertical: 15,
-        paddingHorizontal: 25,
-        borderWidth: 4,
-        borderColor: '#000',
-        shadowColor: '#000', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 1, shadowRadius: 0,
-        elevation: 5,
+        width: '100%',
         alignItems: 'center',
-        transform: [{ rotate: '-1deg' }]
+    },
+    controlBar: {
+        flexDirection: 'row',
+        paddingVertical: 15,
+        paddingHorizontal: 30,
+        borderRadius: 100,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.5, shadowRadius: 20,
     },
 
-    iconBtn: { width: 60, height: 60, position: 'relative', marginRight: 15 },
-    iconBtnBack: { position: 'absolute', top: 4, left: 4, width: '100%', height: '100%', backgroundColor: '#000', borderRadius: 30 },
-    iconBtnFront: { width: '100%', height: '100%', backgroundColor: '#00E5FF', borderRadius: 30, borderWidth: 3, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
-    iconText: { fontSize: 26 },
-    iconTextOff: { fontSize: 26, opacity: 0 },
+    iconBtn: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', marginRight: 15 },
+    iconText: { fontSize: 22 },
+    iconTextOff: { fontSize: 22, opacity: 0.3 },
 
-    mainBtnWrapper: { width: 220, height: 65, position: 'relative' },
-    mainBtnShadow: { position: 'absolute', top: 6, left: 6, width: '100%', height: '100%', backgroundColor: '#000', borderWidth: 3, borderColor: '#000' },
-    mainBtnFront: { width: '100%', height: '100%', backgroundColor: '#B2FF05', borderWidth: 3, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
-    mainBtnText: { color: '#000000', fontWeight: '900', letterSpacing: 1.5, fontSize: 18 },
+    mainBtnWrapper: { width: 200, height: 54 },
+    mainBtnGradient: { width: '100%', height: '100%', borderRadius: 100, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+    mainBtnText: { color: '#000', fontWeight: '700', letterSpacing: 2, fontSize: 14 },
 
-    emojiWrapper: { width: 60, height: 60, position: 'relative', marginLeft: 15 },
-    emojiInput: { width: '100%', height: '100%', position: 'absolute', opacity: 0 }, // Invisible input loop
+    emojiWrapper: { width: 50, height: 50, marginLeft: 15, justifyContent: 'center', alignItems: 'center' },
+    emojiInput: { width: '100%', height: '100%', position: 'absolute', opacity: 0 },
 
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
     modalContent: {
@@ -533,3 +512,4 @@ const styles = StyleSheet.create({
     emojiContainer: { position: 'absolute', bottom: 0, alignSelf: 'center', alignItems: 'center' },
     emoji: { fontSize: 45, shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.5, shadowRadius: 10 },
 });
+

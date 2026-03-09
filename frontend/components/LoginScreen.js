@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, Dimensions } from 'react-native';
 import Animated, { FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence, withDelay } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
@@ -10,8 +11,6 @@ const USERS = {
     'reception2': { password: 'password123', role: 'Reception Secondaria' },
     'mobile_lobby': { password: 'password123', role: 'Telefono Hall' }
 };
-
-import { LinearGradient } from 'expo-linear-gradient';
 
 // Ambient Glow Animation (Slow breathing instead of chaotic rotation)
 const AmbientGlow = ({ color, size, top, left, delay }) => {
@@ -38,7 +37,7 @@ const AmbientGlow = ({ color, size, top, left, delay }) => {
                 width: size, height: size,
                 backgroundColor: color,
                 borderRadius: size / 2, // Perfect circle for soft glow
-                ...(Platform.OS === 'web' ? { filter: 'blur(80px)' } : { opacity: 0.2, shadowColor: color, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 50 })
+                ...(Platform.OS === 'web' ? { filter: 'blur(80px)', opacity: 0.5 } : { opacity: 0.2, shadowColor: color, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 50 })
             },
             animStyle
         ]} />
@@ -170,7 +169,7 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         letterSpacing: 4,
         marginBottom: 8,
-        fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif-light',
+        fontFamily: Platform.OS === 'web' ? 'sans-serif' : (Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif-light'),
     },
     subtitle: {
         fontSize: 12,

@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Dimensions, Platform } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { mediaDevices } from '../utils/webrtc';
 import Animated, { SlideInDown, FadeIn, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence, withDelay } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
-
-import { LinearGradient } from 'expo-linear-gradient';
 
 export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
     const [videoDevices, setVideoDevices] = useState([]);
@@ -164,7 +163,7 @@ const styles = StyleSheet.create({
         fontSize: 24,
         letterSpacing: 4,
         fontWeight: '300',
-        fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif-light'
+        fontFamily: Platform.OS === 'web' ? 'sans-serif' : (Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif-light')
     },
     settingGroup: {
         marginBottom: 25,

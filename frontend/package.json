@@ -24,5 +24,8 @@
     "react-native-webrtc": "^124.0.7",
     "socket.io-client": "^4.8.3"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "babel-preset-expo": "^55.0.10"
+  }
 }
