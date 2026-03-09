@@ -52,6 +52,7 @@ export default function CallScreen({ user, onLogout }) {
     const [socket, setSocket] = useState(null);
     const [onlineUsers, setOnlineUsers] = useState([]);
     const [localStream, setLocalStream] = useState(null);
+    const localStreamRef = useRef(null); // Fix for stale closure WebRTC bugs
     const [remoteStream, setRemoteStream] = useState(null);
     const [callModalVisible, setCallModalVisible] = useState(false);
     const [settingsVisible, setSettingsVisible] = useState(false);
@@ -67,6 +68,7 @@ export default function CallScreen({ user, onLogout }) {
         setSocket(s);
 
         s.on('connect', () => {
+            console.log("Connected to signaling server as", user.username);
             s.emit('join', user);
         });
 
@@ -81,6 +83,7 @@ export default function CallScreen({ user, onLogout }) {
         });
 
         s.on('offer', async (data) => {
+            console.log("Received OFFER from", data.caller);
             if (!peerConnection.current) createPeerConnection(data.caller, s);
             await peerConnection.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
             processPendingCandidates(); // Process queued candidates
@@ -89,9 +92,11 @@ export default function CallScreen({ user, onLogout }) {
             await peerConnection.current.setLocalDescription(answer);
             s.emit('answer', { target: data.caller, caller: s.id, sdp: answer });
             currentPeerId.current = data.caller;
+            console.log("Sent ANSWER to", data.caller);
         });
 
         s.on('answer', async (data) => {
+            console.log("Received ANSWER from", data.caller);
             await peerConnection.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
             processPendingCandidates(); // Process queued candidates
         });
@@ -111,12 +116,23 @@ export default function CallScreen({ user, onLogout }) {
             }
         });
 
+        s.on('call-ended', () => {
+            console.log("Remote user ended the call.");
+            if (peerConnection.current) {
+                peerConnection.current.close();
+                peerConnection.current = null;
+            }
+            setRemoteStream(null);
+            currentPeerId.current = null;
+            alert("La chiamata è stata terminata dall'altra postazione.");
+        });
+
         startLocalStream();
 
         return () => {
             s.disconnect();
             if (peerConnection.current) peerConnection.current.close();
-            if (localStream) localStream.getTracks().forEach(track => track.stop());
+            if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => track.stop());
         };
     }, []);
 
@@ -140,8 +156,8 @@ export default function CallScreen({ user, onLogout }) {
         }
 
         try {
-            if (localStream) {
-                localStream.getTracks().forEach(t => t.stop());
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(t => t.stop());
             }
 
             const constraints = {
@@ -151,6 +167,8 @@ export default function CallScreen({ user, onLogout }) {
 
             const stream = await mediaDevices.getUserMedia(constraints);
             setLocalStream(stream);
+            localStreamRef.current = stream;
+            console.log("Local media stream acquired. Video tracks:", stream.getVideoTracks().length);
 
             if (peerConnection.current) {
                 const senders = peerConnection.current.getSenders();
@@ -164,7 +182,7 @@ export default function CallScreen({ user, onLogout }) {
                 });
             }
         } catch (e) {
-            console.error('Failed to get local stream', e);
+            console.error('Failed to get local stream. Permissions denied or hardware missing.', e);
         }
     };
 
@@ -191,18 +209,24 @@ export default function CallScreen({ user, onLogout }) {
         };
 
         pc.ontrack = (event) => {
+            console.log("ONTRACK event received. Streams available:", event.streams ? event.streams.length : 0);
             // Fix for multiple tracks, grab the primary stream
             if (event.streams && event.streams[0]) {
+                console.log("Setting remote stream from event.streams[0]");
                 setRemoteStream(event.streams[0]);
             } else {
+                console.log("Fallback: creating new MediaStream from event.track");
                 // Fallback if needed
                 const newStream = new MediaStream([event.track]);
                 setRemoteStream(newStream);
             }
         };
 
-        if (localStream) {
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+        if (localStreamRef.current) {
+            console.log("Adding local tracks to PeerConnection:", localStreamRef.current.getTracks().length);
+            localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current));
+        } else {
+            console.log("WARNING: localStreamRef.current is null! Sending call without video/audio tracks.");
         }
 
         peerConnection.current = pc;
