@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, Dimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, Dimensions, Image } from 'react-native';
 import Animated, { FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence, withDelay } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -75,6 +75,11 @@ export default function LoginScreen({ onLogin }) {
                     >
                         {/* Premium Typography Header */}
                         <View style={styles.headerContainer}>
+                            <Image
+                                source={require('../assets/logo.png')}
+                                style={{ width: 100, height: 100, marginBottom: 16 }}
+                                resizeMode="contain"
+                            />
                             <Text style={styles.title}>GSA HOTELS</Text>
                             <Text style={styles.subtitle}>COMUNICAZIONI INTERNE</Text>
                         </View>

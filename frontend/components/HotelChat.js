@@ -223,8 +223,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             {(!IS_MOBILE || sidebarVisible) && (
                 <View style={[styles.column, styles.sidebar]}>
                     <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
-                        <Text style={styles.brandName}>GSA COMMUNICATIONS</Text>
-                        <Text style={styles.brandSub}>SISTEMA ALBERGHIERO</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <Image source={require('../assets/logo.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
+                            <Text style={styles.brandName}>GSA HOTELS</Text>
+                        </View>
                     </LinearGradient>
 
                     <ScrollView style={{ flex: 1 }}>
