@@ -115,6 +115,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [expanded, setExpanded] = useState({ duchessa: true, blumen: false, santorsola: false, voice: true, saved: false, users: true });
     const [draft, setDraft] = useState('');
     const [savedChats, setSavedChats] = useState([]);
+    const [replyingTo, setReplyingTo] = useState(null);
+    const [editingMsg, setEditingMsg] = useState(null);
 
     // UI States
     const [profileVisible, setProfileVisible] = useState(false);
@@ -132,6 +134,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [lbVisible, setLbVisible] = useState(false);
     const [lbImages, setLbImages] = useState([]);
     const [lbIdx, setLbIdx] = useState(0);
+
+    const [leftCollapsed, setLeftCollapsed] = useState(false);
+    const [rightCollapsed, setRightCollapsed] = useState(false);
+    const [contextMenu, setContextMenu] = useState(null);
 
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
@@ -175,7 +181,19 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             }));
         });
 
-        const i = setInterval(() => {
+        socket.on('message-edited', ({ channelId, messageId, text }) => {
+            setMessages(p => ({
+                ...p, [channelId]: (p[channelId] || []).map(m => m.id === messageId ? { ...m, text, edited: true } : m)
+            }));
+        });
+
+        socket.on('message-reacted', ({ channelId, messageId, reactions }) => {
+            setMessages(p => ({
+                ...p, [channelId]: (p[channelId] || []).map(m => m.id === messageId ? { ...m, reactions } : m)
+            }));
+        });
+
+        const checkPing = () => {
             const t = Date.now();
             fetch(`${process.env.EXPO_PUBLIC_SIGNALING_URL || 'http://localhost:3000'}/ping`, { cache: 'no-store' })
                 .then(() => {
@@ -183,7 +201,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     setPing(ms);
                     setPingStatus(ms < 100 ? 'Eccellente' : ms < 250 ? 'Buono' : 'Lento');
                 }).catch(() => setPingStatus('Off'));
-        }, 5000);
+        };
+
+        checkPing(); // run immediately
+        const i = setInterval(checkPing, 5000);
 
         return () => {
             socket.off('channel-history');
@@ -198,14 +219,38 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     }, [messages[activeChannel?.id], activeChannel]);
 
-    // ── Actions ────────────────────────────────────────────────────────
+    useEffect(() => {
+        if (Platform.OS !== 'web') return;
+        const onCtx = (e) => { e.preventDefault(); setContextMenu({ x: e.pageX, y: e.pageY }); };
+        const onClk = () => setContextMenu(null);
+        document.addEventListener('contextmenu', onCtx);
+        document.addEventListener('click', onClk);
+        return () => { document.removeEventListener('contextmenu', onCtx); document.removeEventListener('click', onClk); };
+    }, []);
+
     const send = (text = '', imageData = null, gifUrl = null, poll = null, voiceData = null, voiceDuration = 0) => {
         if (!socket || !activeChannel) return;
+
+        if (editingMsg) {
+            socket.emit('edit-message', { channelId: activeChannel.id, messageId: editingMsg.id, text });
+            setEditingMsg(null);
+            setDraft('');
+            return;
+        }
+
         socket.emit('channel-message', {
             channelId: activeChannel.id,
-            text, imageData, gifUrl, poll, voiceData, voiceDuration
+            text, imageData, gifUrl, poll, voiceData, voiceDuration,
+            replyTo: replyingTo ? replyingTo.id : null
         });
         setDraft('');
+        setReplyingTo(null);
+    };
+
+    const reactMessage = (messageId, emoji) => {
+        if (!socket) return;
+        socket.emit('react-message', { channelId: activeChannel.id, messageId, emoji });
+        setContextMenu(null);
     };
 
     const vote = (messageId, optionIndex) => {
@@ -218,14 +263,62 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     // ── Rendering ──────────────────────────────────────────────────────
     return (
         <View style={styles.root}>
+            {contextMenu && (
+                <View style={[styles.contextMenu, { top: contextMenu.y, left: contextMenu.x }]}>
+                    {contextMenu.message ? (
+                        <>
+                            <View style={{ flexDirection: 'row', gap: 10, padding: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' }}>
+                                {['👍', '❤️', '😂', '🔥', '👀'].map(e => (
+                                    <TouchableOpacity key={e} onPress={() => reactMessage(contextMenu.message.id, e)}><Text style={{ fontSize: 18 }}>{e}</Text></TouchableOpacity>
+                                ))}
+                            </View>
+                            <TouchableOpacity style={styles.contextMenuItem} onPress={() => { setReplyingTo(contextMenu.message); setContextMenu(null); }}>
+                                <Icon name="message-square" size={14} color="#C9A84C" /><Text style={styles.contextMenuTxt}>Rispondi</Text>
+                            </TouchableOpacity>
+                            {contextMenu.message.sender === user.username && !contextMenu.message.voiceData && !contextMenu.message.poll && (
+                                <TouchableOpacity style={styles.contextMenuItem} onPress={() => { setEditingMsg(contextMenu.message); setDraft(contextMenu.message.text); setContextMenu(null); }}>
+                                    <Icon name="edit-2" size={14} color="#C9A84C" /><Text style={styles.contextMenuTxt}>Modifica</Text>
+                                </TouchableOpacity>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <TouchableOpacity style={styles.contextMenuItem} onPress={() => setContextMenu(null)}>
+                                <Icon name="info" size={14} color="#C9A84C" /><Text style={styles.contextMenuTxt}>Mostra info</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.contextMenuItem} onPress={() => setContextMenu(null)}>
+                                <Icon name="copy" size={14} color="#C9A84C" /><Text style={styles.contextMenuTxt}>Copia Testo</Text>
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </View>
+            )}
+
+            {leftCollapsed && !IS_MOBILE && (
+                <TouchableOpacity style={styles.leftTrapezoid} onPress={() => setLeftCollapsed(false)}>
+                    <Icon name="chevron-right" size={16} color="#C9A84C" />
+                </TouchableOpacity>
+            )}
+            {rightCollapsed && !IS_MOBILE && (
+                <TouchableOpacity style={styles.rightTrapezoid} onPress={() => setRightCollapsed(false)}>
+                    <Icon name="chevron-left" size={16} color="#C9A84C" />
+                </TouchableOpacity>
+            )}
 
             {/* ── LEFT SIDEBAR ────────────────────────────────────────── */}
-            {(!IS_MOBILE || sidebarVisible) && (
+            {((!IS_MOBILE && !leftCollapsed) || (IS_MOBILE && sidebarVisible)) && (
                 <View style={[styles.column, styles.sidebar]}>
                     <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                            <Image source={require('../assets/logo.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
-                            <Text style={styles.brandName}>GSA HOTELS</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                <Image source={require('../assets/logo.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
+                                <Text style={styles.brandName}>GSA HOTELS</Text>
+                            </View>
+                            {!IS_MOBILE && (
+                                <TouchableOpacity onPress={() => setLeftCollapsed(true)}>
+                                    <Icon name="chevron-left" size={18} color="#554E40" />
+                                </TouchableOpacity>
+                            )}
                         </View>
                     </LinearGradient>
 
@@ -252,8 +345,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     {/* Bottom controls / Crea Stanza */}
                     <View style={styles.sidebarFooter}>
                         {!inCall && (
-                            <TouchableOpacity style={styles.createBtn} onPress={() => socket.emit('create-room')}>
-                                <Icon name="plus-circle" size={18} color="#111" />
+                            <TouchableOpacity style={styles.createBtn} onPress={() => socket.emit('create-room', {})}>
+                                <Icon name="plus" size={18} color="#111" />
                                 <Text style={styles.createBtnTxt}>CREA STANZA VOCALE</Text>
                             </TouchableOpacity>
                         )}
@@ -287,61 +380,122 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     <StatusBadge ping={ping} status={pingStatus} />
                 </View>
 
-                <ScrollView ref={scrollRef} style={styles.messagesScroll} contentContainerStyle={{ padding: 16 }}>
-                    {(messages[activeChannel.id] || []).map(m => (
-                        <View key={m.id} style={[styles.msgRow, m.sender === user.username && styles.msgRowMine]}>
-                            <View style={[styles.bubble, m.sender === user.username ? styles.bubbleMine : styles.bubbleOther]}>
-                                {m.sender !== user.username && <Text style={styles.msgSender}>{m.sender}</Text>}
-                                {m.text ? <Text style={styles.msgText}>{m.text}</Text> : null}
-                                {m.voiceData && <VoiceMessageBubble src={m.voiceData} duration={m.voiceDuration} isMine={m.sender === user.username} />}
-                                {m.poll && <PollMessage msg={m} user={user} onVote={vote} />}
-                                {m.imageData && <Image source={{ uri: m.imageData }} style={styles.msgImg} />}
-                                <View style={styles.msgMeta}>
-                                    <Text style={styles.msgTime}>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                                    {m.sender === user.username && <Icon name="check" size={12} color="rgba(201,168,76,0.5)" />}
-                                </View>
+                <ScrollView ref={scrollRef} style={styles.messagesScroll} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+                    {(messages[activeChannel.id] || []).map(m => {
+                        const isMine = m.sender === user.username;
+                        const repliedMsg = m.replyTo ? (messages[activeChannel.id] || []).find(rm => rm.id === m.replyTo) : null;
+
+                        return (
+                            <View key={m.id} style={[styles.msgRow, isMine && styles.msgRowMine]}>
+                                <TouchableOpacity
+                                    style={[styles.bubbleWrap, isMine ? { alignItems: 'flex-end' } : { alignItems: 'flex-start' }]}
+                                    onLongPress={(e) => { e.preventDefault(); setContextMenu({ x: Math.max(0, e.nativeEvent.pageX - 100), y: e.nativeEvent.pageY, message: m }) }}
+                                    {...(Platform.OS === 'web' ? { onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.pageX, y: e.pageY, message: m }) } } : {})}
+                                >
+                                    {/* Reply banner inside bubble area */}
+                                    {repliedMsg && (
+                                        <View style={styles.repliedBanner}>
+                                            <Icon name="corner-up-left" size={12} color="#554E40" />
+                                            <Text style={styles.repliedBannerTxt} numberOfLines={1}>{repliedMsg.sender}: {repliedMsg.text || 'Contenuto multimediale'}</Text>
+                                        </View>
+                                    )}
+
+                                    <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                                        {!isMine && <Text style={styles.msgSender}>{m.sender}</Text>}
+                                        {m.text ? <Text style={styles.msgText}>{m.text}</Text> : null}
+                                        {m.voiceData && <VoiceMessageBubble src={m.voiceData} duration={m.voiceDuration} isMine={isMine} />}
+                                        {m.poll && <PollMessage msg={m} user={user} onVote={vote} />}
+                                        {m.imageData && <Image source={{ uri: m.imageData }} style={styles.msgImg} />}
+
+                                        <View style={styles.msgMeta}>
+                                            {m.edited && <Text style={styles.msgEdited}>(modificato)</Text>}
+                                            <Text style={styles.msgTime}>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                            {isMine && <Icon name="check" size={12} color="rgba(201,168,76,0.5)" />}
+                                        </View>
+                                    </View>
+
+                                    {/* Reactions */}
+                                    {m.reactions && Object.keys(m.reactions).length > 0 && (
+                                        <View style={styles.reactionsWrap}>
+                                            {Object.entries(m.reactions).map(([emoji, usersArr]) => (
+                                                <TouchableOpacity key={emoji} style={[styles.reactionBadge, usersArr.includes(user.username) && styles.reactionBadgeMy]} onPress={() => reactMessage(m.id, emoji)}>
+                                                    <Text style={styles.reactionEmoji}>{emoji}</Text>
+                                                    <Text style={[styles.reactionCount, usersArr.includes(user.username) && { color: '#C9A84C' }]}>{usersArr.length}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
                             </View>
-                        </View>
-                    ))}
+                        );
+                    })}
                 </ScrollView>
 
-                <View style={styles.inputArea}>
-                    <View style={styles.inputPlusWrap}>
-                        <TouchableOpacity style={styles.plusBtn} onPress={() => setPlusVisible(!plusVisible)}>
-                            <Icon name="plus" size={20} color="#C8C4B8" />
+                <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.06)' }}>
+                    {/* Replying / Editing banner */}
+                    {(replyingTo || editingMsg) && (
+                        <View style={styles.activeActionBanner}>
+                            <Icon name={editingMsg ? "edit-2" : "message-square"} size={14} color="#C9A84C" />
+                            <Text style={styles.activeActionTxt} numberOfLines={1}>
+                                {editingMsg ? `Modifica messaggio` : `Risposta a ${replyingTo.sender}: ${replyingTo.text || 'Multimediale'}`}
+                            </Text>
+                            <TouchableOpacity onPress={() => { setReplyingTo(null); setEditingMsg(null); setDraft(''); }} style={{ padding: 4 }}>
+                                <Icon name="x" size={16} color="#554E40" />
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                    <View style={styles.inputArea}>
+                        <View style={styles.inputPlusWrap}>
+                            <TouchableOpacity style={styles.plusBtn} onPress={() => setPlusVisible(!plusVisible)}>
+                                <Icon name="plus" size={20} color="#C8C4B8" />
+                            </TouchableOpacity>
+                            {plusVisible && (
+                                <View style={styles.plusMenu}>
+                                    <TouchableOpacity style={styles.plusItem} onPress={() => { setPlusVisible(false); setPollVisible(true); }}>
+                                        <Icon name="check" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>Sondaggio</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.plusItem} onPress={() => setPlusVisible(false)}>
+                                        <Icon name="image" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>Immagine</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </View>
+                        <TextInput
+                            style={styles.input}
+                            placeholder={`Scrivi in #${activeChannel.name}...`}
+                            placeholderTextColor="#554E40"
+                            multiline
+                            value={draft}
+                            onChangeText={setDraft}
+                            numberOfLines={1}
+                            {...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})}
+                            onKeyPress={(e) => {
+                                if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+                                    e.preventDefault();
+                                    if (draft.trim()) {
+                                        send(draft);
+                                        setDraft('');
+                                    }
+                                }
+                            }}
+                        />
+                        <VoiceRecorderButton onSend={(data, dur) => send('', null, null, null, data, dur)} />
+                        <TouchableOpacity style={[styles.sendBtn, !!draft.trim() && styles.sendBtnActive]} onPress={() => draft.trim() && send(draft)}>
+                            <Icon name="send" size={16} color={draft.trim() ? '#111' : '#554E40'} />
                         </TouchableOpacity>
-                        {plusVisible && (
-                            <View style={styles.plusMenu}>
-                                <TouchableOpacity style={styles.plusItem} onPress={() => { setPlusVisible(false); setPollVisible(true); }}>
-                                    <Icon name="check" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>Sondaggio</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.plusItem} onPress={() => setPlusVisible(false)}>
-                                    <Icon name="image" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>Immagine</Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
                     </View>
-                    <TextInput
-                        style={styles.input}
-                        placeholder={`Scrivi in #${activeChannel.name}...`}
-                        placeholderTextColor="#554E40"
-                        multiline
-                        value={draft}
-                        onChangeText={setDraft}
-                        numberOfLines={1}
-                        {...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})}
-                    />
-                    <VoiceRecorderButton onSend={(data, dur) => send('', null, null, null, data, dur)} />
-                    <TouchableOpacity style={[styles.sendBtn, !!draft.trim() && styles.sendBtnActive]} onPress={() => draft.trim() && send(draft)}>
-                        <Icon name="send" size={16} color={draft.trim() ? '#111' : '#554E40'} />
-                    </TouchableOpacity>
                 </View>
             </View>
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
-            {!IS_MOBILE && (
+            {!IS_MOBILE && !rightCollapsed && (
                 <View style={[styles.column, styles.rightPanel]}>
-                    <Text style={styles.rightTitle}>OCCUPANTI ONLINE — {onlineUsers.length}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                        <Text style={styles.rightTitle}>OCCUPANTI ONLINE — {onlineUsers.length}</Text>
+                        <TouchableOpacity onPress={() => setRightCollapsed(true)}>
+                            <Icon name="chevron-right" size={18} color="#554E40" />
+                        </TouchableOpacity>
+                    </View>
                     <ScrollView style={{ flex: 1 }}>
                         <TouchableOpacity style={styles.occupancyHeader} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>
                             <Text style={styles.occupancyTitle}>DIPENDENTI</Text>
@@ -422,8 +576,16 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 }
 
 const styles = StyleSheet.create({
-    root: { flex: 1, flexDirection: 'row', backgroundColor: '#0C0B09', ...NO_SELECT },
+    root: { flex: 1, flexDirection: 'row', backgroundColor: '#0C0B09', ...NO_SELECT, position: 'relative' },
     column: { height: '100%', borderRightWidth: 1, borderRightColor: 'rgba(201,168,76,0.06)' },
+
+    contextMenu: { position: 'absolute', backgroundColor: '#1A1812', borderWidth: 1, borderColor: '#C9A84C', borderRadius: 8, padding: 4, elevation: 5, zIndex: 9999 },
+    contextMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingHorizontal: 16 },
+    contextMenuTxt: { color: '#C8C4B8', fontSize: 14, fontWeight: '600' },
+
+    leftTrapezoid: { position: 'absolute', top: '50%', left: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopRightRadius: 8, borderBottomRightRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderRightWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
+    rightTrapezoid: { position: 'absolute', top: '50%', right: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopLeftRadius: 8, borderBottomLeftRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderLeftWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
+
     overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
     modalCard: { width: 400, backgroundColor: '#16140F', borderRadius: 16, padding: 24, gap: 16, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' },
     modalTitle: { color: '#C9A84C', fontSize: 18, fontWeight: '900', letterSpacing: 2, marginBottom: 8 },
@@ -486,10 +648,23 @@ const styles = StyleSheet.create({
     msgSender: { color: '#C9A84C', fontSize: 12, fontWeight: '800', marginBottom: 4 },
     msgText: { color: '#A8A090', fontSize: 16, lineHeight: 22, ...YES_SELECT },
     msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6 },
+    msgEdited: { color: '#554E40', fontSize: 10, fontStyle: 'italic', marginRight: 4 },
     msgTime: { color: '#3A3630', fontSize: 11, fontWeight: '600' },
     msgImg: { width: 280, height: 180, borderRadius: 12, marginTop: 8 },
 
-    inputArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.06)' },
+    bubbleWrap: { maxWidth: '75%' },
+    repliedBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4, paddingHorizontal: 4, opacity: 0.8 },
+    repliedBannerTxt: { color: '#A8A090', fontSize: 12, fontStyle: 'italic' },
+    reactionsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+    reactionBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: 'transparent' },
+    reactionBadgeMy: { backgroundColor: 'rgba(201,168,76,0.1)', borderColor: 'rgba(201,168,76,0.3)' },
+    reactionEmoji: { fontSize: 12 },
+    reactionCount: { color: '#6E6960', fontSize: 11, fontWeight: '700' },
+
+    activeActionBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: 'rgba(201,168,76,0.05)', borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.06)' },
+    activeActionTxt: { flex: 1, color: '#C8C4B8', fontSize: 13, fontStyle: 'italic' },
+
+    inputArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, padding: 12 },
     input: { flex: 1, backgroundColor: '#1C1A12', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10, color: '#C8C4B8', fontSize: 16, maxHeight: SCREEN_H * 0.15 },
     plusBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1C1A12', justifyContent: 'center', alignItems: 'center', marginBottom: 2 },
     plusMenu: { position: 'absolute', bottom: 50, left: 0, width: 200, backgroundColor: '#1A1812', borderRadius: 12, padding: 6, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)', zIndex: 1000 },
@@ -500,7 +675,7 @@ const styles = StyleSheet.create({
 
     // Right Panel
     rightPanel: { width: 240, backgroundColor: '#0C0B09', padding: 20 },
-    rightTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 20 },
+    rightTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
     occupancyHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
     occupancyTitle: { flex: 1, color: '#6E6960', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
     userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },

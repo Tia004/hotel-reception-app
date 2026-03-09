@@ -181,7 +181,7 @@ io.on('connection', (socket) => {
     });
 
     // Send a message to a hotel channel
-    socket.on('channel-message', ({ channelId, text, imageData, gifUrl, poll, voiceData, voiceDuration }) => {
+    socket.on('channel-message', ({ channelId, text, imageData, gifUrl, poll, voiceData, voiceDuration, replyTo }) => {
         const user = users.get(socket.id);
         if (!user || !HOTEL_CHANNELS.includes(channelId)) return;
         const now = Date.now();
@@ -195,6 +195,8 @@ io.on('connection', (socket) => {
             poll: poll ? { ...poll, votes: poll.votes || {}, isMultiple: poll.isMultiple || false } : null,
             voiceData: voiceData || null,
             voiceDuration: voiceDuration || 0,
+            replyTo: replyTo || null,
+            edited: false,
             timestamp: now,
             expiresAt: now + MESSAGE_TTL,
             pinned: false,
@@ -204,6 +206,36 @@ io.on('connection', (socket) => {
         msgs.push(msg);
         channelMessages.set(channelId, msgs);
         io.to(`channel:${channelId}`).emit('channel-message', { channelId, message: msg });
+    });
+
+    socket.on('edit-message', ({ channelId, messageId, text }) => {
+        const msgs = channelMessages.get(channelId);
+        if (!msgs) return;
+        const msg = msgs.find(m => m.id === messageId);
+        if (!msg) return;
+        msg.text = text;
+        msg.edited = true;
+        io.to(`channel:${channelId}`).emit('message-edited', { channelId, messageId, text });
+    });
+
+    socket.on('react-message', ({ channelId, messageId, emoji }) => {
+        const user = users.get(socket.id);
+        if (!user) return;
+        const msgs = channelMessages.get(channelId);
+        if (!msgs) return;
+        const msg = msgs.find(m => m.id === messageId);
+        if (!msg) return;
+
+        if (!msg.reactions) msg.reactions = {};
+        if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+
+        const idx = msg.reactions[emoji].indexOf(user.username);
+        if (idx > -1) msg.reactions[emoji].splice(idx, 1);
+        else msg.reactions[emoji].push(user.username);
+
+        if (msg.reactions[emoji].length === 0) delete msg.reactions[emoji];
+
+        io.to(`channel:${channelId}`).emit('message-reacted', { channelId, messageId, reactions: msg.reactions });
     });
 
     // Poll vote: toggle vote on an option

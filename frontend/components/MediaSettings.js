@@ -13,6 +13,39 @@ import { Icon } from './Icons';
 const getProfile = () => { try { return JSON.parse(localStorage.getItem('gsa_user_profile') || '{}'); } catch { return {}; } };
 const saveProfile = (p) => { try { localStorage.setItem('gsa_user_profile', JSON.stringify(p)); } catch { } };
 
+const CustomSelect = ({ value, options, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const selectedText = options.find(o => o.value === value)?.label || 'Predefinito';
+
+    return (
+        <View style={{ flex: 1, position: 'relative', zIndex: open ? 10 : 1 }}>
+            <TouchableOpacity
+                style={{ paddingVertical: 14, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                onPress={() => setOpen(!open)}
+            >
+                <Text style={{ color: '#C8C4B8', fontSize: 14 }} numberOfLines={1}>{selectedText}</Text>
+                <Icon name={open ? "chevron-up" : "chevron-down"} size={12} color="#554E40" />
+            </TouchableOpacity>
+
+            {open && (
+                <View style={{ position: 'absolute', top: '100%', left: -34, right: -1, marginTop: 4, backgroundColor: '#0C0B0A', borderWidth: 1, borderColor: '#C9A84C', borderRadius: 8, maxHeight: 180, zIndex: 100, overflow: 'hidden' }}>
+                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                        {options.map(opt => (
+                            <TouchableOpacity
+                                key={opt.value}
+                                style={{ padding: 12, backgroundColor: opt.value === value ? 'rgba(201,168,76,0.15)' : 'transparent' }}
+                                onPress={() => { onChange(opt.value); setOpen(false); }}
+                            >
+                                <Text style={{ color: opt.value === value ? '#C9A84C' : '#C8C4B8', fontSize: 13 }} numberOfLines={2}>{opt.label}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                </View>
+            )}
+        </View>
+    );
+};
+
 export default function MediaSettings({ visible, onClose, user }) {
     const [activeTab, setActiveTab] = useState('profilo');
     const [profile, setProfile] = useState(getProfile);
@@ -31,11 +64,20 @@ export default function MediaSettings({ visible, onClose, user }) {
     }, [visible]);
 
     const handleSave = (key, val) => {
-        const updated = { ...profile, [key]: val };
-        setProfile(updated);
-        saveProfile(updated);
-        // Force refresh of the global user object if it's the same reference
-        if (user) user[key] = val;
+        setProfile({ ...profile, [key]: val });
+    };
+
+    const commitChanges = () => {
+        saveProfile(profile);
+        if (user) {
+            user.username = profile.username;
+            user.bio = profile.bio;
+            user.profilePic = profile.profilePic;
+        }
+    };
+
+    const revertChanges = () => {
+        setProfile(getProfile());
     };
 
     const handleDeviceChange = (type, id) => {
@@ -60,8 +102,8 @@ export default function MediaSettings({ visible, onClose, user }) {
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <View style={styles.overlay}>
-                <View style={styles.container}>
+            <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+                <TouchableOpacity activeOpacity={1} style={styles.container}>
                     {/* Sidebar Tabs */}
                     <View style={styles.sidebar}>
                         <Text style={styles.sidebarLabel}>IMPOSTAZIONI UTENTE</Text>
@@ -117,25 +159,31 @@ export default function MediaSettings({ visible, onClose, user }) {
                                             {...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})}
                                         />
                                     </View>
+
+                                    <View style={{ flexDirection: 'row', gap: 16, marginTop: 10 }}>
+                                        <TouchableOpacity style={styles.btnSave} onPress={commitChanges}>
+                                            <Text style={styles.btnSaveTxt}>SALVA</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={styles.btnRevert} onPress={revertChanges}>
+                                            <Text style={styles.btnRevertTxt}>RIPRISTINA MODIFICHE</Text>
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
                             ) : (
                                 <View style={styles.form}>
                                     {['audio', 'video', 'speaker'].map(type => (
-                                        <View key={type} style={styles.inputGroup}>
+                                        <View key={type} style={[styles.inputGroup, { zIndex: type === 'audio' ? 3 : type === 'video' ? 2 : 1 }]}>
                                             <Text style={styles.label}>{type === 'audio' ? 'MICROFONO' : type === 'video' ? 'FOTOCAMERA' : 'ALTOPARLANTI'}</Text>
                                             <View style={styles.select}>
                                                 <Icon name={type === 'audio' ? 'mic' : type === 'video' ? 'camera' : 'volume-2'} size={14} color="#C9A84C" />
-                                                <select
-                                                    style={{ flex: 1, background: 'transparent', border: 'none', color: '#C8C4B8', padding: '14px 4px', fontSize: '15px', appearance: 'none', outline: 'none' }}
+                                                <CustomSelect
                                                     value={devices[type]}
-                                                    onChange={e => handleDeviceChange(type, e.target.value)}
-                                                >
-                                                    <option value="default">Predefinito</option>
-                                                    {availableDevices.filter(d => (type === 'audio' && d.kind === 'audioinput') || (type === 'video' && d.kind === 'videoinput') || (type === 'speaker' && d.kind === 'audiooutput')).map(d => (
-                                                        <option key={d.deviceId} value={d.deviceId}>{d.label || `${type} ${d.deviceId.slice(0, 5)}`}</option>
-                                                    ))}
-                                                </select>
-                                                <Icon name="chevron-down" size={12} color="#554E40" />
+                                                    onChange={v => handleDeviceChange(type, v)}
+                                                    options={[
+                                                        { value: 'default', label: 'Predefinito' },
+                                                        ...availableDevices.filter(d => (type === 'audio' && d.kind === 'audioinput') || (type === 'video' && d.kind === 'videoinput') || (type === 'speaker' && d.kind === 'audiooutput')).map(d => ({ value: d.deviceId, label: d.label || `${type} ${d.deviceId.slice(0, 5)}` }))
+                                                    ]}
+                                                />
                                             </View>
                                         </View>
                                     ))}
@@ -143,8 +191,8 @@ export default function MediaSettings({ visible, onClose, user }) {
                             )}
                         </ScrollView>
                     </View>
-                </View>
-            </View>
+                </TouchableOpacity>
+            </TouchableOpacity>
         </Modal>
     );
 }
@@ -177,4 +225,9 @@ const styles = StyleSheet.create({
     input: { backgroundColor: '#1A1812', borderRadius: 10, padding: 14, color: '#C8C4B8', fontSize: 15, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
 
     select: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1812', borderRadius: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
+
+    btnSave: { backgroundColor: '#C9A84C', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+    btnSaveTxt: { color: '#0A0908', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
+    btnRevert: { backgroundColor: 'rgba(237,66,69,0.1)', borderWidth: 1, borderColor: '#ED4245', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+    btnRevertTxt: { color: '#ED4245', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
 });

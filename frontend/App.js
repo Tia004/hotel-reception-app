@@ -44,6 +44,17 @@ export default function App() {
     } catch (e) {
       console.log('Session restore failed', e);
     }
+
+    // Inject global CSS for Web to remove blue focus outline
+    if (Platform.OS === 'web') {
+      const style = document.createElement('style');
+      style.textContent = `
+        *:focus { outline: none !important; }
+        input:focus { outline: none !important; }
+        textarea:focus { outline: none !important; }
+      `;
+      document.head.appendChild(style);
+    }
   }, []);
 
   // ── Socket Management ──────────────────────────────────────────────────
