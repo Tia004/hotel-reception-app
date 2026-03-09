@@ -755,65 +755,6 @@ export default function CallScreen({ user, onLogout }) {
     );
 }
 
-// Soft floating emoji animation (no chaotic spin)
-function FloatingEmoji({ emoji }) {
-    const animValue = useRef(new RNAnimated.Value(0)).current;
-
-    useEffect(() => {
-        RNAnimated.timing(animValue, {
-            toValue: 1,
-            duration: 2500,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: true,
-        }).start();
-    }, []);
-
-    const translateY = animValue.interpolate({
-        inputRange: [0, 1],
-        outputRange: [20, -150]
-    });
-
-    const scale = animValue.interpolate({
-        inputRange: [0, 0.2, 0.8, 1],
-        outputRange: [0.5, 1.2, 1, 0.8]
-    });
-
-    const opacity = animValue.interpolate({
-        inputRange: [0, 0.8, 1],
-        outputRange: [0, 1, 0]
-    });
-
-    return (
-        <RNAnimated.View style={[styles.emojiContainer, { transform: [{ translateY }, { scale }], opacity }]}>
-            <Text style={styles.emoji}>{emoji}</Text>
-        </RNAnimated.View>
-    );
-}
-
-function EmojiContainer({ onSend }) {
-    const [text, setText] = useState('');
-
-    return (
-        <View style={styles.emojiWrapper}>
-            <LinearGradient colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.01)']} style={styles.iconBtnGradient}>
-                <Text style={styles.iconText}>😆</Text>
-            </LinearGradient>
-            <TextInput
-                style={styles.emojiInput}
-                value={text}
-                onChangeText={(val) => {
-                    if (val && val.trim().length > 0) {
-                        onSend(val);
-                        setText('');
-                    }
-                }}
-                placeholder=""
-                autoCorrect={false}
-            />
-        </View>
-    );
-}
-
 // --- V2.1.0 Helper Components ---
 const DiscordIcon = ({ icon, color = "#FFF", size = 20 }) => (
     <Text style={{ color, fontSize: size }}>{icon}</Text>
