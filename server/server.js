@@ -24,6 +24,32 @@ io.on('connection', (socket) => {
     // When a user logs in and joins the signaling server
     socket.on('join', (data) => {
         const { username, station } = data;
+
+        // --- ENFORCE UNIQUE SESSIONS ---
+        // Check if a user with the same username AND station is already connected
+        for (const [existingSocketId, user] of users.entries()) {
+            if (user.username === username && user.station === station) {
+                // Duplicate found! We need to disconnect the older session.
+                console.log(`Duplicate session detected for ${username} at ${station}. Disconnecting older session (${existingSocketId}).`);
+
+                // Notify the old client so indicating why they are being disconnected
+                io.to(existingSocketId).emit('force-disconnect', {
+                    reason: 'Un altro dispositivo ha effettuato l\'accesso con queste credenziali.'
+                });
+
+                // Get the socket instance and forcefully disconnect it
+                const oldSocket = io.sockets.sockets.get(existingSocketId);
+                if (oldSocket) {
+                    oldSocket.disconnect(true); // true means close the underlying connection
+                }
+
+                // Remove them from the active users map
+                users.delete(existingSocketId);
+            }
+        }
+        // ---------------------------------
+
+        // Add the new valid session
         users.set(socket.id, { id: socket.id, username, station });
 
         // Broadcast updated user list to everyone
@@ -60,12 +86,14 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log(`User disconnected: ${socket.id}`);
-        users.delete(socket.id);
-        // Broadcast updated user list
-        io.emit('users-update', Array.from(users.values()));
+        // Only delete if they are actually in the map (might have been removed by force-disconnect)
+        if (users.has(socket.id)) {
+            users.delete(socket.id);
+            // Broadcast updated user list
+            io.emit('users-update', Array.from(users.values()));
+        }
     });
 });
-
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Signaling server running on port ${PORT}`);

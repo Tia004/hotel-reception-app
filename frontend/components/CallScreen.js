@@ -7,7 +7,8 @@ import Animated, { FadeIn, FadeInUp, FadeOutDown, SlideInDown, SlideOutDown, use
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
-const SIGNALING_URL = 'http://localhost:3000'; // Hardcoded for prototype
+// Use environment variable for production (e.g. Render), fallback to local IP
+const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || `http://192.168.1.46:3000`;
 
 const configuration = {
     iceServers: [
@@ -66,6 +67,12 @@ export default function CallScreen({ user, onLogout }) {
 
         s.on('connect', () => {
             s.emit('join', user);
+        });
+
+        s.on('force-disconnect', (data) => {
+            alert(`Disconnesso: ${data.reason}`);
+            s.disconnect();
+            onLogout();
         });
 
         s.on('users-update', (users) => {
