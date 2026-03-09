@@ -243,8 +243,19 @@ export default function CallScreen({ user, onLogout }) {
                     {/* Pop filter overlay */}
                     <View style={styles.remoteOverlayGradient} />
 
+                    {/* Retrofuturism: CRT Scanlines */}
+                    <View style={styles.scanlines} pointerEvents="none" />
+
                     {/* Brutalist Frame overlay */}
-                    <View style={styles.brutalistFrame} pointerEvents="none" />
+                    <View style={styles.brutalistFrame} pointerEvents="none">
+                        {/* Collage Elements */}
+                        <View style={[styles.sticker, { top: -20, right: -20, transform: [{ rotate: '15deg' }] }]}>
+                            <Text style={{ fontSize: 50 }}>⚡</Text>
+                        </View>
+                        <View style={[styles.doodleTag, { bottom: 20, left: -20, transform: [{ rotate: '-8deg' }] }]}>
+                            <Text style={styles.doodleText}>LIVE</Text>
+                        </View>
+                    </View>
                 </Animated.View>
             ) : (
                 <Animated.View entering={FadeIn} style={styles.noCallContainer}>
@@ -395,10 +406,17 @@ function FloatingEmoji({ emoji }) {
         outputRange: [0, 2, 1.5, 0] // Massive Pop out
     });
 
+    const opacity = animValue.interpolate({
+        inputRange: [0, 0.8, 1],
+        outputRange: [1, 1, 0] // Fade out at very top
+    });
+
     return (
-        <RNAnimated.Text style={[styles.emoji, { transform: [{ translateY }, { translateX }, { scale }, { rotate: rotation }] }]}>
-            {emoji}
-        </RNAnimated.Text>
+        <RNAnimated.View style={[styles.emojiContainer, { transform: [{ translateY }, { translateX }, { scale }, { rotate: rotation }], opacity }]}>
+            <Text style={styles.emoji}>{emoji}</Text>
+            {/* Gamification popup points */}
+            <Text style={styles.scorePopup}>+10</Text>
+        </RNAnimated.View>
     );
 }
 
@@ -442,6 +460,15 @@ const styles = StyleSheet.create({
     remoteVideoContainer: { flex: 1, backgroundColor: '#B2FF05' },
     remoteVideo: { flex: 1, width: '100%', height: '100%', position: 'absolute' },
     remoteOverlayGradient: { flex: 1, backgroundColor: 'rgba(107, 56, 251, 0.2)' /* Purple tint mix */ },
+    scanlines: {
+        position: 'absolute',
+        top: 0, left: 0, width: '100%', height: '100%',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderWidth: 2,
+        borderColor: '#000',
+        borderStyle: 'dashed', // Cheap CRT scanline simulation based on prior dash techniques
+        opacity: 0.8
+    },
     brutalistFrame: {
         position: 'absolute',
         top: 20, left: 20, right: 20, bottom: 120,
@@ -545,5 +572,32 @@ const styles = StyleSheet.create({
     cancelBtnText: { color: '#FF0055', letterSpacing: 1, fontSize: 18, fontWeight: '900' },
 
     reactionOverlay: { position: 'absolute', bottom: 150, right: 80, width: 80, height: 400 },
-    emoji: { position: 'absolute', bottom: 0, fontSize: 80, alignSelf: 'center', shadowColor: '#000', shadowOffset: { width: 5, height: 5 }, shadowOpacity: 1, shadowRadius: 0 }
+    emojiContainer: { position: 'absolute', bottom: 0, alignSelf: 'center', alignItems: 'center' },
+    emoji: { fontSize: 80, shadowColor: '#000', shadowOffset: { width: 5, height: 5 }, shadowOpacity: 1, shadowRadius: 0 },
+    scorePopup: { color: '#B2FF05', fontSize: 24, fontWeight: '900', backgroundColor: '#000', padding: 5, borderWidth: 2, borderColor: '#B2FF05', marginTop: -15, transform: [{ rotate: '-15deg' }] },
+
+    sticker: {
+        position: 'absolute',
+        shadowColor: '#000',
+        shadowOffset: { width: 5, height: 5 },
+        shadowOpacity: 1,
+        shadowRadius: 0
+    },
+    doodleTag: {
+        position: 'absolute',
+        backgroundColor: '#FF0055',
+        padding: 5,
+        borderWidth: 3,
+        borderColor: '#000',
+        shadowColor: '#000',
+        shadowOffset: { width: 5, height: 5 },
+        shadowOpacity: 1,
+        shadowRadius: 0
+    },
+    doodleText: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: '#000',
+        fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    }
 });

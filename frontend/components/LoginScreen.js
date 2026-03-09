@@ -45,6 +45,24 @@ const FunkyShape = ({ color, size, top, left, delay }) => {
     );
 };
 
+// Collage Sticker Overlay (Figma Trend 11: Maximalism/Collage)
+const CollageStickers = () => (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {/* Neon Star Sticker */}
+        <View style={[styles.sticker, { top: height * 0.15, left: width * 0.1, transform: [{ rotate: '-15deg' }] }]}>
+            <Text style={{ fontSize: 60 }}>⭐</Text>
+        </View>
+
+        {/* Fake "Tape" overlay */}
+        <View style={[styles.tapeSticker, { top: height * 0.4, right: -40, transform: [{ rotate: '45deg' }] }]} />
+
+        {/* Digital "Doodle" Tag */}
+        <View style={[styles.doodleTag, { bottom: height * 0.2, left: width * 0.05, transform: [{ rotate: '12deg' }] }]}>
+            <Text style={styles.doodleText}>#NOT_MINIMAL</Text>
+        </View>
+    </View>
+);
+
 export default function LoginScreen({ onLogin }) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
