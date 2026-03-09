@@ -172,15 +172,25 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Broadcast Chat Messages
+    // Broadcast Chat Messages — use socket.to (excludes sender) to prevent double messages
     socket.on('chat-message', (data) => {
         const user = users.get(socket.id);
         if (user && user.roomId) {
-            // data: { id, text, fileUrl, fileType, color, timestamp }
-            io.to(user.roomId).emit('chat-message', {
+            socket.to(user.roomId).emit('chat-message', {
                 socketId: socket.id,
                 sender: user.username,
                 ...data
+            });
+        }
+    });
+
+    // Relay emoji reactions to the rest of the room
+    socket.on('emoji-reaction', (data) => {
+        const user = users.get(socket.id);
+        if (user && user.roomId) {
+            socket.to(user.roomId).emit('emoji-reaction', {
+                socketId: socket.id,
+                emoji: data.emoji
             });
         }
     });
