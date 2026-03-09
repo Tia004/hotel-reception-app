@@ -146,6 +146,47 @@ io.on('connection', (socket) => {
         io.to(data.target).emit('call-ended', data);
     });
 
+    // --- V2.1.0 Discord-style Feature Synchronization ---
+
+    // Broadcast Microphone/Camera mute states to the entire room
+    socket.on('media-state-change', (data) => {
+        const user = users.get(socket.id);
+        if (user && user.roomId) {
+            // data: { micMuted: boolean, camMuted: boolean, profilePic: string }
+            socket.to(user.roomId).emit('media-state-change', {
+                socketId: socket.id,
+                ...data
+            });
+        }
+    });
+
+    // Broadcast Hand Raise toggles
+    socket.on('hand-raise', (data) => {
+        const user = users.get(socket.id);
+        if (user && user.roomId) {
+            // data: { isRaised: boolean }
+            socket.to(user.roomId).emit('hand-raise', {
+                socketId: socket.id,
+                isRaised: data.isRaised
+            });
+        }
+    });
+
+    // Broadcast Chat Messages
+    socket.on('chat-message', (data) => {
+        const user = users.get(socket.id);
+        if (user && user.roomId) {
+            // data: { id, text, fileUrl, fileType, color, timestamp }
+            io.to(user.roomId).emit('chat-message', {
+                socketId: socket.id,
+                sender: user.username,
+                ...data
+            });
+        }
+    });
+
+    // ---------------------------------------------------
+
     socket.on('disconnect', () => {
         console.log(`User disconnected: ${socket.id}`);
         const user = users.get(socket.id);
