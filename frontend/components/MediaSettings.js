@@ -209,8 +209,12 @@ export default function MediaSettings({ visible, onClose, user }) {
 const styles = StyleSheet.create({
     overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
     modalWrapper: {
-        width: '90%', maxWidth: 780, height: '80%', maxHeight: 600,
-        flexDirection: 'row', borderRadius: 8, overflow: 'hidden',
+        width: Platform.OS === 'web' && Dimensions.get('window').width >= 600 ? '90%' : '100%',
+        maxWidth: 780,
+        height: Platform.OS === 'web' && Dimensions.get('window').height >= 500 ? '85%' : '100%',
+        maxHeight: 620,
+        flexDirection: 'row', borderRadius: Platform.OS === 'web' && Dimensions.get('window').width >= 600 ? 8 : 0,
+        overflow: 'hidden',
         backgroundColor: '#313338',
         shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.9, shadowRadius: 40,
     },

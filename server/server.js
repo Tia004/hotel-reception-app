@@ -5,200 +5,227 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
-app.set('trust proxy', 1); // Necessario per load-balancer HTTPS come Render
+app.set('trust proxy', 1);
 app.use(cors());
+app.use(express.json());
 
-// Serve a un semplice ping dal frontend per svegliare il server Render se è in sleep
 app.get('/ping', (req, res) => res.status(200).send('pong'));
 
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
+    cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
-// Store connected users. Map of socket.id -> { id, username, station, roomId }
-const users = new Map();
-// Store active rooms. Map of roomId -> { id, name, creatorName, peers: [socketId] }
-const rooms = new Map();
+// ─── Data Stores ───────────────────────────────────────────────────────────────
+const users = new Map();          // socketId → { id, username, station, roomId }
+const rooms = new Map();          // roomId → { id, name, creatorName, peers, isTemp }
 
+// Hotel channel messages: channelId → [{ id, sender, text, timestamp, expiresAt, pinned, reactions }]
+const channelMessages = new Map();
+const pinnedMessages = new Map(); // channelId → [message]
+
+const HOTEL_CHANNELS = [
+    'duchessa-generale', 'duchessa-media', 'duchessa-annunci',
+    'blumen-generale', 'blumen-media', 'blumen-annunci',
+    'santorsola-generale', 'santorsola-media', 'santorsola-annunci',
+];
+HOTEL_CHANNELS.forEach(ch => {
+    channelMessages.set(ch, []);
+    pinnedMessages.set(ch, []);
+});
+
+const MESSAGE_TTL = 48 * 60 * 60 * 1000; // 48 hours
+
+// Auto-cleanup expired messages every 10 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [chId, msgs] of channelMessages.entries()) {
+        channelMessages.set(chId, msgs.filter(m => m.expiresAt > now));
+    }
+    console.log('[Cleanup] Expired messages removed');
+}, 10 * 60 * 1000);
+
+// ─── Room Helpers ──────────────────────────────────────────────────────────────
 function broadcastRooms() {
-    // Convert rooms map to array for the lobby, filtering out full rooms (max 2 for now to ensure 1v1 stability)
-    const availableRooms = Array.from(rooms.values()).filter(r => r.peers.length < 2);
-    io.emit('rooms-update', availableRooms);
+    const available = Array.from(rooms.values()).filter(r => r.peers.length < 2);
+    io.emit('rooms-update', available);
 }
 
+// ─── Socket.IO ────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
+    console.log(`Connected: ${socket.id}`);
 
-    // When a user logs in
+    // ── Auth ────────────────────────────────────────────────────────────────
     socket.on('join', (data) => {
         const { username, station } = data;
-
         // Enforce unique sessions
-        for (const [existingSocketId, user] of users.entries()) {
-            if (user.username === username && user.station === station) {
-                console.log(`Duplicate session detected for ${username} at ${station}. Disconnecting older session (${existingSocketId}).`);
-                io.to(existingSocketId).emit('force-disconnect', {
-                    reason: 'Un altro dispositivo ha effettuato l\'accesso con queste credenziali.'
-                });
-                const oldSocket = io.sockets.sockets.get(existingSocketId);
-                if (oldSocket) oldSocket.disconnect(true);
-                users.delete(existingSocketId);
+        for (const [sid, u] of users.entries()) {
+            if (u.username === username && u.station === station) {
+                io.to(sid).emit('force-disconnect', { reason: "Un altro dispositivo ha effettuato l'accesso con queste credenziali." });
+                const old = io.sockets.sockets.get(sid);
+                if (old) old.disconnect(true);
+                users.delete(sid);
             }
         }
-
         users.set(socket.id, { id: socket.id, username, station, roomId: null });
-        broadcastRooms(); // Send current rooms to the newly joined user
+        broadcastRooms();
     });
 
-    // Create a new room
-    socket.on('create-room', () => {
+    // ── Room Management ──────────────────────────────────────────────────────
+    socket.on('create-room', ({ isTemp = false } = {}) => {
         const user = users.get(socket.id);
         if (!user) return;
-
-        // Generate a simple 4-digit code
         const roomId = Math.floor(1000 + Math.random() * 9000).toString();
         rooms.set(roomId, {
             id: roomId,
             name: `Stanza di ${user.username}`,
             creatorName: user.username,
             creatorStation: user.station,
-            peers: [socket.id]
+            peers: [socket.id],
+            isTemp,
+            chatMessages: [],   // in-call chat, optional persistence
         });
-
         user.roomId = roomId;
         socket.join(roomId);
-
-        socket.emit('room-created', { roomId });
+        socket.emit('room-created', { roomId, isTemp });
         broadcastRooms();
-        console.log(`${user.username} created room ${roomId}`);
     });
 
-    // Join an existing room
     socket.on('join-room', ({ roomId }) => {
         const user = users.get(socket.id);
         const room = rooms.get(roomId);
-
-        if (!user || !room) {
-            socket.emit('room-error', { message: 'Stanza non trovata.' });
-            return;
-        }
-        if (room.peers.length >= 2) {
-            socket.emit('room-error', { message: 'Stanza al completo.' });
-            return;
-        }
-
+        if (!user || !room) { socket.emit('room-error', { message: 'Stanza non trovata.' }); return; }
+        if (room.peers.length >= 2) { socket.emit('room-error', { message: 'Stanza al completo.' }); return; }
         room.peers.push(socket.id);
         user.roomId = roomId;
         socket.join(roomId);
-
-        socket.emit('room-joined', { roomId, peers: room.peers });
-
-        // Let the other peer(s) know someone joined, so they can start WebRTC
-        socket.to(roomId).emit('user-joined-room', {
-            socketId: socket.id,
-            username: user.username,
-            station: user.station
-        });
-
+        socket.emit('room-joined', { roomId, peers: room.peers, isTemp: room.isTemp });
+        socket.to(roomId).emit('user-joined-room', { socketId: socket.id, username: user.username });
         broadcastRooms();
-        console.log(`${user.username} joined room ${roomId}`);
     });
 
-    // Leave a room
     socket.on('leave-room', () => {
         const user = users.get(socket.id);
         if (!user || !user.roomId) return;
-
         const roomId = user.roomId;
         const room = rooms.get(roomId);
         if (room) {
             room.peers = room.peers.filter(id => id !== socket.id);
             socket.to(roomId).emit('user-left-room', { socketId: socket.id });
             socket.leave(roomId);
-
-            // If empty, delete the room
-            if (room.peers.length === 0) {
-                rooms.delete(roomId);
-            }
+            if (room.peers.length === 0) rooms.delete(roomId);
         }
         user.roomId = null;
         broadcastRooms();
     });
 
-    // WebRTC Signaling routing (now targeted by socketId still, but scoped conceptually to rooms)
-    socket.on('offer', (data) => {
-        io.to(data.target).emit('offer', data);
-    });
+    // ── WebRTC Signaling ────────────────────────────────────────────────────
+    socket.on('offer', (d) => io.to(d.target).emit('offer', d));
+    socket.on('answer', (d) => io.to(d.target).emit('answer', d));
+    socket.on('ice-candidate', (d) => io.to(d.target).emit('ice-candidate', d));
 
-    socket.on('answer', (data) => {
-        io.to(data.target).emit('answer', data);
-    });
-
-    socket.on('ice-candidate', (data) => {
-        io.to(data.target).emit('ice-candidate', data);
-    });
-
-    socket.on('call-ended', (data) => {
-        io.to(data.target).emit('call-ended', data);
-    });
-
-    // --- V2.1.0 Discord-style Feature Synchronization ---
-
-    // Broadcast Microphone/Camera mute states to the entire room
+    // ── In-Call Media State ──────────────────────────────────────────────────
     socket.on('media-state-change', (data) => {
         const user = users.get(socket.id);
-        if (user && user.roomId) {
-            // data: { micMuted: boolean, camMuted: boolean, profilePic: string }
-            socket.to(user.roomId).emit('media-state-change', {
-                socketId: socket.id,
-                ...data
-            });
-        }
+        if (user?.roomId) socket.to(user.roomId).emit('media-state-change', { socketId: socket.id, ...data });
     });
 
-    // Broadcast Hand Raise toggles
     socket.on('hand-raise', (data) => {
         const user = users.get(socket.id);
-        if (user && user.roomId) {
-            // data: { isRaised: boolean }
-            socket.to(user.roomId).emit('hand-raise', {
-                socketId: socket.id,
-                isRaised: data.isRaised
-            });
-        }
+        if (user?.roomId) socket.to(user.roomId).emit('hand-raise', { socketId: socket.id, isRaised: data.isRaised });
     });
 
-    // Broadcast Chat Messages — use socket.to (excludes sender) to prevent double messages
+    // ── In-Call Chat (room chat, not hotel channels) ──────────────────────────
     socket.on('chat-message', (data) => {
         const user = users.get(socket.id);
-        if (user && user.roomId) {
-            socket.to(user.roomId).emit('chat-message', {
-                socketId: socket.id,
-                sender: user.username,
-                ...data
-            });
-        }
+        if (!user?.roomId) return;
+        // socket.to → excludes sender, so no double message
+        socket.to(user.roomId).emit('chat-message', {
+            socketId: socket.id,
+            sender: user.username,
+            ...data
+        });
     });
 
-    // Relay emoji reactions to the rest of the room
+    // ── Emoji Reactions (in-call) ────────────────────────────────────────────
     socket.on('emoji-reaction', (data) => {
         const user = users.get(socket.id);
-        if (user && user.roomId) {
-            socket.to(user.roomId).emit('emoji-reaction', {
-                socketId: socket.id,
-                emoji: data.emoji
-            });
-        }
+        if (user?.roomId) socket.to(user.roomId).emit('emoji-reaction', { socketId: socket.id, emoji: data.emoji });
     });
 
-    // ---------------------------------------------------
+    // ── Hotel Channel Chat ────────────────────────────────────────────────────
+    socket.on('join-channel', ({ channelId }) => {
+        socket.join(`channel:${channelId}`);
+    });
 
+    socket.on('leave-channel', ({ channelId }) => {
+        socket.leave(`channel:${channelId}`);
+    });
+
+    // Get history for a channel (messages not yet expired)
+    socket.on('get-channel-history', ({ channelId }) => {
+        const now = Date.now();
+        const msgs = (channelMessages.get(channelId) || []).filter(m => m.expiresAt > now);
+        const pinned = pinnedMessages.get(channelId) || [];
+        socket.emit('channel-history', { channelId, messages: msgs, pinned });
+    });
+
+    // Send a message to a hotel channel
+    socket.on('channel-message', ({ channelId, text, imageData, gifUrl }) => {
+        const user = users.get(socket.id);
+        if (!user || !HOTEL_CHANNELS.includes(channelId)) return;
+        const now = Date.now();
+        const msg = {
+            id: `${socket.id}-${now}`,
+            sender: user.username,
+            station: user.station,
+            text,
+            imageData: imageData || null,
+            gifUrl: gifUrl || null,
+            timestamp: now,
+            expiresAt: now + MESSAGE_TTL,
+            pinned: false,
+            reactions: {},
+        };
+        const msgs = channelMessages.get(channelId) || [];
+        msgs.push(msg);
+        channelMessages.set(channelId, msgs);
+        // Broadcast to EVERYONE in this channel room (including sender for consistency)
+        io.to(`channel:${channelId}`).emit('channel-message', { channelId, message: msg });
+    });
+
+    // Pin / unpin a message
+    socket.on('pin-message', ({ channelId, messageId }) => {
+        const msgs = channelMessages.get(channelId) || [];
+        const msg = msgs.find(m => m.id === messageId);
+        if (!msg) return;
+        msg.pinned = true;
+        const pinned = pinnedMessages.get(channelId) || [];
+        if (!pinned.find(p => p.id === messageId)) pinned.push(msg);
+        pinnedMessages.set(channelId, pinned);
+        io.to(`channel:${channelId}`).emit('message-pinned', { channelId, message: msg });
+    });
+
+    socket.on('unpin-message', ({ channelId, messageId }) => {
+        const msgs = channelMessages.get(channelId) || [];
+        const msg = msgs.find(m => m.id === messageId);
+        if (msg) msg.pinned = false;
+        const pinned = (pinnedMessages.get(channelId) || []).filter(p => p.id !== messageId);
+        pinnedMessages.set(channelId, pinned);
+        io.to(`channel:${channelId}`).emit('message-unpinned', { channelId, messageId });
+    });
+
+    // React to a message in a hotel channel
+    socket.on('channel-reaction', ({ channelId, messageId, emoji }) => {
+        const msgs = channelMessages.get(channelId) || [];
+        const msg = msgs.find(m => m.id === messageId);
+        if (!msg) return;
+        msg.reactions[emoji] = (msg.reactions[emoji] || 0) + 1;
+        io.to(`channel:${channelId}`).emit('channel-reaction-update', { channelId, messageId, emoji, count: msg.reactions[emoji] });
+    });
+
+    // ── Disconnect ────────────────────────────────────────────────────────────
     socket.on('disconnect', () => {
-        console.log(`User disconnected: ${socket.id}`);
         const user = users.get(socket.id);
         if (user) {
             if (user.roomId) {
@@ -206,17 +233,15 @@ io.on('connection', (socket) => {
                 if (room) {
                     room.peers = room.peers.filter(id => id !== socket.id);
                     socket.to(user.roomId).emit('user-left-room', { socketId: socket.id });
-                    if (room.peers.length === 0) {
-                        rooms.delete(user.roomId);
-                    }
+                    if (room.peers.length === 0) rooms.delete(user.roomId);
                 }
             }
             users.delete(socket.id);
             broadcastRooms();
         }
+        console.log(`Disconnected: ${socket.id}`);
     });
 });
+
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Signaling server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
