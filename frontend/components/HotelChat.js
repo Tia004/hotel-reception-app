@@ -121,6 +121,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [settingsVisible, setSettingsVisible] = useState(false);
     const [emojiVisible, setEmojiVisible] = useState(false);
     const [plusVisible, setPlusVisible] = useState(false);
+    const [pollVisible, setPollVisible] = useState(false);
     const [pollDraft, setPollDraft] = useState({ question: '', options: ['', ''], isMultiple: false });
 
     const [pinnedVisible, setPinnedVisible] = useState(false);
@@ -468,7 +469,7 @@ const styles = StyleSheet.create({
     statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.04)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
     statusBadgeDot: { width: 8, height: 8, borderRadius: 4 },
     statusBadgeTxt: { color: '#C8C4B8', fontSize: 12, fontWeight: '600' },
-    statusDetail: { position: 'absolute', top: 40, right: 0, width: 180, backgroundColor: '#1A1812', borderRadius: 10, padding: 14, borderSize: 1, borderColor: 'rgba(201,168,76,0.2)', zIndex: 100 },
+    statusDetail: { position: 'absolute', top: 40, right: 0, width: 180, backgroundColor: '#1A1812', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)', zIndex: 100 },
     statusDetailTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', marginBottom: 10 },
     statusDetailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
     statusDetailLbl: { color: '#6E6960', fontSize: 12 },

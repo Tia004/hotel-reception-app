@@ -167,7 +167,7 @@ export function VoiceMessageBubble({ src, duration = 0, isMine }) {
                     return (
                         <Animated.View key={i} style={[styles.bar, {
                             backgroundColor: filled ? accentColor : (isMine ? 'rgba(201,168,76,0.25)' : 'rgba(255,255,255,0.12)'),
-                            scaleY: anim,
+                            transform: [{ scaleY: anim }]
                         }]} />
                     );
                 })}
