@@ -14,22 +14,22 @@ const configuration = {
     ]
 };
 
-// Funky Background Element Animation
-const FunkyShape = ({ color, size, top, left, delay }) => {
-    const rotation = useSharedValue(0);
+import { LinearGradient } from 'expo-linear-gradient';
+
+// Ambient Glow Animation (Slow breathing instead of chaotic rotation)
+const AmbientGlow = ({ color, size, top, left, delay }) => {
     const scale = useSharedValue(1);
+    const opacity = useSharedValue(0.4);
 
     React.useEffect(() => {
-        rotation.value = withDelay(delay, withRepeat(withTiming(360, { duration: 12000, easing: Easing.linear }), -1, false));
-        scale.value = withDelay(delay, withRepeat(withSequence(withTiming(1.3, { duration: 2000 }), withTiming(0.9, { duration: 2000 })), -1, true));
+        scale.value = withDelay(delay, withRepeat(withSequence(withTiming(1.3, { duration: 6000, easing: Easing.inOut(Easing.ease) }), withTiming(0.9, { duration: 6000, easing: Easing.inOut(Easing.ease) })), -1, true));
+        opacity.value = withDelay(delay, withRepeat(withSequence(withTiming(0.7, { duration: 6000, easing: Easing.inOut(Easing.ease) }), withTiming(0.4, { duration: 6000, easing: Easing.inOut(Easing.ease) })), -1, true));
     }, []);
 
     const animStyle = useAnimatedStyle(() => {
         return {
-            transform: [
-                { rotate: `${rotation.value}deg` },
-                { scale: scale.value }
-            ]
+            transform: [{ scale: scale.value }],
+            opacity: opacity.value
         };
     });
 
@@ -40,10 +40,8 @@ const FunkyShape = ({ color, size, top, left, delay }) => {
                 top, left,
                 width: size, height: size,
                 backgroundColor: color,
-                borderRadius: size * 0.4,
-                opacity: 0.9,
-                borderWidth: 4,
-                borderColor: '#000'
+                borderRadius: size / 2,
+                filter: [{ blur: 80 }]
             },
             animStyle
         ]} />
@@ -221,13 +219,11 @@ export default function CallScreen({ user, onLogout }) {
 
     return (
         <View style={styles.container}>
-            {/* Pop-Art Background Elements */}
-            <View style={styles.backgroundGrid} />
+            {/* Elegant Dark Background Elements */}
             {!remoteStream && (
                 <>
-                    <FunkyShape color="#B2FF05" size={250} top={50} left={-80} delay={0} />
-                    <FunkyShape color="#FF0055" size={180} top={height * 0.4} left={width * 0.6} delay={800} />
-                    <FunkyShape color="#00E5FF" size={220} top={height * 0.7} left={-40} delay={400} />
+                    <AmbientGlow color="#1e1836" size={400} top={50} left={-80} delay={0} />
+                    <AmbientGlow color="#3a2e1d" size={300} top={height * 0.4} left={width * 0.6} delay={2000} />
                 </>
             )}
 
@@ -240,36 +236,23 @@ export default function CallScreen({ user, onLogout }) {
                         style={styles.remoteVideo}
                         objectFit="cover"
                     />
-                    {/* Pop filter overlay */}
-                    <View style={styles.remoteOverlayGradient} />
-
-                    {/* Retrofuturism: CRT Scanlines */}
-                    <View style={styles.scanlines} pointerEvents="none" />
-
-                    {/* Brutalist Frame overlay */}
-                    <View style={styles.brutalistFrame} pointerEvents="none">
-                        {/* Collage Elements */}
-                        <View style={[styles.sticker, { top: -20, right: -20, transform: [{ rotate: '15deg' }] }]}>
-                            <Text style={{ fontSize: 50 }}>⚡</Text>
-                        </View>
-                        <View style={[styles.doodleTag, { bottom: 20, left: -20, transform: [{ rotate: '-8deg' }] }]}>
-                            <Text style={styles.doodleText}>LIVE</Text>
-                        </View>
-                    </View>
+                    {/* Soft dark elegant overlay */}
+                    <LinearGradient
+                        colors={['rgba(10,10,12,0.8)', 'rgba(10,10,12,0.2)', 'rgba(10,10,12,0.8)']}
+                        style={styles.remoteOverlayGradient}
+                    />
                 </Animated.View>
             ) : (
                 <Animated.View entering={FadeIn} style={styles.noCallContainer}>
                     <View style={styles.headerContainer}>
-                        <Text style={styles.logoTextShadow}>STANDBY</Text>
-                        <Text style={styles.logoText}>STANDBY</Text>
-                        <Text style={styles.waitingText}>NESSUNA CHIAMATA ATTIVA</Text>
+                        <Text style={styles.logoText}>IN ATTESA</Text>
+                        <Text style={styles.waitingText}>NESSUNA COMUNICAZIONE IN CORSO</Text>
                     </View>
 
-                    <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.9}>
-                        <View style={styles.logoutBtnShadow} />
-                        <View style={styles.logoutBtnFront}>
-                            <Text style={styles.logoutText}>X ESCI</Text>
-                        </View>
+                    <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.8}>
+                        <LinearGradient colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)']} style={styles.logoutBtnGradient}>
+                            <Text style={styles.logoutText}>ESCI</Text>
+                        </LinearGradient>
                     </TouchableOpacity>
                 </Animated.View>
             )}
@@ -281,8 +264,8 @@ export default function CallScreen({ user, onLogout }) {
                 ))}
             </View>
 
-            {/* Brutalist Local PiP */}
-            <Animated.View entering={FadeInUp.delay(300).springify().damping(12)} style={styles.pipContainer}>
+            {/* High-End Local PiP */}
+            <Animated.View entering={FadeInUp.delay(300).springify().damping(15)} style={styles.pipContainer}>
                 {localStream ? (
                     <RTCView
                         streamURL={Platform.OS === 'web' ? localStream : localStream.toURL()}
@@ -296,43 +279,41 @@ export default function CallScreen({ user, onLogout }) {
                 )}
             </Animated.View>
 
-            {/* Pop-Art Control Bar */}
-            <Animated.View entering={SlideInDown.springify().damping(15)} style={styles.controlBar}>
+            {/* Premium Control Bar */}
+            <Animated.View entering={SlideInDown.springify().damping(15)} style={styles.controlBarWrapper}>
+                <LinearGradient colors={['rgba(20, 20, 25, 0.85)', 'rgba(10, 10, 15, 0.95)']} style={styles.controlBar}>
 
-                <TouchableOpacity style={styles.iconBtn} onPress={() => setSettingsVisible(true)} activeOpacity={0.8}>
-                    <View style={styles.iconBtnBack}><Text style={styles.iconTextOff}>⚙️</Text></View>
-                    <View style={styles.iconBtnFront}>
-                        <Text style={styles.iconText}>⚙️</Text>
-                    </View>
-                </TouchableOpacity>
-
-                {remoteStream ? (
-                    <TouchableOpacity style={styles.mainBtnWrapper} onPress={endCall} activeOpacity={0.8}>
-                        <View style={[styles.mainBtnShadow, { backgroundColor: '#000' }]} />
-                        <View style={[styles.mainBtnFront, { backgroundColor: '#FF0055' }]}>
-                            <Text style={styles.mainBtnText}>CHIUDI!</Text>
-                        </View>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => setSettingsVisible(true)} activeOpacity={0.7}>
+                        <LinearGradient colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.01)']} style={styles.iconBtnGradient}>
+                            <Text style={styles.iconText}>⚙️</Text>
+                        </LinearGradient>
                     </TouchableOpacity>
-                ) : (
-                    <TouchableOpacity style={styles.mainBtnWrapper} onPress={() => setCallModalVisible(true)} activeOpacity={0.8}>
-                        <View style={styles.mainBtnShadow} />
-                        <View style={styles.mainBtnFront}>
-                            <Text style={styles.mainBtnText}>CHIAMA ORA ➔</Text>
-                        </View>
-                    </TouchableOpacity>
-                )}
 
-                <EmojiContainer onSend={sendEmoji} />
+                    {remoteStream ? (
+                        <TouchableOpacity style={styles.mainBtnWrapper} onPress={endCall} activeOpacity={0.8}>
+                            <LinearGradient colors={['#FF4B4B', '#CC2222']} style={styles.mainBtnGradient}>
+                                <Text style={styles.mainBtnText}>TERMINA</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity style={styles.mainBtnWrapper} onPress={() => setCallModalVisible(true)} activeOpacity={0.8}>
+                            <LinearGradient colors={['#D4AF37', '#AA8C2C']} style={styles.mainBtnGradient}>
+                                <Text style={styles.mainBtnTextDark}>CHIAMA ORA ➔</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    )}
+
+                    <EmojiContainer onSend={sendEmoji} />
+                </LinearGradient>
             </Animated.View>
 
-            {/* High-Contrast "Online Stations" Modal */}
+            {/* Elegant Glass Contacts Modal */}
             <Modal visible={callModalVisible} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeaderDecor} />
-                        <Text style={styles.modalTitle}>CONTATTI ONLINE</Text>
+                    <LinearGradient colors={['rgba(30, 30, 35, 0.95)', 'rgba(15, 15, 20, 0.98)']} style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>POSTAZIONI ATTIVE</Text>
 
-                        {onlineUsers.length === 0 ? <Text style={styles.noUsersText}>TUTTO TACE.</Text> : null}
+                        {onlineUsers.length === 0 ? <Text style={styles.noUsersText}>Nessuna postazione online.</Text> : null}
 
                         <FlatList
                             data={onlineUsers}
@@ -341,25 +322,21 @@ export default function CallScreen({ user, onLogout }) {
                             renderItem={({ item }) => (
                                 <View style={styles.userRow}>
                                     <View>
-                                        <Text style={styles.userRole}>{item.station.toUpperCase()}</Text>
-                                        <Text style={styles.userName}>@{item.username.toUpperCase()}</Text>
+                                        <Text style={styles.userRole}>{item.station}</Text>
+                                        <Text style={styles.userName}>@{item.username}</Text>
                                     </View>
                                     <TouchableOpacity style={styles.connectBtn} onPress={() => startCall(item.id)} activeOpacity={0.8}>
-                                        <View style={styles.connectBtnShadow} />
-                                        <View style={styles.connectBtnFront}>
+                                        <LinearGradient colors={['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.02)']} style={styles.connectBtnGradient}>
                                             <Text style={styles.connectBtnText}>CHIAMA</Text>
-                                        </View>
+                                        </LinearGradient>
                                     </TouchableOpacity>
                                 </View>
                             )}
                         />
                         <TouchableOpacity style={styles.cancelBtn} onPress={() => setCallModalVisible(false)} activeOpacity={0.8}>
-                            <View style={styles.cancelBtnShadow} />
-                            <View style={styles.cancelBtnFront}>
-                                <Text style={styles.cancelBtnText}>ANNULLA X</Text>
-                            </View>
+                            <Text style={styles.cancelBtnText}>ANNULLA</Text>
                         </TouchableOpacity>
-                    </View>
+                    </LinearGradient>
                 </View>
             </Modal>
 
@@ -373,49 +350,37 @@ export default function CallScreen({ user, onLogout }) {
     );
 }
 
-// Chaotic pop-art emoji floating
+// Soft floating emoji animation (no chaotic spin)
 function FloatingEmoji({ emoji }) {
     const animValue = useRef(new RNAnimated.Value(0)).current;
 
     useEffect(() => {
-        RNAnimated.spring(animValue, {
+        RNAnimated.timing(animValue, {
             toValue: 1,
-            friction: 2,
-            tension: 50,
+            duration: 2500,
+            easing: Easing.out(Easing.ease),
             useNativeDriver: true,
         }).start();
     }, []);
 
     const translateY = animValue.interpolate({
         inputRange: [0, 1],
-        outputRange: [50, -350] // Wild vertical pop
-    });
-
-    const translateX = animValue.interpolate({
-        inputRange: [0, 0.5, 1],
-        outputRange: [0, (Math.random() - 0.5) * 100, 0] // Random horizontal sway
-    });
-
-    const rotation = animValue.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0deg', `${(Math.random() - 0.5) * 180}deg`] // Chaotic spin
+        outputRange: [20, -150]
     });
 
     const scale = animValue.interpolate({
         inputRange: [0, 0.2, 0.8, 1],
-        outputRange: [0, 2, 1.5, 0] // Massive Pop out
+        outputRange: [0.5, 1.2, 1, 0.8]
     });
 
     const opacity = animValue.interpolate({
         inputRange: [0, 0.8, 1],
-        outputRange: [1, 1, 0] // Fade out at very top
+        outputRange: [0, 1, 0]
     });
 
     return (
-        <RNAnimated.View style={[styles.emojiContainer, { transform: [{ translateY }, { translateX }, { scale }, { rotate: rotation }], opacity }]}>
+        <RNAnimated.View style={[styles.emojiContainer, { transform: [{ translateY }, { scale }], opacity }]}>
             <Text style={styles.emoji}>{emoji}</Text>
-            {/* Gamification popup points */}
-            <Text style={styles.scorePopup}>+10</Text>
         </RNAnimated.View>
     );
 }
@@ -425,10 +390,9 @@ function EmojiContainer({ onSend }) {
 
     return (
         <View style={styles.emojiWrapper}>
-            <View style={styles.iconBtnBack}><Text style={styles.iconTextOff}>😆</Text></View>
-            <View style={styles.iconBtnFront}>
+            <LinearGradient colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.01)']} style={styles.iconBtnGradient}>
                 <Text style={styles.iconText}>😆</Text>
-            </View>
+            </LinearGradient>
             <TextInput
                 style={styles.emojiInput}
                 value={text}
@@ -535,69 +499,37 @@ const styles = StyleSheet.create({
     emojiWrapper: { width: 60, height: 60, position: 'relative', marginLeft: 15 },
     emojiInput: { width: '100%', height: '100%', position: 'absolute', opacity: 0 }, // Invisible input loop
 
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(107, 56, 251, 0.8)', justifyContent: 'center', alignItems: 'center' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
     modalContent: {
         width: '90%',
-        maxWidth: 500,
-        backgroundColor: '#B2FF05',
+        maxWidth: 400,
+        borderRadius: 25,
         padding: 30,
-        borderWidth: 6,
-        borderColor: '#000',
-        shadowColor: '#000', shadowOffset: { height: 15, width: 15 }, shadowOpacity: 1, shadowRadius: 0,
-        transform: [{ rotate: '1deg' }]
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+        shadowColor: '#000', shadowOffset: { height: 15, width: 0 }, shadowOpacity: 0.8, shadowRadius: 30,
     },
-    modalHeaderDecor: { position: 'absolute', top: -15, left: -20, width: 60, height: 60, backgroundColor: '#FF0055', borderRadius: 30, borderWidth: 4, borderColor: '#000' },
-    modalTitle: { color: '#000000', fontSize: 32, fontWeight: '900', letterSpacing: -1, marginBottom: 25, textAlign: 'center', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
-    noUsersText: { color: '#000', textAlign: 'center', marginBottom: 30, fontSize: 24, fontWeight: '900', backgroundColor: '#00E5FF', alignSelf: 'center', padding: 10, borderWidth: 2, borderColor: '#000', transform: [{ rotate: '-2deg' }] },
+    modalTitle: { color: '#FFF', fontSize: 16, fontWeight: '400', letterSpacing: 2, marginBottom: 25, textAlign: 'center' },
+    noUsersText: { color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginBottom: 20, fontSize: 14, fontStyle: 'italic' },
     userRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingVertical: 15,
-        borderBottomWidth: 4,
-        borderColor: '#000',
-        borderStyle: 'dashed'
+        borderBottomWidth: 1,
+        borderColor: 'rgba(255,255,255,0.05)',
     },
-    userRole: { color: '#000000', fontSize: 18, fontWeight: '900' },
-    userName: { color: '#FF0055', fontSize: 16, marginTop: 4, fontWeight: '900' },
+    userRole: { color: '#D4AF37', fontSize: 12, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
+    userName: { color: 'rgba(255,255,255,0.8)', fontSize: 14, marginTop: 4, fontWeight: '400' },
 
-    connectBtn: { width: 110, height: 45, position: 'relative' },
-    connectBtnShadow: { position: 'absolute', top: 4, left: 4, width: '100%', height: '100%', backgroundColor: '#000' },
-    connectBtnFront: { width: '100%', height: '100%', backgroundColor: '#00E5FF', borderWidth: 2, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
-    connectBtnText: { color: '#000000', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
+    connectBtn: { width: 90, height: 40 },
+    connectBtnGradient: { width: '100%', height: '100%', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+    connectBtnText: { color: '#FFF', fontSize: 11, fontWeight: '600', letterSpacing: 1 },
 
-    cancelBtn: { marginTop: 40, width: '100%', height: 60, position: 'relative' },
-    cancelBtnShadow: { position: 'absolute', top: 5, left: 5, width: '100%', height: '100%', backgroundColor: '#000' },
-    cancelBtnFront: { width: '100%', height: '100%', backgroundColor: '#FFFFFF', borderWidth: 4, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
-    cancelBtnText: { color: '#FF0055', letterSpacing: 1, fontSize: 18, fontWeight: '900' },
+    cancelBtn: { marginTop: 30, width: '100%', paddingVertical: 15, alignItems: 'center' },
+    cancelBtnText: { color: 'rgba(255,255,255,0.5)', letterSpacing: 2, fontSize: 12, fontWeight: '600' },
 
-    reactionOverlay: { position: 'absolute', bottom: 150, right: 80, width: 80, height: 400 },
+    reactionOverlay: { position: 'absolute', bottom: 120, right: 20, width: 80, height: 300 },
     emojiContainer: { position: 'absolute', bottom: 0, alignSelf: 'center', alignItems: 'center' },
-    emoji: { fontSize: 80, shadowColor: '#000', shadowOffset: { width: 5, height: 5 }, shadowOpacity: 1, shadowRadius: 0 },
-    scorePopup: { color: '#B2FF05', fontSize: 24, fontWeight: '900', backgroundColor: '#000', padding: 5, borderWidth: 2, borderColor: '#B2FF05', marginTop: -15, transform: [{ rotate: '-15deg' }] },
-
-    sticker: {
-        position: 'absolute',
-        shadowColor: '#000',
-        shadowOffset: { width: 5, height: 5 },
-        shadowOpacity: 1,
-        shadowRadius: 0
-    },
-    doodleTag: {
-        position: 'absolute',
-        backgroundColor: '#FF0055',
-        padding: 5,
-        borderWidth: 3,
-        borderColor: '#000',
-        shadowColor: '#000',
-        shadowOffset: { width: 5, height: 5 },
-        shadowOpacity: 1,
-        shadowRadius: 0
-    },
-    doodleText: {
-        fontSize: 20,
-        fontWeight: '900',
-        color: '#000',
-        fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-    }
+    emoji: { fontSize: 45, shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.5, shadowRadius: 10 },
 });

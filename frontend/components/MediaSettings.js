@@ -6,41 +6,7 @@ import Animated, { SlideInDown, FadeIn, useSharedValue, useAnimatedStyle, withRe
 
 const { width, height } = Dimensions.get('window');
 
-// Funky Background Element Animation
-const FunkyShape = ({ color, size, top, left, delay }) => {
-    const rotation = useSharedValue(0);
-    const scale = useSharedValue(1);
-
-    React.useEffect(() => {
-        rotation.value = withDelay(delay, withRepeat(withTiming(360, { duration: 8000, easing: Easing.linear }), -1, false));
-        scale.value = withDelay(delay, withRepeat(withSequence(withTiming(1.4, { duration: 1500 }), withTiming(0.8, { duration: 1500 })), -1, true));
-    }, []);
-
-    const animStyle = useAnimatedStyle(() => {
-        return {
-            transform: [
-                { rotate: `${rotation.value}deg` },
-                { scale: scale.value }
-            ]
-        };
-    });
-
-    return (
-        <Animated.View style={[
-            {
-                position: 'absolute',
-                top, left,
-                width: size, height: size,
-                backgroundColor: color,
-                opacity: 0.9,
-                borderWidth: 5,
-                borderColor: '#000'
-            },
-            animStyle
-        ]} />
-    );
-};
-
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
     const [videoDevices, setVideoDevices] = useState([]);
@@ -90,81 +56,74 @@ export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
             <View style={styles.overlay}>
 
                 {visible && (
-                    <Animated.View entering={SlideInDown.springify().damping(12)} style={styles.modalContent}>
-                        <View style={styles.backgroundGrid} />
-                        <FunkyShape color="#B2FF05" size={100} top={-20} left={-20} delay={0} />
-                        <FunkyShape color="#00E5FF" size={80} top={100} left={width * 0.8} delay={500} />
-
-                        <View style={styles.headerContainer}>
-                            <Text style={styles.titleShadow}>IMPOSTAZIONI</Text>
-                            <Text style={styles.title}>IMPOSTAZIONI</Text>
-                        </View>
-
-                        <View style={styles.settingGroup}>
-                            <Text style={styles.label}>FOTOCAMERA</Text>
-                            <View style={styles.pickerContainer}>
-                                <Picker
-                                    selectedValue={selectedVideo}
-                                    onValueChange={(val) => setSelectedVideo(val)}
-                                    style={styles.picker}
-                                    dropdownIconColor="#000"
-                                >
-                                    {videoDevices.map(d => (
-                                        <Picker.Item key={d.deviceId} label={d.label || 'Webcam'} value={d.deviceId} />
-                                    ))}
-                                </Picker>
+                    <Animated.View entering={SlideInDown.springify().damping(15)} style={styles.modalWrapper}>
+                        <LinearGradient colors={['rgba(30, 30, 35, 0.95)', 'rgba(15, 15, 20, 0.98)']} style={styles.modalContent}>
+                            <View style={styles.headerContainer}>
+                                <Text style={styles.title}>IMPOSTAZIONI</Text>
                             </View>
-                        </View>
 
-                        <View style={styles.settingGroup}>
-                            <Text style={styles.label}>MICROFONO D'INGRESSO</Text>
-                            <View style={styles.pickerContainer}>
-                                <Picker
-                                    selectedValue={selectedAudioInput}
-                                    onValueChange={(val) => setSelectedAudioInput(val)}
-                                    style={styles.picker}
-                                    dropdownIconColor="#000"
-                                >
-                                    {audioInputDevices.map(d => (
-                                        <Picker.Item key={d.deviceId} label={d.label || 'Microfono Esterno'} value={d.deviceId} />
-                                    ))}
-                                </Picker>
-                            </View>
-                        </View>
-
-                        <View style={styles.settingGroup}>
-                            <Text style={styles.label}>ALTOPARLANTI / USCITA</Text>
-                            <View style={styles.pickerContainer}>
-                                <Picker
-                                    selectedValue={selectedAudioOutput}
-                                    onValueChange={(val) => setSelectedAudioOutput(val)}
-                                    style={styles.picker}
-                                    dropdownIconColor="#000"
-                                >
-                                    {audioOutputDevices.length > 0 ? audioOutputDevices.map(d => (
-                                        <Picker.Item key={d.deviceId} label={d.label || 'Speaker Sistema'} value={d.deviceId} />
-                                    )) : (
-                                        <Picker.Item label="Uscita Audio Predefinita" value="default" />
-                                    )}
-                                </Picker>
-                            </View>
-                        </View>
-
-                        <View style={styles.buttonRow}>
-                            <TouchableOpacity style={styles.cancelWrap} onPress={onClose} activeOpacity={0.8}>
-                                <View style={styles.cancelShadow} />
-                                <View style={styles.cancelFront}>
-                                    <Text style={styles.cancelText}>X ANNULLA</Text>
+                            <View style={styles.settingGroup}>
+                                <Text style={styles.label}>FOTOCAMERA</Text>
+                                <View style={styles.pickerContainer}>
+                                    <Picker
+                                        selectedValue={selectedVideo}
+                                        onValueChange={(val) => setSelectedVideo(val)}
+                                        style={styles.picker}
+                                        dropdownIconColor="#000"
+                                    >
+                                        {videoDevices.map(d => (
+                                            <Picker.Item key={d.deviceId} label={d.label || 'Webcam'} value={d.deviceId} />
+                                        ))}
+                                    </Picker>
                                 </View>
-                            </TouchableOpacity>
+                            </View>
 
-                            <TouchableOpacity style={styles.applyWrap} onPress={handleApply} activeOpacity={0.8}>
-                                <View style={styles.applyShadow} />
-                                <View style={styles.applyFront}>
-                                    <Text style={styles.buttonText}>APPLICA ➔</Text>
+                            <View style={styles.settingGroup}>
+                                <Text style={styles.label}>MICROFONO D'INGRESSO</Text>
+                                <View style={styles.pickerContainer}>
+                                    <Picker
+                                        selectedValue={selectedAudioInput}
+                                        onValueChange={(val) => setSelectedAudioInput(val)}
+                                        style={styles.picker}
+                                        dropdownIconColor="#000"
+                                    >
+                                        {audioInputDevices.map(d => (
+                                            <Picker.Item key={d.deviceId} label={d.label || 'Microfono Esterno'} value={d.deviceId} />
+                                        ))}
+                                    </Picker>
                                 </View>
-                            </TouchableOpacity>
-                        </View>
+                            </View>
+
+                            <View style={styles.settingGroup}>
+                                <Text style={styles.label}>ALTOPARLANTI / USCITA</Text>
+                                <View style={styles.pickerContainer}>
+                                    <Picker
+                                        selectedValue={selectedAudioOutput}
+                                        onValueChange={(val) => setSelectedAudioOutput(val)}
+                                        style={styles.picker}
+                                        dropdownIconColor="#000"
+                                    >
+                                        {audioOutputDevices.length > 0 ? audioOutputDevices.map(d => (
+                                            <Picker.Item key={d.deviceId} label={d.label || 'Speaker Sistema'} value={d.deviceId} />
+                                        )) : (
+                                            <Picker.Item label="Uscita Audio Predefinita" value="default" />
+                                        )}
+                                    </Picker>
+                                </View>
+                            </View>
+
+                            <View style={styles.buttonRow}>
+                                <TouchableOpacity style={styles.cancelWrap} onPress={onClose} activeOpacity={0.8}>
+                                    <Text style={styles.cancelText}>ANNULLA</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity style={styles.applyWrap} onPress={handleApply} activeOpacity={0.8}>
+                                    <LinearGradient colors={['#D4AF37', '#AA8C2C']} style={styles.applyGradient}>
+                                        <Text style={styles.buttonText}>APPLICA</Text>
+                                    </LinearGradient>
+                                </TouchableOpacity>
+                            </View>
+                        </LinearGradient>
                     </Animated.View>
                 )}
             </View>
@@ -175,109 +134,87 @@ export default function MediaSettings({ visible, onClose, onUpdateDevices }) {
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.85)', // Very dark overlay to contrast neon
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
         justifyContent: 'center',
         alignItems: 'center',
     },
-    modalContent: {
+    modalWrapper: {
         width: '95%',
-        maxWidth: 600,
-        backgroundColor: '#FF0055', // Hot Pink
-        borderWidth: 6,
-        borderColor: '#000',
-        shadowColor: '#B2FF05',
-        shadowOffset: { width: -15, height: 15 },
-        shadowOpacity: 1,
-        shadowRadius: 0,
+        maxWidth: 500,
+        borderRadius: 25,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 15 },
+        shadowOpacity: 0.8,
+        shadowRadius: 30,
         elevation: 20,
-        padding: 30,
-        overflow: 'hidden',
-        transform: [{ rotate: '-1deg' }] // Tilt
     },
-    backgroundGrid: {
-        position: 'absolute',
-        width: '200%',
-        height: '200%',
-        opacity: 0.15,
-        borderWidth: 2,
-        borderColor: '#000',
-        borderStyle: 'dashed'
+    modalContent: {
+        borderRadius: 25,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+        padding: 35,
+        overflow: 'hidden',
     },
     headerContainer: {
-        position: 'relative',
-        marginBottom: 30,
+        marginBottom: 35,
         alignItems: 'center'
     },
-    titleShadow: {
-        color: '#000000',
-        fontSize: 40,
-        letterSpacing: -1,
-        fontWeight: '900',
-        position: 'absolute',
-        top: 5, left: 5,
-        fontFamily: 'Courier New'
-    },
     title: {
-        color: '#FFFFFF', // White
-        fontSize: 40,
-        letterSpacing: -1,
-        textAlign: 'center',
-        fontWeight: '900',
-        fontFamily: 'Courier New'
+        color: '#FFFFFF',
+        fontSize: 24,
+        letterSpacing: 4,
+        fontWeight: '300',
+        fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif-light'
     },
     settingGroup: {
         marginBottom: 25,
-        backgroundColor: '#000',
-        padding: 15,
-        borderWidth: 3,
-        borderColor: '#00E5FF', // Cyan
-        transform: [{ rotate: '1deg' }]
     },
     label: {
-        color: '#B2FF05', // Lime Green
-        fontSize: 16,
+        color: 'rgba(255,255,255,0.6)',
+        fontSize: 12,
         letterSpacing: 2,
         marginBottom: 10,
-        fontWeight: '900',
-        marginLeft: 5,
+        fontWeight: '500',
+        textTransform: 'uppercase',
     },
     pickerContainer: {
-        backgroundColor: '#FFFFFF',
-        borderWidth: 4,
-        borderColor: '#000',
-        // Brutalist shadow trick internally
-        borderBottomWidth: 8,
-        borderRightWidth: 8,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.06)',
+        borderRadius: 16,
+        overflow: 'hidden'
     },
     picker: {
-        color: '#000',
+        color: '#FFF',
         height: 60,
-        fontWeight: 'bold',
     },
     buttonRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginTop: 20,
-        height: 60
+        alignItems: 'center',
+        marginTop: 30,
     },
-    cancelWrap: { flex: 0.45, position: 'relative' },
-    cancelShadow: { position: 'absolute', top: 5, left: 5, width: '100%', height: '100%', backgroundColor: '#000' },
-    cancelFront: { width: '100%', height: '100%', backgroundColor: '#FFFFFF', borderWidth: 4, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
-
-    applyWrap: { flex: 0.5, position: 'relative' },
-    applyShadow: { position: 'absolute', top: 5, left: 5, width: '100%', height: '100%', backgroundColor: '#000' },
-    applyFront: { width: '100%', height: '100%', backgroundColor: '#B2FF05', borderWidth: 4, borderColor: '#000', justifyContent: 'center', alignItems: 'center' },
-
+    cancelWrap: { flex: 0.45, alignItems: 'center', paddingVertical: 15 },
     cancelText: {
-        color: '#FF0055', // Hot Pink
-        fontWeight: '900',
-        letterSpacing: 1,
-        fontSize: 18
+        color: 'rgba(255,255,255,0.5)',
+        fontWeight: '600',
+        letterSpacing: 2,
+        fontSize: 12
+    },
+    applyWrap: { flex: 0.5 },
+    applyGradient: {
+        width: '100%',
+        paddingVertical: 15,
+        borderRadius: 100,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)'
     },
     buttonText: {
-        color: '#000000',
-        fontWeight: '900',
-        letterSpacing: 1,
-        fontSize: 18
+        color: '#111',
+        fontWeight: '700',
+        letterSpacing: 1.5,
+        fontSize: 13
     }
 });

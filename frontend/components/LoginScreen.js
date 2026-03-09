@@ -11,22 +11,22 @@ const USERS = {
     'mobile_lobby': { password: 'password123', role: 'Telefono Hall' }
 };
 
-// Funky Background Element Animation
-const FunkyShape = ({ color, size, top, left, delay }) => {
-    const rotation = useSharedValue(0);
+import { LinearGradient } from 'expo-linear-gradient';
+
+// Ambient Glow Animation (Slow breathing instead of chaotic rotation)
+const AmbientGlow = ({ color, size, top, left, delay }) => {
     const scale = useSharedValue(1);
+    const opacity = useSharedValue(0.4);
 
     React.useEffect(() => {
-        rotation.value = withDelay(delay, withRepeat(withTiming(360, { duration: 15000, easing: Easing.linear }), -1, false));
-        scale.value = withDelay(delay, withRepeat(withSequence(withTiming(1.2, { duration: 3000 }), withTiming(0.8, { duration: 3000 })), -1, true));
+        scale.value = withDelay(delay, withRepeat(withSequence(withTiming(1.3, { duration: 6000, easing: Easing.inOut(Easing.ease) }), withTiming(0.9, { duration: 6000, easing: Easing.inOut(Easing.ease) })), -1, true));
+        opacity.value = withDelay(delay, withRepeat(withSequence(withTiming(0.7, { duration: 6000, easing: Easing.inOut(Easing.ease) }), withTiming(0.4, { duration: 6000, easing: Easing.inOut(Easing.ease) })), -1, true));
     }, []);
 
     const animStyle = useAnimatedStyle(() => {
         return {
-            transform: [
-                { rotate: `${rotation.value}deg` },
-                { scale: scale.value }
-            ]
+            transform: [{ scale: scale.value }],
+            opacity: opacity.value
         };
     });
 
@@ -37,31 +37,13 @@ const FunkyShape = ({ color, size, top, left, delay }) => {
                 top, left,
                 width: size, height: size,
                 backgroundColor: color,
-                borderRadius: size * 0.3, // Squircle-ish random shape
-                opacity: 0.8
+                borderRadius: size / 2, // Perfect circle for soft glow
+                filter: [{ blur: 80 }] // Strong blur for ambient effect (web/newer RN)
             },
             animStyle
         ]} />
     );
 };
-
-// Collage Sticker Overlay (Figma Trend 11: Maximalism/Collage)
-const CollageStickers = () => (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {/* Neon Star Sticker */}
-        <View style={[styles.sticker, { top: height * 0.15, left: width * 0.1, transform: [{ rotate: '-15deg' }] }]}>
-            <Text style={{ fontSize: 60 }}>⭐</Text>
-        </View>
-
-        {/* Fake "Tape" overlay */}
-        <View style={[styles.tapeSticker, { top: height * 0.4, right: -40, transform: [{ rotate: '45deg' }] }]} />
-
-        {/* Digital "Doodle" Tag */}
-        <View style={[styles.doodleTag, { bottom: height * 0.2, left: width * 0.05, transform: [{ rotate: '12deg' }] }]}>
-            <Text style={styles.doodleText}>#NOT_MINIMAL</Text>
-        </View>
-    </View>
-);
 
 export default function LoginScreen({ onLogin }) {
     const [username, setUsername] = useState('');
@@ -79,58 +61,66 @@ export default function LoginScreen({ onLogin }) {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Pop-Art Background Elements */}
-            <View style={styles.backgroundGrid} />
-            <FunkyShape color="#B2FF05" size={300} top={-50} left={-100} delay={0} />
-            <FunkyShape color="#FF0055" size={200} top={height * 0.6} left={width * 0.7} delay={1000} />
-            <FunkyShape color="#00E5FF" size={150} top={height * 0.8} left={-50} delay={500} />
+            {/* Elegant Dark Background Elements */}
+            <AmbientGlow color="#1e1836" size={500} top={-150} left={-200} delay={0} /> {/* Deep Purple Glow */}
+            <AmbientGlow color="#3a2e1d" size={400} top={height * 0.6} left={width * 0.5} delay={2000} /> {/* Soft Gold Glow */}
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.formWrapper}>
-                <Animated.View entering={FadeInDown.duration(800).springify().damping(12)} style={styles.formContainer}>
-
-                    {/* Dopamine Typography Header */}
-                    <View style={styles.headerContainer}>
-                        <Text style={styles.titleShadow}>RECEPTION</Text>
-                        <Text style={styles.title}>RECEPTION</Text>
-                        <Text style={styles.subtitle}>SISTEMA P2P</Text>
-                    </View>
-
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>NOME UTENTE</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="es. reception1"
-                            placeholderTextColor="#666"
-                            value={username}
-                            onChangeText={setUsername}
-                            autoCapitalize="none"
-                        />
-                    </View>
-
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>PASSWORD</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Inserisci password"
-                            placeholderTextColor="#666"
-                            secureTextEntry
-                            value={password}
-                            onChangeText={setPassword}
-                        />
-                    </View>
-
-                    {error ? (
-                        <Animated.Text entering={FadeInUp.springify()} style={styles.errorText}>
-                            ⚠️ {error}
-                        </Animated.Text>
-                    ) : null}
-
-                    <TouchableOpacity style={styles.button} onPress={handleLogin} activeOpacity={0.9}>
-                        <View style={styles.buttonShadow} />
-                        <View style={styles.buttonFront}>
-                            <Text style={styles.buttonText}>ACCEDI ORA ➔</Text>
+                <Animated.View entering={FadeInDown.duration(800).springify().damping(15)} style={styles.glassPanel}>
+                    {/* LinearGradient for 3D Puffy Glass effect */}
+                    <LinearGradient
+                        colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.01)']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.formContainer}
+                    >
+                        {/* Premium Typography Header */}
+                        <View style={styles.headerContainer}>
+                            <Text style={styles.title}>GSA HOTELS</Text>
+                            <Text style={styles.subtitle}>COMUNICAZIONI INTERNE</Text>
                         </View>
-                    </TouchableOpacity>
+
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>NOME UTENTE</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Inserisci ID postazione"
+                                placeholderTextColor="#888"
+                                value={username}
+                                onChangeText={setUsername}
+                                autoCapitalize="none"
+                            />
+                        </View>
+
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>PASSWORD</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Inserisci password"
+                                placeholderTextColor="#888"
+                                secureTextEntry
+                                value={password}
+                                onChangeText={setPassword}
+                            />
+                        </View>
+
+                        {error ? (
+                            <Animated.Text entering={FadeInUp.springify()} style={styles.errorText}>
+                                {error}
+                            </Animated.Text>
+                        ) : null}
+
+                        <TouchableOpacity style={styles.button} onPress={handleLogin} activeOpacity={0.8}>
+                            <LinearGradient
+                                colors={['#D4AF37', '#AA8C2C']} // Soft Metallic Gold gradient
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.buttonGradient}
+                            >
+                                <Text style={styles.buttonText}>ACCEDI ➔</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </LinearGradient>
                 </Animated.View>
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -140,134 +130,107 @@ export default function LoginScreen({ onLogin }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#6B38FB', // Electric Purple
+        backgroundColor: '#0A0A0C', // Deep abyss black
         justifyContent: 'center',
         overflow: 'hidden'
-    },
-    backgroundGrid: {
-        position: 'absolute',
-        width: '200%',
-        height: '200%',
-        // A CSS-lite way to fake a grid in React Native without heavy SVGs
-        opacity: 0.1,
-        borderWidth: 2,
-        borderColor: '#000',
-        borderStyle: 'dashed'
     },
     formWrapper: {
         width: '100%',
         paddingHorizontal: 20,
-        zIndex: 10, // Above shapes
+        zIndex: 10,
+    },
+    glassPanel: {
+        width: '100%',
+        maxWidth: 420,
+        alignSelf: 'center',
+        borderRadius: 30, // Soft, rounded edges for the "puffy" aesthetic
+        overflow: 'hidden', // Need this to clip the LinearGradient
+        // Subtle outer shadow to lift it off the dark background
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 20 },
+        shadowOpacity: 0.8,
+        shadowRadius: 30,
+        elevation: 25,
+        backgroundColor: 'rgba(20, 20, 25, 0.4)', // Base dark glass tint
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.05)', // Extremely thin, subtle highlight rim
     },
     formContainer: {
-        padding: 30,
-        paddingTop: 40,
+        padding: 40,
+        paddingTop: 50,
         width: '100%',
-        maxWidth: 450,
-        alignSelf: 'center',
-        backgroundColor: '#000000', // Pitch Black form background for massive contrast
-        borderRadius: 0, // Brutalist sharp edges combined with pop colors
-        borderWidth: 4,
-        borderColor: '#000000',
-        shadowColor: '#000',
-        shadowOffset: { width: 10, height: 10 }, // Hard retro shadow
-        shadowOpacity: 1,
-        shadowRadius: 0,
-        elevation: 20,
     },
     headerContainer: {
-        marginBottom: 35,
-        position: 'relative'
-    },
-    titleShadow: {
-        fontSize: 52,
-        fontWeight: '900',
-        color: '#B2FF05', // Lime Green shadow offset
-        position: 'absolute',
-        top: 4,
-        left: 4,
-        fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-        letterSpacing: -2,
-        transform: [{ rotate: '-2deg' }]
+        marginBottom: 45,
+        alignItems: 'center',
     },
     title: {
-        fontSize: 52,
-        fontWeight: '900',
+        fontSize: 34,
+        fontWeight: '300', // Thin, elegant font weight
         color: '#FFFFFF',
-        fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-        letterSpacing: -2,
-        transform: [{ rotate: '-2deg' }], // Slight tilt for funkiness
-        zIndex: 2
+        letterSpacing: 4,
+        marginBottom: 8,
+        fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif-light',
     },
     subtitle: {
-        fontSize: 18,
-        color: '#FF0055', // Hot Pink
-        fontWeight: '800',
-        marginTop: -5,
-        transform: [{ rotate: '-2deg' }],
-        marginLeft: 5,
-        letterSpacing: 2
+        fontSize: 12,
+        color: '#D4AF37', // Refined gold
+        fontWeight: '600',
+        letterSpacing: 3,
+        textTransform: 'uppercase',
     },
     inputGroup: {
         marginBottom: 25,
     },
     label: {
-        color: '#B2FF05', // Lime Green
-        fontSize: 16,
+        color: 'rgba(255,255,255,0.6)',
+        fontSize: 12,
         marginBottom: 8,
-        fontWeight: '900',
-        letterSpacing: 1,
-        fontFamily: Platform.OS === 'ios' ? 'Arial' : 'sans-serif',
+        fontWeight: '500',
+        letterSpacing: 2,
+        textTransform: 'uppercase',
     },
     input: {
-        backgroundColor: '#FFFFFF',
-        color: '#000000',
+        backgroundColor: 'rgba(0,0,0,0.4)', // Deep inset look
+        color: '#FFFFFF',
         padding: 18,
-        fontSize: 18,
-        fontWeight: 'bold',
-        borderWidth: 3,
-        borderColor: '#000',
-        // Brutalist shadow trick
-        borderBottomWidth: 8,
-        borderRightWidth: 8,
+        fontSize: 16,
+        borderRadius: 16, // Rounded inner fields
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.06)', // Subtle inset rim
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 }, // Inner shadow hack
+        shadowOpacity: 0.5,
+        shadowRadius: 5,
     },
     button: {
-        marginTop: 20,
-        position: 'relative',
+        marginTop: 30,
+        borderRadius: 100, // Pill shaped button
+        shadowColor: '#D4AF37',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3, // Golden glow under button
+        shadowRadius: 15,
+        elevation: 10,
     },
-    buttonShadow: {
-        position: 'absolute',
-        top: 6,
-        left: 6,
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#000',
-        borderWidth: 3,
-        borderColor: '#000'
-    },
-    buttonFront: {
-        backgroundColor: '#B2FF05', // Lime Green button
-        padding: 20,
+    buttonGradient: {
+        paddingVertical: 18,
         alignItems: 'center',
-        borderWidth: 3,
-        borderColor: '#000',
-        transform: [{ translateX: -4 }, { translateY: -4 }]
+        borderRadius: 100,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.3)', // Top rim highlight for 3D pill effect
     },
     buttonText: {
-        color: '#000000',
-        fontWeight: '900',
-        fontSize: 20,
-        letterSpacing: 1,
+        color: '#111', // Very dark gray/black depending on gold tone
+        fontWeight: '700',
+        fontSize: 15,
+        letterSpacing: 2,
     },
     errorText: {
-        color: '#FF0055', // Hot Pink error
-        backgroundColor: '#000',
-        padding: 10,
-        borderWidth: 2,
-        borderColor: '#FF0055',
+        color: '#FF6B6B', // Soft coral red instead of harsh hot pink
         textAlign: 'center',
         marginBottom: 15,
-        fontWeight: '900',
-        fontSize: 16
+        fontWeight: '500',
+        fontSize: 14,
+        letterSpacing: 0.5
     }
 });
