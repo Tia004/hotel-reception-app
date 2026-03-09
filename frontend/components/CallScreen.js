@@ -11,8 +11,14 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from './Icons';
-import { RTCView, mediaDevices } from 'react-native-webrtc';
-import * as webrtc from '../utils/webrtc';
+import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices, RTCView } from '../utils/webrtc';
+
+const ICE_CONFIG = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+    ]
+};
 
 const { width: W, height: H } = Dimensions.get('window');
 const IS_MOBILE = W < 768;
@@ -94,7 +100,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     };
 
     const createPC = async (targetId) => {
-        const pc = webrtc.createPeerConnection();
+        const pc = new RTCPeerConnection(ICE_CONFIG);
         pcRef.current = pc;
         if (localStream) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 

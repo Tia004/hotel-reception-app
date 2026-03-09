@@ -61,8 +61,8 @@ export default function LoginScreen({ onLogin }) {
     return (
         <SafeAreaView style={styles.container}>
             {/* Elegant Dark Background Elements */}
-            <AmbientGlow color="#1e1836" size={500} top={-150} left={-200} delay={0} /> {/* Deep Purple Glow */}
-            <AmbientGlow color="#3a2e1d" size={400} top={height * 0.6} left={width * 0.5} delay={2000} /> {/* Soft Gold Glow */}
+            <AmbientGlow color="#1e1836" size={500} top={-150} left={-200} delay={0} />
+            <AmbientGlow color="#3a2e1d" size={400} top={height * 0.6} left={width * 0.5} delay={2000} />
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.formWrapper}>
                 <Animated.View entering={FadeInDown.duration(800).springify().damping(15)} style={styles.glassPanel}>
