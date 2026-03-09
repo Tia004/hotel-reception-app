@@ -12,7 +12,12 @@ const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || `http://192.168.1
 
 const configuration = {
     iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' }
     ]
 };
 
@@ -304,6 +309,7 @@ export default function CallScreen({ user, onLogout }) {
                     <View style={styles.headerContainer}>
                         <Text style={styles.logoText}>IN ATTESA</Text>
                         <Text style={styles.waitingText}>NESSUNA COMUNICAZIONE IN CORSO</Text>
+                        <Text style={styles.diagnosticText}>Server: {SIGNALING_URL}</Text>
                     </View>
 
                     <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.8}>
@@ -486,6 +492,7 @@ const styles = StyleSheet.create({
     logoTextShadow: { opacity: 0 },
     logoText: { color: '#FFFFFF', fontSize: 32, letterSpacing: 6, fontWeight: '200', textAlign: 'center', fontFamily: Platform.OS === 'web' ? 'sans-serif' : (Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif-light') },
     waitingText: { color: 'rgba(255,255,255,0.4)', fontSize: 12, letterSpacing: 4, fontWeight: '400', marginTop: 15, textTransform: 'uppercase' },
+    diagnosticText: { color: 'rgba(212, 175, 55, 0.7)', fontSize: 10, letterSpacing: 1, fontWeight: '300', marginTop: 8, fontStyle: 'italic' },
 
     logoutBtn: { position: 'absolute', top: 50, left: 25, zIndex: 100 },
     logoutBtnGradient: { paddingVertical: 10, paddingHorizontal: 15, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)' },
