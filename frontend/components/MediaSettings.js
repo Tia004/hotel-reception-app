@@ -126,7 +126,7 @@ export default function MediaSettings({ visible, onClose, user }) {
                                             <View style={styles.select}>
                                                 <Icon name={type === 'audio' ? 'mic' : type === 'video' ? 'camera' : 'volume-2'} size={14} color="#C9A84C" />
                                                 <select
-                                                    style={styles.htmlSelect}
+                                                    style={{ flex: 1, background: 'transparent', border: 'none', color: '#C8C4B8', padding: '14px 4px', fontSize: '15px', appearance: 'none', outline: 'none' }}
                                                     value={devices[type]}
                                                     onChange={e => handleDeviceChange(type, e.target.value)}
                                                 >
@@ -177,5 +177,4 @@ const styles = StyleSheet.create({
     input: { backgroundColor: '#1A1812', borderRadius: 10, padding: 14, color: '#C8C4B8', fontSize: 15, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
 
     select: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1812', borderRadius: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
-    htmlSelect: { flex: 1, background: 'transparent', border: 'none', color: '#C8C4B8', padding: '14px 4px', fontSize: '15px', appearance: 'none', outline: 'none' },
 });

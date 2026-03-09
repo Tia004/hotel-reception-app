@@ -68,7 +68,7 @@ export default function SplashScreen({ onDone }) {
                 <LinearGradient colors={['#D4AF37', '#C9A84C', '#B8920A']} style={styles.logoGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
                     <Animated.Text style={[styles.logoText, { opacity: shimmerOpacity }]}>GSA</Animated.Text>
                 </LinearGradient>
-                <View style={styles.logoShadow} />
+                <View style={[styles.logoShadow, Platform.OS === 'web' && { filter: 'blur(10px)' }]} />
             </Animated.View>
 
             {/* Brand text */}
@@ -106,7 +106,6 @@ const styles = StyleSheet.create({
     logoShadow: {
         position: 'absolute', bottom: -8, left: 10, right: 10, height: 20,
         backgroundColor: 'rgba(201,168,76,0.25)', borderRadius: 50,
-        ...(Platform.OS === 'web' ? { filter: 'blur(10px)' } : {}),
     },
 
     // Brand
