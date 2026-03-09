@@ -2,10 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Platform, Dimensions, TextInput } from 'react-native';
 import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices, RTCView } from 'react-native-webrtc';
 import io from 'socket.io-client';
-import Animated, { FadeIn, FadeInUp, SlideInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInUp, SlideInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence, withDelay } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import MediaSettings from './MediaSettings';
-import AmbientGlow from './AmbientGlow';
 
 const { width, height } = Dimensions.get('window');
 // Use environment variable for production (e.g. Render), fallback to local IP
