@@ -108,7 +108,7 @@ const EmojiPanel = ({ onSelect, onClose }) => {
     );
 };
 
-// Room type creation modal
+// Room type creation modal — layout is ALWAYS stable, only colors change on selection
 const CreateRoomModal = ({ visible, onClose, onConfirm }) => {
     const [type, setType] = useState('normal');
     return (
@@ -116,27 +116,36 @@ const CreateRoomModal = ({ visible, onClose, onConfirm }) => {
             <View style={styles.modalOverlay}>
                 <View style={styles.createRoomModal}>
                     <Text style={styles.createRoomTitle}>Crea Stanza</Text>
-                    <TouchableOpacity style={[styles.roomTypeBtn, type === 'normal' && styles.roomTypeBtnActive]} onPress={() => setType('normal')}>
+                    {/* Normal */}
+                    <TouchableOpacity style={[styles.roomTypeBtn, type === 'normal' && styles.roomTypeBtnActive]} onPress={() => setType('normal')} activeOpacity={0.85}>
                         <Icon name="users" size={20} color={type === 'normal' ? '#D4AF37' : '#72767D'} />
                         <View style={{ flex: 1 }}>
                             <Text style={[styles.roomTypeLabel, type === 'normal' && { color: '#D4AF37' }]}>Stanza Normale</Text>
                             <Text style={styles.roomTypeDesc}>La chat viene salvata e accessibile dopo la chiamata.</Text>
                         </View>
-                        {type === 'normal' && <Icon name="check" size={16} color="#D4AF37" />}
+                        <View style={styles.roomTypeCheck}>
+                            {type === 'normal' && <Icon name="check" size={14} color="#D4AF37" />}
+                        </View>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.roomTypeBtn, type === 'temp' && styles.roomTypeBtnActive]} onPress={() => setType('temp')}>
+                    {/* Temporary */}
+                    <TouchableOpacity style={[styles.roomTypeBtn, type === 'temp' && styles.roomTypeBtnActiveTemp]} onPress={() => setType('temp')} activeOpacity={0.85}>
                         <Icon name="alert-triangle" size={20} color={type === 'temp' ? '#FAA61A' : '#72767D'} />
                         <View style={{ flex: 1 }}>
                             <Text style={[styles.roomTypeLabel, type === 'temp' && { color: '#FAA61A' }]}>Stanza Temporanea</Text>
-                            <Text style={styles.roomTypeDesc}>⚠️ Tutti i messaggi, file e chat vengono eliminati alla fine della chiamata.</Text>
+                            <Text style={styles.roomTypeDesc}>Tutti i messaggi e file vengono eliminati al termine della chiamata.</Text>
                         </View>
-                        {type === 'temp' && <Icon name="check" size={16} color="#FAA61A" />}
+                        <View style={styles.roomTypeCheck}>
+                            {type === 'temp' && <Icon name="check" size={14} color="#FAA61A" />}
+                        </View>
                     </TouchableOpacity>
                     <View style={styles.createRoomActions}>
                         <TouchableOpacity style={styles.createRoomCancel} onPress={onClose}>
                             <Text style={{ color: '#72767D', fontWeight: '600' }}>Annulla</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.createRoomConfirm, { backgroundColor: type === 'temp' ? '#FAA61A' : '#D4AF37' }]} onPress={() => { onConfirm(type); onClose(); }}>
+                        <TouchableOpacity
+                            style={[styles.createRoomConfirm, { backgroundColor: type === 'temp' ? '#FAA61A' : '#D4AF37' }]}
+                            onPress={() => { onConfirm(type); onClose(); }}
+                        >
                             <Text style={{ color: '#000', fontWeight: '700' }}>Crea</Text>
                         </TouchableOpacity>
                     </View>
@@ -490,11 +499,6 @@ export default function CallScreen({ user, socket, onLogout }) {
                             />
                         }
                     </View>
-
-                    <TouchableOpacity style={styles.settingsLobbyBtn} onPress={() => setSettingsVisible(true)}>
-                        <Icon name="settings" size={16} color="#72767D" />
-                        <Text style={styles.settingsLobbyText}>Impostazioni</Text>
-                    </TouchableOpacity>
 
                     <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
                         <Icon name="log-out" size={16} color="#ED4245" />
