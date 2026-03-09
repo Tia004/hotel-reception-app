@@ -69,7 +69,9 @@ export default function CallScreen({ user, onLogout }) {
     const pendingCandidates = useRef([]); // ICE Candidate queue
 
     useEffect(() => {
-        const s = io(SIGNALING_URL);
+        const s = io(SIGNALING_URL, {
+            transports: ['websocket'], // BUG FIX: Forces WebSockets, bypassing Render HTTP polling blocks
+        });
         setSocket(s);
 
         s.on('connect', () => {
