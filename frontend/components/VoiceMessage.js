@@ -295,7 +295,15 @@ export function VoiceMessageBubble({ src, duration = 0, isMine }) {
         audio.addEventListener('ended', onEnded);
         audio.load(); // Force load to avoid stuck state
 
+        // Retry load after 1s if not loaded (fixes static/buggy playback)
+        const retryTimer = setTimeout(() => {
+            if (!audio.readyState || audio.readyState < 2) {
+                audio.load();
+            }
+        }, 1000);
+
         return () => {
+            clearTimeout(retryTimer);
             audio.pause();
             audio.removeEventListener('canplaythrough', onReady);
             audio.removeEventListener('loadedmetadata', onReady);
@@ -416,9 +424,9 @@ const styles = StyleSheet.create({
     voiceBubble: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.05)', minWidth: 260 },
     voiceBubbleMine: { backgroundColor: 'rgba(201,168,76,0.08)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)' },
     playBtn: { width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-    bubbleWaveWrap: { flex: 1, position: 'relative', paddingBottom: 16 },
-    bubbleBarRow: { flexDirection: 'row', alignItems: 'center', gap: 1.5, height: 28, cursor: 'pointer' },
-    bubbleScrubber: { position: 'absolute', width: 10, height: 10, borderRadius: 5, top: 9, marginLeft: -5, borderWidth: 2, borderColor: '#1A1812' },
+    bubbleWaveWrap: { flex: 1, position: 'relative', paddingBottom: 16, overflow: 'hidden' },
+    bubbleBarRow: { flexDirection: 'row', alignItems: 'center', gap: 1.5, height: 28, cursor: 'pointer', flex: 1 },
+    bubbleScrubber: { position: 'absolute', width: 10, height: 10, borderRadius: 5, top: 9, marginLeft: -5, borderWidth: 2, borderColor: '#1A1812', zIndex: 10 },
     bubbleTime: { position: 'absolute', bottom: -2, left: 0, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] },
     speedBtn: { backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
     speedTxt: { fontSize: 11, fontWeight: '800' },

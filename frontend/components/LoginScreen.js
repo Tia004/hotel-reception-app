@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, Dimensions, Image } from 'react-native';
 import Animated, { FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence, withDelay } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,35 +12,61 @@ const USERS = {
     'mobile_lobby': { password: 'password123', role: 'Telefono Hall' }
 };
 
-// Ambient Glow Animation (Slow breathing instead of chaotic rotation)
-const AmbientGlow = ({ color, size, top, left, delay }) => {
-    const scale = useSharedValue(1);
-    const opacity = useSharedValue(0.4);
+// Vanta.js Clouds Background — loads THREE.js + Vanta via CDN
+const VantaClouds = () => {
+    const vantaRef = useRef(null);
+    const vantaEffect = useRef(null);
 
-    React.useEffect(() => {
-        scale.value = withDelay(delay, withRepeat(withSequence(withTiming(1.3, { duration: 6000, easing: Easing.inOut(Easing.ease) }), withTiming(0.9, { duration: 6000, easing: Easing.inOut(Easing.ease) })), -1, true));
-        opacity.value = withDelay(delay, withRepeat(withSequence(withTiming(0.7, { duration: 6000, easing: Easing.inOut(Easing.ease) }), withTiming(0.4, { duration: 6000, easing: Easing.inOut(Easing.ease) })), -1, true));
+    useEffect(() => {
+        if (Platform.OS !== 'web') return;
+        // Load THREE.js first, then Vanta
+        const loadScript = (src) => new Promise((resolve, reject) => {
+            const existing = document.querySelector(`script[src="${src}"]`);
+            if (existing) { resolve(); return; }
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+        });
+
+        const init = async () => {
+            try {
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js');
+                await loadScript('https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.clouds.min.js');
+                if (vantaRef.current && window.VANTA) {
+                    vantaEffect.current = window.VANTA.CLOUDS({
+                        el: vantaRef.current,
+                        mouseControls: true,
+                        touchControls: true,
+                        gyroControls: false,
+                        minHeight: height,
+                        minWidth: width,
+                        skyColor: 0x0c0b09,
+                        cloudColor: 0x1a1812,
+                        cloudShadowColor: 0x0a0908,
+                        sunColor: 0xc9a84c,
+                        sunGlareColor: 0xaa8c2c,
+                        sunlightColor: 0x3a2e1d,
+                        speed: 0.6,
+                    });
+                }
+            } catch (e) {
+                console.log('Vanta load failed, using fallback:', e);
+            }
+        };
+        init();
+        return () => { if (vantaEffect.current) vantaEffect.current.destroy(); };
     }, []);
 
-    const animStyle = useAnimatedStyle(() => {
-        return {
-            transform: [{ scale: scale.value }],
-            opacity: opacity.value
-        };
-    });
-
     return (
-        <Animated.View style={[
-            {
-                position: 'absolute',
-                top, left,
-                width: size, height: size,
-                backgroundColor: color,
-                borderRadius: size / 2, // Perfect circle for soft glow
-                ...(Platform.OS === 'web' ? { filter: 'blur(80px)', opacity: 0.5 } : { opacity: 0.2, shadowColor: color, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 50 })
-            },
-            animStyle
-        ]} />
+        <View
+            ref={vantaRef}
+            style={{
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                zIndex: 0, backgroundColor: '#0C0B09',
+            }}
+        />
     );
 };
 
@@ -60,9 +86,8 @@ export default function LoginScreen({ onLogin }) {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Elegant Dark Background Elements */}
-            <AmbientGlow color="#1e1836" size={500} top={-150} left={-200} delay={0} />
-            <AmbientGlow color="#3a2e1d" size={400} top={height * 0.6} left={width * 0.5} delay={2000} />
+            {/* Vanta.js Clouds Background */}
+            <VantaClouds />
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.formWrapper}>
                 <Animated.View entering={FadeInDown.duration(800).springify().damping(15)} style={styles.glassPanel}>
@@ -134,7 +159,7 @@ export default function LoginScreen({ onLogin }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#0C0B09', // Deep v2.5.0 black
+        backgroundColor: '#0C0B09',
         justifyContent: 'center',
         overflow: 'hidden'
     },
@@ -157,6 +182,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(20, 18, 16, 0.4)',
         borderWidth: 1,
         borderColor: 'rgba(201,168,76,0.1)',
+        ...(Platform.OS === 'web' ? { backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' } : {}),
     },
     formContainer: {
         padding: 40,
@@ -177,7 +203,7 @@ const styles = StyleSheet.create({
     },
     subtitle: {
         fontSize: 12,
-        color: '#C9A84C', // Refined v2.5.0 gold
+        color: '#C9A84C',
         fontWeight: '600',
         letterSpacing: 3,
         textTransform: 'uppercase',
@@ -237,4 +263,3 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5
     }
 });
-

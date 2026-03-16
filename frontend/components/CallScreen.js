@@ -30,7 +30,7 @@ const IS_MOBILE = W < 768;
 
 const EMOJI_REACTIONS = ['👍', '👏', '😂', '❤️', '🎉', '🔥', '😮', '🤔'];
 
-export default function CallScreen({ user, socket, roomId, onClose, isTempProp, onRoomState }) {
+export default function CallScreen({ user, socket, roomId, onClose, isTempProp, onRoomState, isPiP = false, onExpand, onMinimize }) {
     const [localStream, setLocalStream] = useState(null);
     const [remoteStreams, setRemoteStreams] = useState({}); // socketId → MediaStream
     const [micOn, setMicOn] = useState(true);
@@ -55,6 +55,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     // Reactions
     const [showReactions, setShowReactions] = useState(false);
     const [floatingReactions, setFloatingReactions] = useState([]);
+    const [remoteUsernames, setRemoteUsernames] = useState({}); // socketId → username
 
     // Loading
     const [loading, setLoading] = useState(true);
@@ -98,6 +99,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
 
         const onUserJoined = async ({ socketId, username }) => {
             console.log('User joined room:', username);
+            setRemoteUsernames(prev => ({ ...prev, [socketId]: username }));
             const pc = createPC(socketId);
             const stream = localStreamRef.current;
             if (stream) stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -336,6 +338,54 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         );
     }
 
+    // ── PiP Compact Render ────────────────────────────────────────────────
+    if (isPiP) {
+        return (
+            <View style={styles.pipRoot}>
+                <LinearGradient colors={['#0C0B09', '#141210']} style={StyleSheet.absoluteFill} />
+                {/* Video: show remote if available, otherwise local */}
+                <View style={styles.pipVideoArea}>
+                    {remoteEntries.length > 0 ? (
+                        <RTCView
+                            streamURL={remoteEntries[0][1].toURL ? remoteEntries[0][1].toURL() : remoteEntries[0][1]}
+                            style={styles.rtc}
+                            objectFit="cover"
+                        />
+                    ) : camOn && localStream ? (
+                        <RTCView
+                            streamURL={localStream.toURL ? localStream.toURL() : localStream}
+                            style={styles.rtc}
+                            objectFit="cover"
+                            muted={true}
+                            mirror={true}
+                        />
+                    ) : (
+                        <View style={styles.avatarTile}>
+                            <Text style={styles.avatarTxt}>{(user.username || '?')[0].toUpperCase()}</Text>
+                        </View>
+                    )}
+                </View>
+                {/* Compact Controls */}
+                <View style={styles.pipControls}>
+                    <TouchableOpacity style={[styles.pipCtrl, !micOn && { backgroundColor: '#ED4245' }]} onPress={toggleMic}>
+                        <Icon name={micOn ? 'mic-filled' : 'mic-off-filled'} size={14} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.pipCtrl, !camOn && { backgroundColor: '#ED4245' }]} onPress={toggleCam}>
+                        <Icon name={camOn ? 'video-filled' : 'video-off-filled'} size={14} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.pipCtrl, { backgroundColor: '#ED4245' }]} onPress={hangUp}>
+                        <Icon name="phone" size={14} color="#fff" />
+                    </TouchableOpacity>
+                    {onExpand && (
+                        <TouchableOpacity style={styles.pipCtrl} onPress={onExpand}>
+                            <Icon name="maximize-2" size={14} color="#C9A84C" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </View>
+        );
+    }
+
     return (
         <View style={styles.root}>
             <LinearGradient colors={['#0C0B09', '#141210']} style={StyleSheet.absoluteFill} />
@@ -357,6 +407,11 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                     <View style={styles.handIndicator}>
                         <Text style={{ fontSize: 16 }}>✋</Text>
                     </View>
+                )}
+                {onMinimize && (
+                    <TouchableOpacity onPress={onMinimize} style={{ padding: 6 }}>
+                        <Icon name="minimize-2" size={18} color="#C9A84C" />
+                    </TouchableOpacity>
                 )}
             </View>
 
@@ -394,7 +449,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                     objectFit="cover"
                                 />
                                 <View style={styles.nameOverlay}>
-                                    <Text style={styles.nameTxt}>Partecipante</Text>
+                                    <Text style={styles.nameTxt}>{remoteUsernames[sid] || 'Partecipante'}</Text>
                                 </View>
                             </View>
                         ))}
@@ -624,4 +679,16 @@ const styles = StyleSheet.create({
     chatInputRow: { flexDirection: 'row', alignItems: 'center', padding: 8, gap: 8, borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.05)' },
     chatInput: { flex: 1, backgroundColor: '#1A1812', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, color: '#C8C4B8', fontSize: 13, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
     chatSendBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#C9A84C', justifyContent: 'center', alignItems: 'center' },
+
+    // PiP mode
+    pipRoot: { flex: 1, borderRadius: 14, overflow: 'hidden' },
+    pipVideoArea: { flex: 1 },
+    pipControls: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+        paddingVertical: 8, backgroundColor: 'rgba(14,13,12,0.95)',
+    },
+    pipCtrl: {
+        width: 30, height: 30, borderRadius: 15,
+        backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center',
+    },
 });

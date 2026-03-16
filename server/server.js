@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -16,28 +18,76 @@ const io = new Server(server, {
     cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
+// ─── Persistence Helpers ────────────────────────────────────────────────────
+const DATA_DIR = path.join(__dirname, 'data');
+const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
+const PINNED_FILE = path.join(DATA_DIR, 'pinned.json');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+function loadJSON(file, fallback) {
+    try {
+        if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (e) { console.error(`Failed to load ${file}:`, e.message); }
+    return fallback;
+}
+
+function saveJSON(file, data) {
+    try { fs.writeFileSync(file, JSON.stringify(data), 'utf8'); }
+    catch (e) { console.error(`Failed to save ${file}:`, e.message); }
+}
+
+function saveMessages() {
+    const obj = {};
+    for (const [k, v] of channelMessages.entries()) obj[k] = v;
+    saveJSON(MESSAGES_FILE, obj);
+}
+function savePinned() {
+    const obj = {};
+    for (const [k, v] of pinnedMessages.entries()) obj[k] = v;
+    saveJSON(PINNED_FILE, obj);
+}
+function saveKnownUsers() {
+    const obj = {};
+    for (const [k, v] of allKnownUsers.entries()) obj[k] = v;
+    saveJSON(USERS_FILE, obj);
+}
+
 // ─── Data Stores ───────────────────────────────────────────────────────────────
-const users = new Map();          // socketId → { id, username, station, roomId }
-const allKnownUsers = new Map([   // username → { username, station, status, bio, profilePic }
-    ['admin', { username: 'admin', station: 'Amministratore', status: 'offline', bio: '', profilePic: null }],
-    ['reception1', { username: 'reception1', station: 'Reception Principale', status: 'offline', bio: '', profilePic: null }],
-    ['reception2', { username: 'reception2', station: 'Reception Secondaria', status: 'offline', bio: '', profilePic: null }],
-    ['mobile_lobby', { username: 'mobile_lobby', station: 'Telefono Hall', status: 'offline', bio: '', profilePic: null }],
-]);
-const rooms = new Map();          // roomId → { id, name, creatorName, peers, isTemp }
+const users = new Map();          // socketId → { id, username, station, roomId, status }
 
-// Hotel channel messages: channelId → [{ id, sender, text, timestamp, expiresAt, pinned, reactions }]
-const channelMessages = new Map();
-const pinnedMessages = new Map(); // channelId → [message]
+// Load known users from disk or use defaults
+const defaultUsers = {
+    'admin': { username: 'admin', station: 'Amministratore', status: 'invisible', bio: '', profilePic: null },
+    'reception1': { username: 'reception1', station: 'Reception Principale', status: 'invisible', bio: '', profilePic: null },
+    'reception2': { username: 'reception2', station: 'Reception Secondaria', status: 'invisible', bio: '', profilePic: null },
+    'mobile_lobby': { username: 'mobile_lobby', station: 'Telefono Hall', status: 'invisible', bio: '', profilePic: null },
+};
+const savedUsers = loadJSON(USERS_FILE, defaultUsers);
+const allKnownUsers = new Map(Object.entries(savedUsers));
+// Ensure all default users exist and all are invisible on server start
+for (const [k, v] of Object.entries(defaultUsers)) {
+    if (!allKnownUsers.has(k)) allKnownUsers.set(k, v);
+    else allKnownUsers.get(k).status = 'invisible'; // reset on server restart
+}
 
+const rooms = new Map();          // roomId → { id, name, creatorName, peers, isTemp, chatMessages, deleteTimer }
+
+// Hotel channel messages — load from disk
 const HOTEL_CHANNELS = [
     'duchessa-generale', 'duchessa-media', 'duchessa-annunci',
     'blumen-generale', 'blumen-media', 'blumen-annunci',
     'santorsola-generale', 'santorsola-media', 'santorsola-annunci',
 ];
+const savedMessages = loadJSON(MESSAGES_FILE, {});
+const channelMessages = new Map();
+const savedPinned = loadJSON(PINNED_FILE, {});
+const pinnedMessages = new Map();
+
 HOTEL_CHANNELS.forEach(ch => {
-    channelMessages.set(ch, []);
-    pinnedMessages.set(ch, []);
+    channelMessages.set(ch, savedMessages[ch] || []);
+    pinnedMessages.set(ch, savedPinned[ch] || []);
 });
 
 const MESSAGE_TTL = 48 * 60 * 60 * 1000; // 48 hours
@@ -48,18 +98,52 @@ setInterval(() => {
     for (const [chId, msgs] of channelMessages.entries()) {
         channelMessages.set(chId, msgs.filter(m => m.expiresAt > now));
     }
+    saveMessages();
     console.log('[Cleanup] Expired messages removed');
 }, 10 * 60 * 1000);
 
+// Auto-save messages every 30 seconds
+setInterval(() => {
+    saveMessages();
+    savePinned();
+}, 30 * 1000);
+
 // ─── Room Helpers ──────────────────────────────────────────────────────────────
 function broadcastRooms() {
-    const available = Array.from(rooms.values()).filter(r => r.peers.length < 2);
-    io.emit('rooms-update', available);
+    // Send ALL rooms (not just available ones) with peer info
+    const roomList = Array.from(rooms.values()).map(r => ({
+        id: r.id,
+        name: r.name,
+        creatorName: r.creatorName,
+        creatorStation: r.creatorStation,
+        isTemp: r.isTemp,
+        peerCount: r.peers.length,
+        peers: r.peers.map(sid => {
+            const u = users.get(sid);
+            return u ? { username: u.username, profilePic: allKnownUsers.get(u.username)?.profilePic || null } : null;
+        }).filter(Boolean),
+    }));
+    io.emit('rooms-update', roomList);
 }
 
 function broadcastUsers() {
     const list = Array.from(allKnownUsers.values());
     io.emit('online-users', list);
+}
+
+// Schedule room auto-delete when empty
+function scheduleRoomDelete(roomId) {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    if (room.deleteTimer) clearTimeout(room.deleteTimer);
+    room.deleteTimer = setTimeout(() => {
+        const r = rooms.get(roomId);
+        if (r && r.peers.length === 0) {
+            rooms.delete(roomId);
+            broadcastRooms();
+            console.log(`[Room] Auto-deleted empty room ${roomId}`);
+        }
+    }, 2 * 60 * 1000); // 2 minutes
 }
 
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
@@ -80,11 +164,13 @@ io.on('connection', (socket) => {
         }
         users.set(socket.id, { id: socket.id, username, station, roomId: null, status: 'online' });
         
-        // Update global known user dictionary
+        // Update global known user dictionary — set to ONLINE when they join
         const known = allKnownUsers.get(username) || { username, station, bio: '', profilePic: null };
         known.profilePic = data.profilePic || known.profilePic;
         known.status = 'online';
+        known.station = station;
         allKnownUsers.set(username, known);
+        saveKnownUsers();
 
         broadcastRooms();
         broadcastUsers();
@@ -102,7 +188,7 @@ io.on('connection', (socket) => {
             creatorStation: user.station,
             peers: [socket.id],
             isTemp,
-            chatMessages: [],   // in-call chat, optional persistence
+            chatMessages: [],
         });
         user.roomId = roomId;
         socket.join(roomId);
@@ -114,7 +200,8 @@ io.on('connection', (socket) => {
         const user = users.get(socket.id);
         const room = rooms.get(roomId);
         if (!user || !room) { socket.emit('room-error', { message: 'Stanza non trovata.' }); return; }
-        if (room.peers.length >= 2) { socket.emit('room-error', { message: 'Stanza al completo.' }); return; }
+        // Cancel auto-delete timer if room was about to be deleted
+        if (room.deleteTimer) { clearTimeout(room.deleteTimer); room.deleteTimer = null; }
         room.peers.push(socket.id);
         user.roomId = roomId;
         socket.join(roomId);
@@ -132,16 +219,20 @@ io.on('connection', (socket) => {
             room.peers = room.peers.filter(id => id !== socket.id);
             socket.to(roomId).emit('user-left-room', { socketId: socket.id });
             socket.leave(roomId);
-            if (room.peers.length === 0) rooms.delete(roomId);
+            // Don't delete immediately — schedule auto-delete after 2min if empty
+            if (room.peers.length === 0) {
+                scheduleRoomDelete(roomId);
+            }
         }
         user.roomId = null;
         broadcastRooms();
     });
 
     // ── WebRTC Signaling ────────────────────────────────────────────────────
-    socket.on('offer', (d) => io.to(d.target).emit('offer', d));
-    socket.on('answer', (d) => io.to(d.target).emit('answer', d));
-    socket.on('ice-candidate', (d) => io.to(d.target).emit('ice-candidate', d));
+    // Ensure sender field is always present
+    socket.on('offer', (d) => io.to(d.target).emit('offer', { ...d, sender: socket.id }));
+    socket.on('answer', (d) => io.to(d.target).emit('answer', { ...d, sender: socket.id }));
+    socket.on('ice-candidate', (d) => io.to(d.target).emit('ice-candidate', { ...d, sender: socket.id }));
 
     // ── In-Call Media State ──────────────────────────────────────────────────
     socket.on('media-state-change', (data) => {
@@ -158,12 +249,11 @@ io.on('connection', (socket) => {
     socket.on('chat-message', (data) => {
         const user = users.get(socket.id);
         if (!user?.roomId) return;
-        // socket.to → excludes sender, so no double message
-        socket.to(user.roomId).emit('chat-message', {
-            socketId: socket.id,
-            sender: user.username,
-            ...data
-        });
+        const room = rooms.get(user.roomId);
+        const msgObj = { socketId: socket.id, sender: user.username, ...data, timestamp: Date.now() };
+        // Save to room chat history
+        if (room) room.chatMessages.push(msgObj);
+        socket.to(user.roomId).emit('chat-message', msgObj);
     });
 
     // ── Emoji Reactions (in-call) ────────────────────────────────────────────
@@ -194,6 +284,10 @@ io.on('connection', (socket) => {
         const user = users.get(socket.id);
         if (!user || !HOTEL_CHANNELS.includes(channelId)) return;
         const now = Date.now();
+        // Get list of currently online usernames for deliveredTo
+        const onlineUsernames = [];
+        for (const u of users.values()) onlineUsernames.push(u.username);
+        
         const msg = {
             id: `${socket.id}-${now}`,
             sender: user.username,
@@ -210,11 +304,37 @@ io.on('connection', (socket) => {
             expiresAt: now + MESSAGE_TTL,
             pinned: false,
             reactions: {},
+            // Read receipts
+            status: 'sent',
+            deliveredTo: onlineUsernames.filter(u => u !== user.username),
+            readBy: [],
         };
         const msgs = channelMessages.get(channelId) || [];
         msgs.push(msg);
         channelMessages.set(channelId, msgs);
+        saveMessages();
         io.to(`channel:${channelId}`).emit('channel-message', { channelId, message: msg });
+    });
+
+    // Mark messages as read
+    socket.on('mark-read', ({ channelId, messageIds }) => {
+        const user = users.get(socket.id);
+        if (!user) return;
+        const msgs = channelMessages.get(channelId);
+        if (!msgs) return;
+        let changed = false;
+        for (const mid of messageIds) {
+            const msg = msgs.find(m => m.id === mid);
+            if (msg && msg.sender !== user.username && !msg.readBy?.includes(user.username)) {
+                if (!msg.readBy) msg.readBy = [];
+                msg.readBy.push(user.username);
+                changed = true;
+            }
+        }
+        if (changed) {
+            // Broadcast updated read status
+            io.to(`channel:${channelId}`).emit('read-receipt-update', { channelId, reader: user.username, messageIds });
+        }
     });
 
     socket.on('edit-message', ({ channelId, messageId, text }) => {
@@ -224,6 +344,7 @@ io.on('connection', (socket) => {
         if (!msg) return;
         msg.text = text;
         msg.edited = true;
+        saveMessages();
         io.to(`channel:${channelId}`).emit('message-edited', { channelId, messageId, text });
     });
 
@@ -233,6 +354,7 @@ io.on('connection', (socket) => {
         const msgIdx = msgs.findIndex(m => m.id === messageId);
         if (msgIdx === -1) return;
         msgs.splice(msgIdx, 1);
+        saveMessages();
         io.to(`channel:${channelId}`).emit('message-deleted', { channelId, messageId });
     });
 
@@ -253,6 +375,7 @@ io.on('connection', (socket) => {
 
         if (msg.reactions[emoji].length === 0) delete msg.reactions[emoji];
 
+        saveMessages();
         io.to(`channel:${channelId}`).emit('message-reacted', { channelId, messageId, reactions: msg.reactions });
     });
 
@@ -276,6 +399,7 @@ io.on('connection', (socket) => {
         if (already) { votes[optionIndex] = votes[optionIndex].filter(u => u !== userId); }
         else { votes[optionIndex].push(userId); }
         msg.poll.votes = votes;
+        saveMessages();
         io.to(`channel:${channelId}`).emit('channel-poll-update', { channelId, messageId, votes });
     });
 
@@ -285,6 +409,7 @@ io.on('connection', (socket) => {
         if (user) { 
             user.status = status; 
             if(allKnownUsers.has(user.username)) allKnownUsers.get(user.username).status = status;
+            saveKnownUsers();
             broadcastUsers(); 
         }
     });
@@ -293,6 +418,7 @@ io.on('connection', (socket) => {
         if (user) { 
             user.bio = bio; 
             if(allKnownUsers.has(user.username)) allKnownUsers.get(user.username).bio = bio;
+            saveKnownUsers();
             broadcastUsers();
         }
     });
@@ -307,6 +433,8 @@ io.on('connection', (socket) => {
         const pinned = pinnedMessages.get(channelId) || [];
         if (!pinned.find(p => p.id === messageId)) pinned.push(msg);
         pinnedMessages.set(channelId, pinned);
+        saveMessages();
+        savePinned();
         io.to(`channel:${channelId}`).emit('message-pinned', { channelId, message: msg });
     });
 
@@ -316,10 +444,12 @@ io.on('connection', (socket) => {
         if (msg) msg.pinned = false;
         const pinned = (pinnedMessages.get(channelId) || []).filter(p => p.id !== messageId);
         pinnedMessages.set(channelId, pinned);
+        saveMessages();
+        savePinned();
         io.to(`channel:${channelId}`).emit('message-unpinned', { channelId, messageId });
     });
 
-    // React to a message in a hotel channel
+    // React to a message in a hotel channel (legacy - unused, kept for compat)
     socket.on('channel-reaction', ({ channelId, messageId, emoji }) => {
         const msgs = channelMessages.get(channelId) || [];
         const msg = msgs.find(m => m.id === messageId);
@@ -337,12 +467,17 @@ io.on('connection', (socket) => {
                 if (room) {
                     room.peers = room.peers.filter(id => id !== socket.id);
                     socket.to(user.roomId).emit('user-left-room', { socketId: socket.id });
-                    if (room.peers.length === 0) rooms.delete(user.roomId);
+                    // Don't delete immediately — schedule auto-delete
+                    if (room.peers.length === 0) {
+                        scheduleRoomDelete(user.roomId);
+                    }
                 }
             }
             users.delete(socket.id);
             if (allKnownUsers.has(user.username)) {
-                allKnownUsers.get(user.username).status = 'offline';
+                // Tab closed = idle (orange). After some time the client can set offline explicitly.
+                allKnownUsers.get(user.username).status = 'idle';
+                saveKnownUsers();
             }
             broadcastRooms();
             broadcastUsers();

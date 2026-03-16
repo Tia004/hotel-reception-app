@@ -1,12 +1,13 @@
 /**
- * Icons.js — Uses @expo/vector-icons (Ionicons) for quality, uniform icons.
+ * Icons.js — v2.8.0
+ * Uses @expo/vector-icons (Ionicons + Feather) for quality, uniform icons.
  * Ionicons is bundled with Expo SDK - no extra install needed.
  */
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Feather } from '@expo/vector-icons';
 
-// Icon name mapping: our semantic names → Ionicons names
+// Icon name mapping: our semantic names → pack + icon names
 const ICON_MAP = {
     // Audio
     'mic': { pack: 'feather', name: 'mic' },
@@ -20,6 +21,8 @@ const ICON_MAP = {
     // Monitor / Share
     'monitor': { pack: 'feather', name: 'monitor' },
     'share-screen': { pack: 'ionicons', name: 'desktop-outline' },
+    'screen-share': { pack: 'ionicons', name: 'desktop-outline' },
+    'stop-screen-share': { pack: 'ionicons', name: 'desktop-outline' },
     // Communication
     'message-square': { pack: 'feather', name: 'message-square' },
     'send': { pack: 'feather', name: 'send' },
@@ -28,19 +31,25 @@ const ICON_MAP = {
     'phone': { pack: 'feather', name: 'phone' },
     'phone-off': { pack: 'ionicons', name: 'call-outline' },
     'phone-forward': { pack: 'ionicons', name: 'call-sharp' },
-    // UI
+    // UI Navigation
     'chevron-down': { pack: 'feather', name: 'chevron-down' },
     'chevron-right': { pack: 'feather', name: 'chevron-right' },
     'chevron-left': { pack: 'feather', name: 'chevron-left' },
+    'arrow-down': { pack: 'feather', name: 'chevron-down' },
     'x': { pack: 'feather', name: 'x' },
     'plus': { pack: 'feather', name: 'plus' },
     'more-horizontal': { pack: 'feather', name: 'more-horizontal' },
     'search': { pack: 'feather', name: 'search' },
+    'maximize-2': { pack: 'feather', name: 'maximize-2' },
+    'minimize-2': { pack: 'feather', name: 'minimize-2' },
+    // Media controls
     'play': { pack: 'feather', name: 'play' },
     'pause': { pack: 'feather', name: 'pause' },
     // Hand / Reactions
     'hand': { pack: 'ionicons', name: 'hand-right-outline' },
+    'hand-raised': { pack: 'ionicons', name: 'hand-right' },
     'smile': { pack: 'feather', name: 'smile' },
+    'happy': { pack: 'ionicons', name: 'happy-outline' },
     'gift': { pack: 'feather', name: 'gift' },
     // User
     'user': { pack: 'feather', name: 'user' },
@@ -56,21 +65,26 @@ const ICON_MAP = {
     'bookmark': { pack: 'feather', name: 'bookmark' },
     'bell': { pack: 'feather', name: 'bell' },
     'pin': { pack: 'ionicons', name: 'pin-outline' },
-    'edit': { pack: 'feather', name: 'edit-2' },
-    'trash': { pack: 'feather', name: 'trash-2' },
-    'copy': { pack: 'feather', name: 'copy' },
     'link': { pack: 'feather', name: 'link' },
     'download': { pack: 'feather', name: 'download' },
     'menu': { pack: 'feather', name: 'menu' },
-    'check': { pack: 'feather', name: 'check' },
     'info': { pack: 'feather', name: 'info' },
     'alert-triangle': { pack: 'feather', name: 'alert-triangle' },
-    'arrow-down': { pack: 'feather', name: 'chevron-down' },
-    'screen-share': { pack: 'ionicons', name: 'desktop-outline' },
-    'stop-screen-share': { pack: 'ionicons', name: 'desktop-outline' },
-    'hand': { pack: 'ionicons', name: 'hand-right-outline' },
-    'hand-raised': { pack: 'ionicons', name: 'hand-right' },
-    'happy': { pack: 'ionicons', name: 'happy-outline' },
+    'file-text': { pack: 'feather', name: 'file-text' },
+    // Edit / Actions (MUST match exact Feather names used in components)
+    'edit': { pack: 'feather', name: 'edit-2' },
+    'edit-2': { pack: 'feather', name: 'edit-2' },
+    'trash': { pack: 'feather', name: 'trash-2' },
+    'trash-2': { pack: 'feather', name: 'trash-2' },
+    'copy': { pack: 'feather', name: 'copy' },
+    'check': { pack: 'feather', name: 'check' },
+    'check-check': { pack: 'ionicons', name: 'checkmark-done-outline' },
+    'clock': { pack: 'feather', name: 'clock' },
+    // Reply / Forward
+    'corner-up-left': { pack: 'feather', name: 'corner-up-left' },
+    'corner-up-right': { pack: 'feather', name: 'corner-up-right' },
+    'forward': { pack: 'ionicons', name: 'arrow-redo-outline' },
+    // Filled variants for call controls
     'mic-filled': { pack: 'ionicons', name: 'mic' },
     'mic-off-filled': { pack: 'ionicons', name: 'mic-off' },
     'video-filled': { pack: 'ionicons', name: 'videocam' },

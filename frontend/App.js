@@ -23,6 +23,7 @@ export default function App() {
   const [availableRooms, setAvailableRooms] = useState([]);
   const [currentRoom, setCurrentRoom] = useState(null);
   const [isTemp, setIsTemp] = useState(false);
+  const [callPiP, setCallPiP] = useState(false); // PiP mode
 
   // Shared socket passed to both HotelChat and CallScreen
   const socketRef = useRef(null);
@@ -86,10 +87,12 @@ export default function App() {
     s.on('room-created', ({ roomId, isTemp }) => {
       setCurrentRoom(roomId);
       setIsTemp(isTemp);
+      setCallPiP(false); // Start in full mode
     });
     s.on('room-joined', ({ roomId, isTemp }) => {
       setCurrentRoom(roomId);
       setIsTemp(isTemp);
+      setCallPiP(false); // Start in full mode
     });
     s.on('connect_error', () => setSocketReady(false));
     s.on('disconnect', () => setSocketReady(false));
@@ -119,6 +122,14 @@ export default function App() {
     setSocketReady(false);
     setUser(null);
     setCurrentRoom(null);
+    setCallPiP(false);
+  };
+
+  // When user clicks a chat channel while in a call → shrink call to PiP
+  const handleChannelClick = () => {
+    if (currentRoom && !callPiP) {
+      setCallPiP(true);
+    }
   };
 
   if (loading) {
@@ -138,13 +149,16 @@ export default function App() {
     );
   }
 
+  const inCall = !!currentRoom;
+  const showCallFull = inCall && !callPiP;
+
   return (
     <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
       <StatusBar style="light" />
 
       <View style={styles.content}>
-        {/* Always show HotelChat — sidebar is always accessible */}
-        <View style={currentRoom ? styles.chatPaneShrunk : styles.chatPane}>
+        {/* HotelChat — full width when no call or PiP, shrunk when call is full */}
+        <View style={showCallFull ? styles.chatPaneShrunk : styles.chatPane}>
           <HotelChat
             socket={socketRef.current}
             user={user}
@@ -153,13 +167,14 @@ export default function App() {
             availableRooms={availableRooms}
             onJoinRoom={(roomId) => socketRef.current?.emit('join-room', { roomId })}
             onLogout={handleLogout}
-            inCall={!!currentRoom}
-            hideChatColumn={!!currentRoom}
+            inCall={inCall}
+            hideChatColumn={showCallFull}
+            onChannelClick={handleChannelClick}
           />
         </View>
 
-        {/* Call Screen renders next to sidebar, not as overlay */}
-        {!!currentRoom && (
+        {/* Call Screen — full pane when not PiP */}
+        {inCall && !callPiP && (
           <View style={styles.callPane}>
             <CallScreen
               user={user}
@@ -167,9 +182,28 @@ export default function App() {
               onLogout={handleLogout}
               onRoomsUpdate={setAvailableRooms}
               roomId={currentRoom}
-              onClose={() => setCurrentRoom(null)}
+              onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
               isTempProp={isTemp}
               onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
+              onMinimize={() => setCallPiP(true)}
+            />
+          </View>
+        )}
+
+        {/* Call Screen — PiP floating window */}
+        {inCall && callPiP && (
+          <View style={styles.pipContainer}>
+            <CallScreen
+              user={user}
+              socket={socketRef.current}
+              onLogout={handleLogout}
+              onRoomsUpdate={setAvailableRooms}
+              roomId={currentRoom}
+              onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
+              isTempProp={isTemp}
+              onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
+              isPiP={true}
+              onExpand={() => setCallPiP(false)}
             />
           </View>
         )}
@@ -180,12 +214,12 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0C0B09' },
-  content: { flex: 1, flexDirection: IS_MOBILE ? 'column' : 'row' },
+  content: { flex: 1, flexDirection: IS_MOBILE ? 'column' : 'row', position: 'relative' },
 
   chatPane: {
     flex: 1,
   },
-  // When in a call, sidebar shrinks to just the left sidebar width
+  // When call is full-screen, sidebar shrinks to just the left sidebar width
   chatPaneShrunk: {
     width: IS_MOBILE ? '100%' : 260,
     maxWidth: IS_MOBILE ? undefined : 260,
@@ -194,5 +228,22 @@ const styles = StyleSheet.create({
     flex: 1,
     borderLeftWidth: 1,
     borderLeftColor: 'rgba(201,168,76,0.06)',
+  },
+  // PiP floating container
+  pipContainer: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 340,
+    height: 240,
+    borderRadius: 16,
+    overflow: 'hidden',
+    zIndex: 9999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.3)',
   },
 });
