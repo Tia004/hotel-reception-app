@@ -154,7 +154,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 <View style={styles.videoContainer}>
                     <View style={[styles.tile, remoteStream ? styles.tileSide : styles.tileCenter]}>
                         {camOn && localStream ? (
-                            <RTCView streamURL={localStream.toURL()} style={styles.rtc} objectFit="cover" />
+                            <RTCView streamURL={localStream.toURL ? localStream.toURL() : localStream} style={styles.rtc} objectFit="cover" />
                         ) : (
                             <View style={styles.avatarTile}><Text style={styles.avatarTxt}>{(user.username || '?')[0]}</Text></View>
                         )}
@@ -163,7 +163,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
 
                     {remoteStream && (
                         <View style={[styles.tile, styles.tileSide]}>
-                            <RTCView streamURL={remoteStream.toURL()} style={styles.rtc} objectFit="cover" />
+                            <RTCView streamURL={remoteStream.toURL ? remoteStream.toURL() : remoteStream} style={styles.rtc} objectFit="cover" />
                             <View style={styles.nameOverlay}><Text style={styles.nameTxt}>Ospite</Text></View>
                         </View>
                     )}

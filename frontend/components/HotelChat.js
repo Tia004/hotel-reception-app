@@ -147,7 +147,9 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     // UI States
     const [profileVisible, setProfileVisible] = useState(false);
     const [settingsVisible, setSettingsVisible] = useState(false);
-    const [emojiVisible, setEmojiVisible] = useState(false);
+    const [infoModal, setInfoModal] = useState(null);
+    const [alertMsg, setAlertMsg] = useState('');
+    const [deleteTarget, setDeleteTarget] = useState(null);
     const [plusVisible, setPlusVisible] = useState(false);
     const [pollVisible, setPollVisible] = useState(false);
     const [pollDraft, setPollDraft] = useState({ question: '', options: ['', ''], isMultiple: false });
@@ -164,7 +166,6 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [leftCollapsed, setLeftCollapsed] = useState(false);
     const [rightCollapsed, setRightCollapsed] = useState(false);
     const [hoveredMsg, setHoveredMsg] = useState(null);
-    const [infoModal, setInfoModal] = useState(null);
 
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
@@ -297,13 +298,13 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     // ── Export Chat to PDF ────────────────────────────────────────────────
     const exportChatPDF = () => {
         if (Platform.OS !== 'web') {
-            alert('Il download del PDF è supportato solo su browser (Web).');
+            setAlertMsg('Il download del PDF è supportato solo su browser (Web).');
             return;
         }
         
         const msgs = messages[activeChannel.id] || [];
         if (msgs.length === 0) {
-            alert('La chat è vuota!');
+            setAlertMsg('La chat è vuota!');
             return;
         }
 
@@ -361,6 +362,44 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             <TouchableOpacity style={[styles.createBtn, { marginTop: 20 }]} onPress={() => setInfoModal(null)}>
                                 <Text style={styles.createBtnTxt}>Chiudi</Text>
                             </TouchableOpacity>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </Modal>
+            )}
+
+            {!!alertMsg && (
+                <Modal visible transparent animationType="fade" onRequestClose={() => setAlertMsg('')}>
+                    <TouchableOpacity style={styles.modalOverlay} onPress={() => setAlertMsg('')}>
+                        <TouchableOpacity activeOpacity={1} style={styles.infoModalBox}>
+                            <Icon name="alert-triangle" size={32} color="#E57373" style={{ alignSelf: 'center', marginBottom: 12 }} />
+                            <Text style={[styles.infoTitle, { textAlign: 'center', color: '#E57373' }]}>Attenzione</Text>
+                            <Text style={styles.hotelDesc}>{alertMsg}</Text>
+                            <TouchableOpacity style={[styles.createBtn, { marginTop: 20 }]} onPress={() => setAlertMsg('')}>
+                                <Text style={styles.createBtnTxt}>OK</Text>
+                            </TouchableOpacity>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </Modal>
+            )}
+
+            {!!deleteTarget && (
+                <Modal visible transparent animationType="fade" onRequestClose={() => setDeleteTarget(null)}>
+                    <TouchableOpacity style={styles.modalOverlay} onPress={() => setDeleteTarget(null)}>
+                        <TouchableOpacity activeOpacity={1} style={styles.infoModalBox}>
+                            <Icon name="trash" size={28} color="#E57373" style={{ alignSelf: 'center', marginBottom: 12 }} />
+                            <Text style={[styles.infoTitle, { textAlign: 'center', color: '#E57373' }]}>Elimina Messaggio</Text>
+                            <Text style={[styles.hotelDesc, { textAlign: 'center' }]}>Vuoi eliminare questo messaggio? L'azione è irreversibile.</Text>
+                            <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
+                                <TouchableOpacity style={[styles.createBtn, { flex: 1, backgroundColor: '#2A2217' }]} onPress={() => setDeleteTarget(null)}>
+                                    <Text style={[styles.createBtnTxt, { color: '#C8C4B8' }]}>Annulla</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[styles.createBtn, { flex: 1, backgroundColor: '#ED4245' }]} onPress={() => {
+                                    socket.emit('delete-message', { channelId: activeChannel.id, messageId: deleteTarget });
+                                    setDeleteTarget(null);
+                                }}>
+                                    <Text style={styles.createBtnTxt}>Elimina</Text>
+                                </TouchableOpacity>
+                            </View>
                         </TouchableOpacity>
                     </TouchableOpacity>
                 </Modal>
@@ -425,7 +464,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                     <TouchableOpacity key={room.id}
                                         style={styles.chRow}
                                         onPress={() => {
-                                            if (inCall) alert('Sei già in una stanza. Chiudila prima di entrarne in una nuova.');
+                                            if (inCall) setAlertMsg('Sei già in una stanza. Chiudila prima di entrarne in una nuova.');
                                             else socket.emit('join-room', { roomId: room.id });
                                         }}>
                                         <Icon name="volume-2" size={15} color="#6B7FC4" />
@@ -507,9 +546,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                             <Icon name="edit-2" size={14} color="#A8A090" />
                                                         </TouchableOpacity>
                                                         <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => {
-                                                            if (window.confirm('Vuoi eliminare questo messaggio?')) {
-                                                                socket.emit('delete-message', { channelId: activeChannel.id, messageId: m.id });
-                                                            }
+                                                            setDeleteTarget(m.id);
                                                         }}>
                                                             <Icon name="trash-2" size={14} color="#E57373" />
                                                         </TouchableOpacity>
@@ -612,9 +649,11 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             }}
                         />
                         <VoiceRecorderButton onSend={(data, dur) => send('', null, null, null, data, dur)} />
-                        <TouchableOpacity style={[styles.sendBtn, !!draft.trim() && styles.sendBtnActive]} onPress={() => draft.trim() && send(draft)}>
-                            <Icon name="send" size={16} color={draft.trim() ? '#111' : '#554E40'} />
-                        </TouchableOpacity>
+                        {draft.trim() ? (
+                            <TouchableOpacity style={[styles.sendBtn, styles.sendBtnActive]} onPress={() => { send(draft); setDraft(''); }}>
+                                <Icon name="send" size={16} color="#111" />
+                            </TouchableOpacity>
+                        ) : null}
                     </View>
                 </View>
             </View>
@@ -622,11 +661,11 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
             {!IS_MOBILE && !rightCollapsed && (
                 <View style={[styles.column, styles.rightPanel]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                        <Text style={styles.rightTitle}>OCCUPANTI ONLINE — {onlineUsers.length}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 }}>
                         <TouchableOpacity onPress={() => setRightCollapsed(true)}>
                             <Icon name="chevron-right" size={18} color="#554E40" />
                         </TouchableOpacity>
+                        <Text style={styles.rightTitle}>OCCUPANTI ONLINE — {onlineUsers.length}</Text>
                     </View>
                     <ScrollView style={{ flex: 1 }}>
                         <TouchableOpacity style={styles.occupancyHeader} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>

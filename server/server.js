@@ -18,7 +18,12 @@ const io = new Server(server, {
 
 // ─── Data Stores ───────────────────────────────────────────────────────────────
 const users = new Map();          // socketId → { id, username, station, roomId }
-const allKnownUsers = new Map();  // username → { username, station, status, bio, profilePic }
+const allKnownUsers = new Map([   // username → { username, station, status, bio, profilePic }
+    ['admin', { username: 'admin', station: 'Amministratore', status: 'offline', bio: '', profilePic: null }],
+    ['reception1', { username: 'reception1', station: 'Reception Principale', status: 'offline', bio: '', profilePic: null }],
+    ['reception2', { username: 'reception2', station: 'Reception Secondaria', status: 'offline', bio: '', profilePic: null }],
+    ['mobile_lobby', { username: 'mobile_lobby', station: 'Telefono Hall', status: 'offline', bio: '', profilePic: null }],
+]);
 const rooms = new Map();          // roomId → { id, name, creatorName, peers, isTemp }
 
 // Hotel channel messages: channelId → [{ id, sender, text, timestamp, expiresAt, pinned, reactions }]

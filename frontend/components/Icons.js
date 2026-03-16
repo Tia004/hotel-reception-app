@@ -60,6 +60,7 @@ const ICON_MAP = {
     'trash': { pack: 'feather', name: 'trash-2' },
     'copy': { pack: 'feather', name: 'copy' },
     'link': { pack: 'feather', name: 'link' },
+    'download': { pack: 'feather', name: 'download' },
     'menu': { pack: 'feather', name: 'menu' },
     'check': { pack: 'feather', name: 'check' },
     'info': { pack: 'feather', name: 'info' },
