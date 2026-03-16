@@ -143,7 +143,8 @@ export default function App() {
       <StatusBar style="light" />
 
       <View style={styles.content}>
-        <View style={styles.chatPane}>
+        {/* Always show HotelChat — sidebar is always accessible */}
+        <View style={currentRoom ? styles.chatPaneShrunk : styles.chatPane}>
           <HotelChat
             socket={socketRef.current}
             user={user}
@@ -153,12 +154,13 @@ export default function App() {
             onJoinRoom={(roomId) => socketRef.current?.emit('join-room', { roomId })}
             onLogout={handleLogout}
             inCall={!!currentRoom}
+            hideChatColumn={!!currentRoom}
           />
         </View>
 
-        {/* ── CALL OVERLAY ── */}
+        {/* Call Screen renders next to sidebar, not as overlay */}
         {!!currentRoom && (
-          <View style={styles.callOverlay}>
+          <View style={styles.callPane}>
             <CallScreen
               user={user}
               socket={socketRef.current}
@@ -183,10 +185,14 @@ const styles = StyleSheet.create({
   chatPane: {
     flex: 1,
   },
-  callOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000',
-    zIndex: 1000,
+  // When in a call, sidebar shrinks to just the left sidebar width
+  chatPaneShrunk: {
+    width: IS_MOBILE ? '100%' : 260,
+    maxWidth: IS_MOBILE ? undefined : 260,
+  },
+  callPane: {
+    flex: 1,
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(201,168,76,0.06)',
   },
 });
-

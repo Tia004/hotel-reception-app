@@ -65,6 +65,16 @@ const ICON_MAP = {
     'check': { pack: 'feather', name: 'check' },
     'info': { pack: 'feather', name: 'info' },
     'alert-triangle': { pack: 'feather', name: 'alert-triangle' },
+    'arrow-down': { pack: 'feather', name: 'chevron-down' },
+    'screen-share': { pack: 'ionicons', name: 'desktop-outline' },
+    'stop-screen-share': { pack: 'ionicons', name: 'desktop-outline' },
+    'hand': { pack: 'ionicons', name: 'hand-right-outline' },
+    'hand-raised': { pack: 'ionicons', name: 'hand-right' },
+    'happy': { pack: 'ionicons', name: 'happy-outline' },
+    'mic-filled': { pack: 'ionicons', name: 'mic' },
+    'mic-off-filled': { pack: 'ionicons', name: 'mic-off' },
+    'video-filled': { pack: 'ionicons', name: 'videocam' },
+    'video-off-filled': { pack: 'ionicons', name: 'videocam-off' },
 };
 
 /**

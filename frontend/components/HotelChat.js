@@ -132,7 +132,7 @@ const PollMessage = ({ msg, onVote, user }) => {
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────
-export default function HotelChat({ socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall }) {
+export default function HotelChat({ socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn }) {
     const [activeChannel, setActiveChannel] = useState(ALL_CHANNELS[0]);
     const [messages, setMessages] = useState({});
     const [pinned, setPinned] = useState({});
@@ -150,6 +150,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [infoModal, setInfoModal] = useState(null);
     const [alertMsg, setAlertMsg] = useState('');
     const [deleteTarget, setDeleteTarget] = useState(null);
+    const [isRecording, setIsRecording] = useState(false);
     const [plusVisible, setPlusVisible] = useState(false);
     const [pollVisible, setPollVisible] = useState(false);
     const [pollDraft, setPollDraft] = useState({ question: '', options: ['', ''], isMultiple: false });
@@ -504,7 +505,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             )}
 
             {/* ── CENTER CHAT ─────────────────────────────────────────── */}
-            <View style={[styles.column, styles.chatCol]}>
+            {!hideChatColumn && <View style={[styles.column, styles.chatCol]}>
                 <View style={styles.chatHeader}>
                     {IS_MOBILE && <TouchableOpacity onPress={onToggleSidebar} style={{ marginRight: 12 }}><Icon name="menu" size={20} color="#C8C4B8" /></TouchableOpacity>}
                     <Icon name="hash" size={20} color="#554E40" />
@@ -614,58 +615,65 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                         </View>
                     )}
                     <View style={styles.inputArea}>
-                        <View style={styles.inputPlusWrap}>
-                            <TouchableOpacity style={styles.plusBtn} onPress={() => setPlusVisible(!plusVisible)}>
-                                <Icon name="plus" size={20} color="#C8C4B8" />
-                            </TouchableOpacity>
-                            {plusVisible && (
-                                <View style={styles.plusMenu}>
-                                    <TouchableOpacity style={styles.plusItem} onPress={() => { setPlusVisible(false); setPollVisible(true); }}>
-                                        <Icon name="check" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>Sondaggio</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity style={styles.plusItem} onPress={() => setPlusVisible(false)}>
-                                        <Icon name="image" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>Immagine</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-                        </View>
-                        <TextInput
-                            style={styles.input}
-                            placeholder={`Scrivi in #${activeChannel.name}...`}
-                            placeholderTextColor="#554E40"
-                            multiline
-                            value={draft}
-                            onChangeText={setDraft}
-                            numberOfLines={1}
-                            {...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})}
-                            onKeyPress={(e) => {
-                                if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
-                                    e.preventDefault();
-                                    if (draft.trim()) {
-                                        send(draft);
-                                        setDraft('');
+                        {!isRecording && (
+                            <View style={styles.inputPlusWrap}>
+                                <TouchableOpacity style={styles.plusBtn} onPress={() => setPlusVisible(!plusVisible)}>
+                                    <Icon name="plus" size={20} color="#C8C4B8" />
+                                </TouchableOpacity>
+                                {plusVisible && (
+                                    <View style={styles.plusMenu}>
+                                        <TouchableOpacity style={styles.plusItem} onPress={() => { setPlusVisible(false); setPollVisible(true); }}>
+                                            <Icon name="check" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>Sondaggio</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={styles.plusItem} onPress={() => setPlusVisible(false)}>
+                                            <Icon name="image" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>Immagine</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+                            </View>
+                        )}
+                        {!isRecording && (
+                            <TextInput
+                                style={styles.input}
+                                placeholder={`Scrivi in #${activeChannel.name}...`}
+                                placeholderTextColor="#554E40"
+                                multiline
+                                value={draft}
+                                onChangeText={setDraft}
+                                numberOfLines={1}
+                                {...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})}
+                                onKeyPress={(e) => {
+                                    if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+                                        e.preventDefault();
+                                        if (draft.trim()) {
+                                            send(draft);
+                                            setDraft('');
+                                        }
                                     }
-                                }
-                            }}
+                                }}
+                            />
+                        )}
+                        <VoiceRecorderButton
+                            onSend={(data, dur) => send('', null, null, null, data, dur)}
+                            onRecordingChange={setIsRecording}
                         />
-                        <VoiceRecorderButton onSend={(data, dur) => send('', null, null, null, data, dur)} />
-                        {draft.trim() ? (
+                        {!isRecording && draft.trim() ? (
                             <TouchableOpacity style={[styles.sendBtn, styles.sendBtnActive]} onPress={() => { send(draft); setDraft(''); }}>
                                 <Icon name="send" size={16} color="#111" />
                             </TouchableOpacity>
                         ) : null}
                     </View>
                 </View>
-            </View>
+            </View>}
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
-            {!IS_MOBILE && !rightCollapsed && (
+            {!hideChatColumn && !IS_MOBILE && !rightCollapsed && (
                 <View style={[styles.column, styles.rightPanel]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 }}>
                         <TouchableOpacity onPress={() => setRightCollapsed(true)}>
                             <Icon name="chevron-right" size={18} color="#554E40" />
                         </TouchableOpacity>
-                        <Text style={styles.rightTitle}>OCCUPANTI ONLINE — {onlineUsers.length}</Text>
+                        <Text style={styles.rightTitle}>OCCUPANTI ONLINE — {onlineUsers.filter(u => u.status !== 'offline').length}</Text>
                     </View>
                     <ScrollView style={{ flex: 1 }}>
                         <TouchableOpacity style={styles.occupancyHeader} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>

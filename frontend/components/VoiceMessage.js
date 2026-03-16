@@ -1,8 +1,8 @@
 /**
- * VoiceMessage.js — v2.7.1
- * Complete overhaul: Pause/Resume recording, Preview before send,
- * Slide-in animation, hides text input during recording,
- * WhatsApp-style waveform with scrubber dot during playback.
+ * VoiceMessage.js — v2.7.2
+ * Full-width waveform, mic/mic-off icons for recording,
+ * onRecordingChange callback to hide text input,
+ * pause = preview, resume = append to recording.
  */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
@@ -14,30 +14,31 @@ const playBeep = () => {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
+        osc.connect(gain); gain.connect(ctx.destination);
         osc.type = 'sine';
         osc.frequency.setValueAtTime(500, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.1);
         gain.gain.setValueAtTime(0, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.15);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
     } catch (e) { }
 };
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
+// Maximum bars visible in the waveform strip
+const MAX_BARS = 50;
+
 /**
- * States: idle → recording → paused → preview → idle
- * - idle: shows mic button
- * - recording: shows live waveform with pause/cancel/send buttons, text input hidden
- * - paused: shows "Paused" with resume/cancel/send
- * - preview: shows playback of the recorded audio before sending
+ * VoiceRecorderButton
+ * Props:
+ *   onSend(base64data, durationSeconds)
+ *   onRecordingChange(isActive) — called when recording starts/stops so parent can hide the text input
+ *   disabled
  */
-export function VoiceRecorderButton({ onSend, disabled }) {
-    // 'idle' | 'recording' | 'paused' | 'preview'
+export function VoiceRecorderButton({ onSend, onRecordingChange, disabled }) {
+    // 'idle' | 'recording' | 'paused'
     const [phase, setPhase] = useState('idle');
     const [seconds, setSeconds] = useState(0);
     const mediaRef = useRef(null);
@@ -51,35 +52,27 @@ export function VoiceRecorderButton({ onSend, disabled }) {
     const slideAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
 
-    // Live waveform
-    const [waveform, setWaveform] = useState(Array(30).fill(3));
+    // Live waveform — bars scroll from right to left, each bar is a height value
+    const [bars, setBars] = useState([]);
     const rafRef = useRef(null);
 
-    // Preview playback
-    const [previewUrl, setPreviewUrl] = useState(null);
-    const [previewPlaying, setPreviewPlaying] = useState(false);
-    const [previewProgress, setPreviewProgress] = useState(0);
-    const previewAudioRef = useRef(null);
-    const previewRafRef = useRef(null);
-
-    // Waveform snapshot for preview
-    const waveSnapshotRef = useRef([]);
-
-    // Animate slide in/out
+    // Notify parent of recording state
     useEffect(() => {
-        const isActive = phase !== 'idle';
-        Animated.spring(slideAnim, { toValue: isActive ? 1 : 0, useNativeDriver: false, damping: 18, stiffness: 160 }).start();
+        onRecordingChange?.(phase !== 'idle');
     }, [phase]);
 
-    // Pulse animation while recording
+    // Slide animation
+    useEffect(() => {
+        Animated.spring(slideAnim, { toValue: phase !== 'idle' ? 1 : 0, useNativeDriver: false, damping: 18, stiffness: 160 }).start();
+    }, [phase]);
+
+    // Pulse when recording
     useEffect(() => {
         if (phase === 'recording') {
-            Animated.loop(
-                Animated.sequence([
-                    Animated.timing(pulseAnim, { toValue: 1.4, duration: 500, useNativeDriver: true }),
-                    Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-                ])
-            ).start();
+            Animated.loop(Animated.sequence([
+                Animated.timing(pulseAnim, { toValue: 1.4, duration: 500, useNativeDriver: true }),
+                Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+            ])).start();
         } else {
             pulseAnim.stopAnimation();
             pulseAnim.setValue(1);
@@ -96,30 +89,33 @@ export function VoiceRecorderButton({ onSend, disabled }) {
         return () => clearInterval(timerRef.current);
     }, [phase]);
 
-    // Live waveform analyser
+    // Audio analyser tick
     const startVisualizer = useCallback(() => {
         if (!analyserRef.current) return;
         const analyser = analyserRef.current;
         const dataArr = new Uint8Array(analyser.frequencyBinCount);
+        let frameCount = 0;
         const tick = () => {
             analyser.getByteFrequencyData(dataArr);
-            let sum = 0;
-            for (let i = 0; i < dataArr.length; i++) sum += dataArr[i];
-            const avg = sum / dataArr.length;
-            const h = Math.max(3, Math.min(28, (avg / 256) * 40));
-            setWaveform(prev => {
-                const next = [...prev.slice(1), h];
-                waveSnapshotRef.current = next;
-                return next;
-            });
+            frameCount++;
+            // Only push a bar every ~3 frames (~20Hz) to avoid too-rapid updates
+            if (frameCount % 3 === 0) {
+                let sum = 0;
+                for (let i = 0; i < dataArr.length; i++) sum += dataArr[i];
+                const avg = sum / dataArr.length;
+                const h = Math.max(3, Math.min(28, (avg / 200) * 28));
+                setBars(prev => {
+                    const next = [...prev, h];
+                    // Keep only the last MAX_BARS
+                    return next.length > MAX_BARS ? next.slice(next.length - MAX_BARS) : next;
+                });
+            }
             rafRef.current = requestAnimationFrame(tick);
         };
         tick();
     }, []);
 
-    const stopVisualizer = () => {
-        cancelAnimationFrame(rafRef.current);
-    };
+    const stopVisualizer = () => cancelAnimationFrame(rafRef.current);
 
     const startRecording = async () => {
         if (Platform.OS !== 'web') return;
@@ -143,8 +139,7 @@ export function VoiceRecorderButton({ onSend, disabled }) {
             mediaRef.current = mr;
             setPhase('recording');
             setSeconds(0);
-            setWaveform(Array(30).fill(3));
-            waveSnapshotRef.current = Array(30).fill(3);
+            setBars([]);
             startVisualizer();
         } catch (e) { console.error('mic access denied', e); }
     };
@@ -167,112 +162,41 @@ export function VoiceRecorderButton({ onSend, disabled }) {
 
     const cancelRecording = () => {
         stopVisualizer();
-        if (mediaRef.current && mediaRef.current.state !== 'inactive') {
-            mediaRef.current.stop();
-        }
+        if (mediaRef.current && mediaRef.current.state !== 'inactive') mediaRef.current.stop();
         streamRef.current?.getTracks().forEach(t => t.stop());
         audioCtxRef.current?.close().catch(() => {});
         setPhase('idle');
         setSeconds(0);
-        setWaveform(Array(30).fill(3));
-        setPreviewUrl(null);
-        // Clean preview audio
-        if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current = null; }
+        setBars([]);
     };
 
-    const goToPreview = () => {
+    const sendVoice = () => {
         stopVisualizer();
         if (mediaRef.current && mediaRef.current.state !== 'inactive') {
+            const finalSeconds = seconds;
             mediaRef.current.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
             mediaRef.current.onstop = () => {
                 streamRef.current?.getTracks().forEach(t => t.stop());
                 audioCtxRef.current?.close().catch(() => {});
                 const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-                const url = URL.createObjectURL(blob);
-                setPreviewUrl(url);
-                setPhase('preview');
-                setPreviewProgress(0);
-                setPreviewPlaying(false);
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    onSend(ev.target.result, finalSeconds);
+                    setPhase('idle');
+                    setSeconds(0);
+                    setBars([]);
+                };
+                reader.readAsDataURL(blob);
             };
             mediaRef.current.stop();
         }
     };
 
-    const sendVoice = () => {
-        // If still recording/paused, finalize first  
-        if (phase === 'recording' || phase === 'paused') {
-            stopVisualizer();
-            if (mediaRef.current && mediaRef.current.state !== 'inactive') {
-                mediaRef.current.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-                mediaRef.current.onstop = () => {
-                    streamRef.current?.getTracks().forEach(t => t.stop());
-                    audioCtxRef.current?.close().catch(() => {});
-                    const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-                    const reader = new FileReader();
-                    reader.onload = ev => {
-                        onSend(ev.target.result, seconds);
-                        setPhase('idle');
-                        setSeconds(0);
-                        setPreviewUrl(null);
-                    };
-                    reader.readAsDataURL(blob);
-                };
-                mediaRef.current.stop();
-            }
-        } else if (phase === 'preview' && previewUrl) {
-            // Convert blob url to base64
-            if (previewAudioRef.current) { previewAudioRef.current.pause(); }
-            cancelAnimationFrame(previewRafRef.current);
-            fetch(previewUrl).then(r => r.blob()).then(blob => {
-                const reader = new FileReader();
-                reader.onload = ev => {
-                    onSend(ev.target.result, seconds);
-                    URL.revokeObjectURL(previewUrl);
-                    setPhase('idle');
-                    setSeconds(0);
-                    setPreviewUrl(null);
-                    setPreviewProgress(0);
-                };
-                reader.readAsDataURL(blob);
-            });
-        }
-    };
-
-    // Preview playback
-    const togglePreviewPlay = () => {
-        if (!previewUrl) return;
-        if (!previewAudioRef.current) {
-            const a = new Audio(previewUrl);
-            previewAudioRef.current = a;
-            a.onended = () => { setPreviewPlaying(false); setPreviewProgress(0); cancelAnimationFrame(previewRafRef.current); };
-        }
-        const a = previewAudioRef.current;
-        if (previewPlaying) {
-            a.pause();
-            setPreviewPlaying(false);
-            cancelAnimationFrame(previewRafRef.current);
-        } else {
-            a.play();
-            setPreviewPlaying(true);
-            const tick = () => {
-                if (a.duration) setPreviewProgress(a.currentTime / a.duration);
-                previewRafRef.current = requestAnimationFrame(tick);
-            };
-            tick();
-        }
-    };
-
-    // Cleanup on unmount
     useEffect(() => {
-        return () => {
-            cancelAnimationFrame(rafRef.current);
-            cancelAnimationFrame(previewRafRef.current);
-            clearInterval(timerRef.current);
-            if (previewAudioRef.current) previewAudioRef.current.pause();
-        };
+        return () => { cancelAnimationFrame(rafRef.current); clearInterval(timerRef.current); };
     }, []);
 
-    // ── IDLE: just the mic button ──
+    // ── IDLE ──
     if (phase === 'idle') {
         return (
             <TouchableOpacity style={[styles.micBtn, disabled && { opacity: 0.4 }]} onPress={startRecording} disabled={disabled}>
@@ -282,133 +206,102 @@ export function VoiceRecorderButton({ onSend, disabled }) {
     }
 
     // ── RECORDING / PAUSED ──
-    if (phase === 'recording' || phase === 'paused') {
-        return (
-            <Animated.View style={[styles.recorderPanel, { 
-                opacity: slideAnim,
-                transform: [{ translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }]
-            }]}>
-                {/* Cancel */}
-                <TouchableOpacity onPress={cancelRecording} style={styles.recActionBtn}>
-                    <Icon name="trash" size={16} color="#ED4245" />
-                </TouchableOpacity>
+    const isPaused = phase === 'paused';
+    const displayBars = bars.length > 0 ? bars : Array(10).fill(3);
 
-                {/* Pulse dot + timer */}
-                <View style={styles.recInfo}>
-                    {phase === 'recording' ? (
-                        <Animated.View style={[styles.recDot, { transform: [{ scale: pulseAnim }] }]} />
-                    ) : (
-                        <View style={[styles.recDot, { backgroundColor: '#C9A84C' }]} />
-                    )}
-                    <Text style={styles.recTimer}>{fmt(seconds)}</Text>
-                    {phase === 'paused' && <Text style={styles.pausedLabel}>IN PAUSA</Text>}
-                </View>
+    return (
+        <Animated.View style={[styles.recorderPanel, {
+            opacity: slideAnim,
+            transform: [{ translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }]
+        }]}>
+            {/* Cancel */}
+            <TouchableOpacity onPress={cancelRecording} style={styles.recActionBtn}>
+                <Icon name="trash" size={16} color="#ED4245" />
+            </TouchableOpacity>
 
-                {/* Live waveform */}
-                <View style={styles.liveWaveform}>
-                    {waveform.map((v, i) => (
-                        <View key={i} style={[styles.liveBar, { 
-                            height: phase === 'paused' ? 3 : v,
-                            backgroundColor: phase === 'paused' ? '#554E40' : '#ED4245' 
-                        }]} />
-                    ))}
-                </View>
+            {/* Pause/Resume — uses mic icon for recording state, not play/pause */}
+            <TouchableOpacity
+                onPress={isPaused ? resumeRecording : pauseRecording}
+                style={[styles.recActionBtn, isPaused ? styles.recResumeBtnStyle : styles.recPauseBtnStyle]}
+            >
+                <Icon name={isPaused ? 'mic' : 'mic-off'} size={16} color={isPaused ? '#C9A84C' : '#C8C4B8'} />
+            </TouchableOpacity>
 
-                {/* Pause / Resume */}
-                <TouchableOpacity 
-                    onPress={phase === 'recording' ? pauseRecording : resumeRecording} 
-                    style={styles.recActionBtn}
-                >
-                    <Icon name={phase === 'recording' ? 'pause' : 'play'} size={16} color="#C8C4B8" />
-                </TouchableOpacity>
+            {/* Pulse dot */}
+            {!isPaused && <Animated.View style={[styles.recDot, { transform: [{ scale: pulseAnim }] }]} />}
+            {isPaused && <View style={[styles.recDot, { backgroundColor: '#C9A84C' }]} />}
 
-                {/* Preview (stop & listen) */}
-                <TouchableOpacity onPress={goToPreview} style={[styles.recActionBtn, { backgroundColor: 'rgba(201,168,76,0.15)', borderColor: 'rgba(201,168,76,0.3)' }]}>
-                    <Icon name="headphones" size={16} color="#C9A84C" />
-                </TouchableOpacity>
+            {/* Full-width waveform */}
+            <View style={styles.waveformStrip}>
+                {displayBars.map((h, i) => (
+                    <View key={i} style={[styles.waveBar, {
+                        height: isPaused ? Math.max(3, h * 0.5) : h,
+                        backgroundColor: isPaused ? '#554E40' : '#C9A84C',
+                    }]} />
+                ))}
+            </View>
 
-                {/* Send directly */}
-                <TouchableOpacity onPress={sendVoice} style={styles.sendVoiceBtn}>
-                    <Icon name="send" size={14} color="#111" />
-                </TouchableOpacity>
-            </Animated.View>
-        );
-    }
+            {/* Timer */}
+            <Text style={styles.recTimer}>{fmt(seconds)}</Text>
 
-    // ── PREVIEW ──
-    if (phase === 'preview') {
-        const snapshot = waveSnapshotRef.current.length > 0 ? waveSnapshotRef.current : Array(30).fill(8);
-        return (
-            <Animated.View style={[styles.recorderPanel, styles.previewPanel, { 
-                opacity: slideAnim,
-                transform: [{ translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }]
-            }]}>
-                {/* Cancel / discard */}
-                <TouchableOpacity onPress={cancelRecording} style={styles.recActionBtn}>
-                    <Icon name="trash" size={16} color="#ED4245" />
-                </TouchableOpacity>
-
-                {/* Play/pause preview */}
-                <TouchableOpacity onPress={togglePreviewPlay} style={[styles.recActionBtn, { backgroundColor: 'rgba(201,168,76,0.2)', borderColor: 'rgba(201,168,76,0.3)' }]}>
-                    <Icon name={previewPlaying ? 'pause' : 'play'} size={16} color="#C9A84C" />
-                </TouchableOpacity>
-
-                {/* Waveform + scrubber */}
-                <View style={styles.previewWaveWrap}>
-                    <View style={styles.previewWaveform}>
-                        {snapshot.map((v, i) => {
-                            const barProgress = (i + 1) / snapshot.length;
-                            const active = barProgress <= previewProgress;
-                            return (
-                                <View key={i} style={[styles.previewBar, { 
-                                    height: Math.max(3, v * 0.8),
-                                    backgroundColor: active ? '#C9A84C' : 'rgba(201,168,76,0.25)'
-                                }]} />
-                            );
-                        })}
-                    </View>
-                    {/* Scrubber dot */}
-                    <View style={[styles.previewScrubber, { left: `${previewProgress * 100}%` }]} />
-                </View>
-
-                <Text style={styles.recTimer}>{fmt(seconds)}</Text>
-
-                {/* Send */}
-                <TouchableOpacity onPress={sendVoice} style={styles.sendVoiceBtn}>
-                    <Icon name="send" size={14} color="#111" />
-                </TouchableOpacity>
-            </Animated.View>
-        );
-    }
-
-    return null;
+            {/* Send */}
+            <TouchableOpacity onPress={sendVoice} style={styles.sendVoiceBtn}>
+                <Icon name="send" size={14} color="#111" />
+            </TouchableOpacity>
+        </Animated.View>
+    );
 }
 
-// ─── Playback bubble (inside chat messages) ──────────────────────────────
+// ─── Playback Bubble ─────────────────────────────────────────────────────
 export function VoiceMessageBubble({ src, duration = 0, isMine }) {
     const [playing, setPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
     const [currentTime, setCurrentTime] = useState(0);
     const [totalDuration, setTotalDuration] = useState(duration);
-    const [speedIdx, setSpeedIdx] = useState(1); // default 1x
+    const [speedIdx, setSpeedIdx] = useState(1);
     const SPEEDS = [0.5, 1, 1.5, 2];
     const audioRef = useRef(null);
     const rafRef = useRef(null);
     const [loaded, setLoaded] = useState(false);
-    const waveformRef = useRef(null);
 
-    // Generate synthetic waveform based on src hash
-    const BARS = useRef(Array.from({ length: 32 }, (_, i) => 0.25 + 0.75 * Math.abs(Math.sin(i * 0.7 + (src?.length || 0) * 0.1)))).current;
+    // Synthetic waveform bars (deterministic from src)
+    const BAR_COUNT = 40;
+    const BARS = useRef(Array.from({ length: BAR_COUNT }, (_, i) => {
+        const seed = (src?.charCodeAt(i % (src?.length || 1)) || 0) * 0.017;
+        return 0.2 + 0.8 * Math.abs(Math.sin(i * 0.65 + seed));
+    })).current;
 
     useEffect(() => {
         if (Platform.OS !== 'web') return;
-        const audio = new Audio(src);
+        const audio = new Audio();
         audioRef.current = audio;
+        audio.preload = 'auto';
+        audio.src = src;
         audio.playbackRate = SPEEDS[speedIdx];
-        audio.oncanplaythrough = () => { setLoaded(true); if (audio.duration && isFinite(audio.duration)) setTotalDuration(audio.duration); };
-        audio.onloadedmetadata = () => { if (audio.duration && isFinite(audio.duration)) setTotalDuration(audio.duration); };
-        audio.onended = () => { setPlaying(false); setProgress(0); setCurrentTime(0); cancelAnimationFrame(rafRef.current); };
-        return () => { audio.pause(); cancelAnimationFrame(rafRef.current); };
+
+        const onReady = () => {
+            setLoaded(true);
+            if (audio.duration && isFinite(audio.duration)) setTotalDuration(audio.duration);
+        };
+        const onEnded = () => {
+            setPlaying(false);
+            setProgress(0);
+            setCurrentTime(0);
+            cancelAnimationFrame(rafRef.current);
+        };
+
+        audio.addEventListener('canplaythrough', onReady);
+        audio.addEventListener('loadedmetadata', onReady);
+        audio.addEventListener('ended', onEnded);
+        audio.load(); // Force load to avoid stuck state
+
+        return () => {
+            audio.pause();
+            audio.removeEventListener('canplaythrough', onReady);
+            audio.removeEventListener('loadedmetadata', onReady);
+            audio.removeEventListener('ended', onEnded);
+            cancelAnimationFrame(rafRef.current);
+        };
     }, [src]);
 
     const togglePlay = () => {
@@ -418,7 +311,7 @@ export function VoiceMessageBubble({ src, duration = 0, isMine }) {
             setPlaying(false);
             cancelAnimationFrame(rafRef.current);
         } else {
-            audioRef.current.play();
+            audioRef.current.play().catch(() => {});
             setPlaying(true);
             const tick = () => {
                 const a = audioRef.current;
@@ -440,36 +333,31 @@ export function VoiceMessageBubble({ src, duration = 0, isMine }) {
 
     const handleSeek = (e) => {
         if (!audioRef.current || !loaded) return;
-        const rect = e.target.getBoundingClientRect ? e.target.getBoundingClientRect() : null;
+        const rect = e.target?.getBoundingClientRect?.();
         if (!rect) return;
-        const x = (e.nativeEvent?.pageX || e.pageX) - rect.left;
+        const x = (e.nativeEvent?.pageX || e.pageX || 0) - rect.left;
         let p = x / rect.width;
         if (p < 0) p = 0; if (p > 1) p = 1;
-        audioRef.current.currentTime = p * audioRef.current.duration;
-        setProgress(p);
-        setCurrentTime(audioRef.current.currentTime);
+        if (audioRef.current.duration && isFinite(audioRef.current.duration)) {
+            audioRef.current.currentTime = p * audioRef.current.duration;
+            setProgress(p);
+            setCurrentTime(audioRef.current.currentTime);
+        }
     };
 
     const accentColor = isMine ? '#C9A84C' : '#A8A090';
-    const trackColor = isMine ? 'rgba(201,168,76,0.25)' : 'rgba(255,255,255,0.12)';
+    const trackColor = isMine ? 'rgba(201,168,76,0.2)' : 'rgba(255,255,255,0.1)';
 
     return (
         <View style={[styles.voiceBubble, isMine && styles.voiceBubbleMine]}>
-            {/* Play/Pause button */}
             <TouchableOpacity onPress={togglePlay} style={[styles.playBtn, { backgroundColor: isMine ? 'rgba(201,168,76,0.2)' : 'rgba(255,255,255,0.07)' }]}>
                 <Icon name={playing ? 'pause' : 'play'} size={16} color={accentColor} />
             </TouchableOpacity>
 
-            {/* Waveform + scrubber */}
-            <View style={styles.waveformContainer}>
-                <TouchableOpacity 
-                    ref={waveformRef}
-                    style={styles.waveformBars} 
-                    activeOpacity={1} 
-                    onPress={handleSeek}
-                >
+            <View style={styles.bubbleWaveWrap}>
+                <TouchableOpacity style={styles.bubbleBarRow} activeOpacity={1} onPress={handleSeek}>
                     {BARS.map((bar, i) => {
-                        const barPos = (i + 1) / BARS.length;
+                        const barPos = (i + 1) / BAR_COUNT;
                         const active = barPos <= progress;
                         return (
                             <View key={i} style={{
@@ -477,20 +365,20 @@ export function VoiceMessageBubble({ src, duration = 0, isMine }) {
                                 height: Math.max(3, bar * 22),
                                 backgroundColor: active ? accentColor : trackColor,
                                 borderRadius: 1.5,
-                                transition: 'background-color 0.1s',
                             }} />
                         );
                     })}
                 </TouchableOpacity>
                 {/* Scrubber dot */}
-                <View style={[styles.bubbleScrubber, { left: `${Math.min(progress * 100, 100)}%`, backgroundColor: accentColor }]} />
-                {/* Time label */}
-                <Text style={[styles.timeLabel, { color: isMine ? '#C9A84C' : '#6E6960' }]}>
+                <View style={[styles.bubbleScrubber, {
+                    left: `${Math.min(progress * 100, 100)}%`,
+                    backgroundColor: accentColor
+                }]} />
+                <Text style={[styles.bubbleTime, { color: isMine ? 'rgba(201,168,76,0.7)' : '#6E6960' }]}>
                     {playing ? fmt(currentTime) : fmt(totalDuration)}
                 </Text>
             </View>
 
-            {/* Speed button */}
             <TouchableOpacity style={styles.speedBtn} onPress={changeSpeed}>
                 <Text style={[styles.speedTxt, { color: accentColor }]}>{SPEEDS[speedIdx]}x</Text>
             </TouchableOpacity>
@@ -499,44 +387,39 @@ export function VoiceMessageBubble({ src, duration = 0, isMine }) {
 }
 
 const styles = StyleSheet.create({
-    // ── Mic idle button
     micBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1C1A12', justifyContent: 'center', alignItems: 'center', marginBottom: 2 },
 
-    // ── Recorder panel (replaces entire input area)
-    recorderPanel: { 
-        flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, 
-        backgroundColor: '#1A1812', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, 
-        borderWidth: 1, borderColor: 'rgba(237,66,69,0.25)' 
+    // Recorder panel — takes over entire input row
+    recorderPanel: {
+        flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1,
+        backgroundColor: '#1A1812', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8,
+        borderWidth: 1, borderColor: 'rgba(201,168,76,0.25)',
     },
-    previewPanel: { borderColor: 'rgba(201,168,76,0.3)' },
-    recActionBtn: { 
-        width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.05)', 
-        justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' 
+    recActionBtn: {
+        width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.05)',
+        justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     },
-    recInfo: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    recPauseBtnStyle: { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.12)' },
+    recResumeBtnStyle: { backgroundColor: 'rgba(201,168,76,0.15)', borderColor: 'rgba(201,168,76,0.3)' },
     recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#ED4245' },
-    recTimer: { color: '#C8C4B8', fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
-    pausedLabel: { color: '#C9A84C', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+    recTimer: { color: '#C8C4B8', fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'], minWidth: 36, textAlign: 'right' },
     sendVoiceBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#C9A84C', justifyContent: 'center', alignItems: 'center' },
 
-    // ── Live waveform
-    liveWaveform: { flexDirection: 'row', alignItems: 'center', gap: 1.5, height: 28, flex: 1, justifyContent: 'center' },
-    liveBar: { width: 2.5, borderRadius: 1.5 },
+    // Full-width waveform strip
+    waveformStrip: {
+        flex: 1, flexDirection: 'row', alignItems: 'center', gap: 1.5, height: 30,
+        overflow: 'hidden', justifyContent: 'flex-end',
+    },
+    waveBar: { width: 2.5, borderRadius: 1.5 },
 
-    // ── Preview waveform
-    previewWaveWrap: { flex: 1, height: 32, justifyContent: 'center', position: 'relative' },
-    previewWaveform: { flexDirection: 'row', alignItems: 'center', gap: 1.5, height: 28, justifyContent: 'center' },
-    previewBar: { width: 2.5, borderRadius: 1.5 },
-    previewScrubber: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: '#C9A84C', top: '50%', marginTop: -6, marginLeft: -6, borderWidth: 2, borderColor: '#1A1812' },
-
-    // ── Playback Bubble
-    voiceBubble: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.05)', minWidth: 240 },
+    // Playback bubble
+    voiceBubble: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.05)', minWidth: 260 },
     voiceBubbleMine: { backgroundColor: 'rgba(201,168,76,0.08)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)' },
     playBtn: { width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-    waveformContainer: { flex: 1, position: 'relative', paddingBottom: 14 },
-    waveformBars: { flexDirection: 'row', alignItems: 'center', gap: 1.5, height: 28, cursor: 'pointer' },
+    bubbleWaveWrap: { flex: 1, position: 'relative', paddingBottom: 16 },
+    bubbleBarRow: { flexDirection: 'row', alignItems: 'center', gap: 1.5, height: 28, cursor: 'pointer' },
     bubbleScrubber: { position: 'absolute', width: 10, height: 10, borderRadius: 5, top: 9, marginLeft: -5, borderWidth: 2, borderColor: '#1A1812' },
-    timeLabel: { position: 'absolute', bottom: -2, left: 0, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] },
+    bubbleTime: { position: 'absolute', bottom: -2, left: 0, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] },
     speedBtn: { backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
     speedTxt: { fontSize: 11, fontWeight: '800' },
 });
