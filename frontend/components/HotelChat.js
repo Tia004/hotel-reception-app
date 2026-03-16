@@ -21,6 +21,8 @@ import UserProfileCard, { statusColor } from './UserProfileCard';
 import ImageLightbox from './ImageLightbox';
 import { VoiceRecorderButton, VoiceMessageBubble } from './VoiceMessage';
 import { EMOJI_CATEGORIES, ALL_EMOJI } from '../utils/emoji_data';
+import html2pdf from 'html2pdf.js';
+import DynamicBackground from './DynamicBackground';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IS_MOBILE = SCREEN_W < 768;
@@ -213,6 +215,12 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             }));
         });
 
+        socket.on('message-deleted', ({ channelId, messageId }) => {
+            setMessages(p => ({
+                ...p, [channelId]: (p[channelId] || []).filter(m => m.id !== messageId)
+            }));
+        });
+
         socket.on('message-reacted', ({ channelId, messageId, reactions }) => {
             setMessages(p => ({
                 ...p, [channelId]: (p[channelId] || []).map(m => m.id === messageId ? { ...m, reactions } : m)
@@ -237,6 +245,9 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             socket.off('channel-message');
             socket.off('online-users');
             socket.off('channel-poll-update');
+            socket.off('message-edited');
+            socket.off('message-deleted');
+            socket.off('message-reacted');
             clearInterval(i);
         };
     }, [socket]);
@@ -283,11 +294,61 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         socket.emit('channel-poll-vote', { channelId: activeChannel.id, messageId, optionIndex });
     };
 
+    // ── Export Chat to PDF ────────────────────────────────────────────────
+    const exportChatPDF = () => {
+        if (Platform.OS !== 'web') {
+            alert('Il download del PDF è supportato solo su browser (Web).');
+            return;
+        }
+        
+        const msgs = messages[activeChannel.id] || [];
+        if (msgs.length === 0) {
+            alert('La chat è vuota!');
+            return;
+        }
+
+        let htmlContent = `
+            <div style="padding: 20px; font-family: sans-serif; color: #111;">
+                <h1 style="color: #dba311;">Storico Chat: #${activeChannel.name}</h1>
+                <p style="color: #666; font-size: 14px;">Hotel Reception App - Generato il: ${new Date().toLocaleString()}</p>
+                <hr style="border: 1px solid #ddd; margin-bottom: 20px;" />
+        `;
+
+        msgs.forEach(m => {
+            const time = new Date(m.timestamp).toLocaleTimeString();
+            const textContent = m.text ? m.text : (m.voiceData ? '[Messaggio Vocale]' : (m.imageData ? '[Immagine]' : ''));
+            htmlContent += `
+            <div style="margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 8px;">
+                <strong style="color: #dba311;">${m.sender}</strong> 
+                <span style="color: gray; font-size: 12px; margin-left: 8px;">(${time})</span>
+                <p style="margin: 4px 0 0 0; font-size: 15px; color: #333; line-height: 1.5;">${textContent}</p>
+            </div>`;
+        });
+        
+        htmlContent += '</div>';
+
+        const element = document.createElement('div');
+        element.innerHTML = htmlContent;
+        document.body.appendChild(element);
+
+        html2pdf().set({
+            margin: 10,
+            filename: `Chat_${activeChannel.name}_${Date.now()}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        }).from(element).save().then(() => {
+            document.body.removeChild(element);
+        });
+    };
+
     const activeHotel = HOTELS.find(h => h.id === activeChannel?.id.split('-')[0]);
 
     // ── Rendering ──────────────────────────────────────────────────────
     return (
         <View style={styles.root}>
+            <DynamicBackground />
+            
             {infoModal && (
                 <Modal visible transparent animationType="fade" onRequestClose={() => setInfoModal(null)}>
                     <TouchableOpacity style={styles.modalOverlay} onPress={() => setInfoModal(null)}>
@@ -410,10 +471,14 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     <Icon name="hash" size={20} color="#554E40" />
                     <Text style={styles.headerChName}>{activeChannel.name}</Text>
                     <View style={{ flex: 1 }} />
+                    <TouchableOpacity style={styles.pdfBtn} onPress={exportChatPDF}>
+                        <Icon name="download" size={16} color="#C9A84C" />
+                        <Text style={styles.pdfBtnTxt}>PDF</Text>
+                    </TouchableOpacity>
                     <StatusBadge ping={ping} status={pingStatus} />
                 </View>
 
-                <LinearGradient colors={['#0C0B09', '#14120E']} style={{ flex: 1 }}>
+                <LinearGradient colors={['rgba(12, 11, 9, 0.6)', 'rgba(20, 18, 14, 0.7)']} style={{ flex: 1 }}>
                     <ScrollView ref={scrollRef} style={styles.messagesScroll} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
                         {(messages[activeChannel.id] || []).map(m => {
                             const isMine = m.sender === user.username;
@@ -437,9 +502,18 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                 <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => reactMessage(m.id, '👍')}><Text>👍</Text></TouchableOpacity>
                                                 <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => setReplyingTo(m)}><Icon name="corner-up-left" size={14} color="#A8A090" /></TouchableOpacity>
                                                 {(isMine && !m.poll) && (
-                                                    <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => { setEditingMsg(m); setDraft(m.text || ''); }}>
-                                                        <Icon name="edit-2" size={14} color="#A8A090" />
-                                                    </TouchableOpacity>
+                                                    <>
+                                                        <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => { setEditingMsg(m); setDraft(m.text || ''); }}>
+                                                            <Icon name="edit-2" size={14} color="#A8A090" />
+                                                        </TouchableOpacity>
+                                                        <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => {
+                                                            if (window.confirm('Vuoi eliminare questo messaggio?')) {
+                                                                socket.emit('delete-message', { channelId: activeChannel.id, messageId: m.id });
+                                                            }
+                                                        }}>
+                                                            <Icon name="trash-2" size={14} color="#E57373" />
+                                                        </TouchableOpacity>
+                                                    </>
                                                 )}
                                                 <TouchableOpacity style={styles.hoverMenuBtn} onPress={() => setInfoModal(m)}>
                                                     <Icon name="info" size={14} color="#A8A090" />
@@ -559,15 +633,28 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             <Text style={styles.occupancyTitle}>DIPENDENTI</Text>
                             <Icon name={expanded.users ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
                         </TouchableOpacity>
-                        {expanded.users && onlineUsers.map((u, i) => (
-                            <View key={i} style={styles.userRow}>
-                                <View style={[styles.userDot, { backgroundColor: statusColor(u.status) }]} />
-                                <Text style={[styles.userRowName, { color: HOTELS.find(h => u.username.includes(h.name) || u.station.includes(h.id))?.color || '#C8C4B8' }]}>
-                                    {u.username}
-                                </Text>
-                                {u.roomId && <Icon name="volume-2" size={12} color="#6B7FC4" />}
-                            </View>
-                        ))}
+                        {expanded.users && [...onlineUsers].sort((a,b) => {
+                            if (a.status === 'offline' && b.status !== 'offline') return 1;
+                            if (a.status !== 'offline' && b.status === 'offline') return -1;
+                            return a.username.localeCompare(b.username);
+                        }).map((u, i) => {
+                            const isOffline = u.status === 'offline';
+                            return (
+                                <View key={i} style={[styles.userRow, isOffline && { opacity: 0.5 }]}>
+                                    <View style={styles.avatarWrapSmall}>
+                                        {u.profilePic ? 
+                                            <Image source={{ uri: u.profilePic }} style={styles.avatarImgSmall} /> :
+                                            <View style={styles.avatarFallbackSmall}><Text style={styles.avatarFallbackTxtSmall}>{u.username[0]?.toUpperCase()}</Text></View>
+                                        }
+                                        <View style={[styles.userDot, { backgroundColor: statusColor(u.status) }]} />
+                                    </View>
+                                    <Text style={[styles.userRowName, isOffline ? { color: '#6E6960' } : { color: HOTELS.find(h => u.username.includes(h.name) || u.station.includes(h.id))?.color || '#C8C4B8' }]}>
+                                        {u.username}
+                                    </Text>
+                                    {u.roomId && <Icon name="volume-2" size={12} color="#6B7FC4" />}
+                                </View>
+                            );
+                        })}
 
                         <View style={styles.divider} />
 
@@ -634,7 +721,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 }
 
 const styles = StyleSheet.create({
-    root: { flex: 1, flexDirection: 'row', backgroundColor: '#0C0B09', ...NO_SELECT, position: 'relative' },
+    root: { flex: 1, flexDirection: 'row', backgroundColor: 'transparent', ...NO_SELECT, position: 'relative' },
     column: { height: '100%', borderRightWidth: 1, borderRightColor: 'rgba(201,168,76,0.06)' },
 
     hoverMenu: { position: 'absolute', top: -15, right: 10, backgroundColor: '#16140F', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 10, flexDirection: 'row', alignItems: 'center', padding: 4, gap: 4, zIndex: 100 },
@@ -664,7 +751,7 @@ const styles = StyleSheet.create({
     modalSendTxt: { color: '#111', fontSize: 14, fontWeight: '800' },
 
     // Sidebar
-    sidebar: { width: 240, backgroundColor: '#0C0B09' },
+    sidebar: { width: 240, backgroundColor: 'rgba(12, 11, 9, 0.7)' },
     sidebarHeader: { padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' },
     brandName: { color: '#C9A84C', fontSize: 13, fontWeight: '800', letterSpacing: 2 },
     brandSub: { color: '#554E40', fontSize: 9, letterSpacing: 1, marginTop: 4 },
@@ -689,7 +776,12 @@ const styles = StyleSheet.create({
     gearBtn: { padding: 8 },
 
     // Chat
-    chatCol: { flex: 1, backgroundColor: '#141210' },
+    chatCol: { flex: 1, backgroundColor: 'rgba(20, 18, 16, 0.4)' },
+    chatHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)', backgroundColor: 'rgba(20, 18, 14, 0.6)' },
+    headerChName: { color: '#C8C4B8', fontSize: 18, fontWeight: '800', marginLeft: 8 },
+    pdfBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', marginRight: 16, gap: 6 },
+    pdfBtnTxt: { color: '#C9A84C', fontSize: 13, fontWeight: '700' },
+    statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1812', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#3A3630' },
     chatHeader: { height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.06)' },
     headerChName: { color: '#C8C4B8', fontWeight: '800', fontSize: 18 },
     statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.04)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
@@ -744,13 +836,17 @@ const styles = StyleSheet.create({
     sendBtnActive: { backgroundColor: '#C9A84C' },
 
     // Right Panel
-    rightPanel: { width: 240, backgroundColor: '#0C0B09', padding: 20 },
+    rightPanel: { width: 240, backgroundColor: 'rgba(12, 11, 9, 0.7)', padding: 20 },
     rightTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
     occupancyHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
     occupancyTitle: { flex: 1, color: '#6E6960', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-    userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-    userDot: { width: 8, height: 8, borderRadius: 4 },
-    userRowName: { fontSize: 14, fontWeight: '700' },
+    userRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+    avatarWrapSmall: { width: 32, height: 32, borderRadius: 16, marginRight: 10, position: 'relative' },
+    avatarImgSmall: { width: 32, height: 32, borderRadius: 16 },
+    avatarFallbackSmall: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#1A1812', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(201,168,76,0.5)' },
+    avatarFallbackTxtSmall: { color: '#C9A84C', fontSize: 13, fontWeight: '800' },
+    userDot: { position: 'absolute', bottom: -2, right: -2, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: '#0C0B09' },
+    userRowName: { flex: 1, fontSize: 14, fontWeight: '700' },
     divider: { height: 1, backgroundColor: 'rgba(201,168,76,0.06)', marginVertical: 20 },
 
     hotelInfo: { gap: 12 },

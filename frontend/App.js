@@ -81,6 +81,16 @@ export default function App() {
       s.emit('join', { ...userData, profilePic: userData.profilePic || null });
       setSocketReady(true);
     });
+    
+    // Globally handle entering a room
+    s.on('room-created', ({ roomId, isTemp }) => {
+      setCurrentRoom(roomId);
+      setIsTemp(isTemp);
+    });
+    s.on('room-joined', ({ roomId, isTemp }) => {
+      setCurrentRoom(roomId);
+      setIsTemp(isTemp);
+    });
     s.on('connect_error', () => setSocketReady(false));
     s.on('disconnect', () => setSocketReady(false));
     s.on('force-disconnect', (data) => {

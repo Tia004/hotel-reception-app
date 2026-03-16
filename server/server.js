@@ -18,6 +18,7 @@ const io = new Server(server, {
 
 // ─── Data Stores ───────────────────────────────────────────────────────────────
 const users = new Map();          // socketId → { id, username, station, roomId }
+const allKnownUsers = new Map();  // username → { username, station, status, bio, profilePic }
 const rooms = new Map();          // roomId → { id, name, creatorName, peers, isTemp }
 
 // Hotel channel messages: channelId → [{ id, sender, text, timestamp, expiresAt, pinned, reactions }]
@@ -52,11 +53,7 @@ function broadcastRooms() {
 }
 
 function broadcastUsers() {
-    const list = Array.from(users.values()).map(u => ({
-        username: u.username, station: u.station,
-        status: u.status || 'online', roomId: u.roomId,
-        bio: u.bio || '', profilePic: u.profilePic || null
-    }));
+    const list = Array.from(allKnownUsers.values());
     io.emit('online-users', list);
 }
 
@@ -77,6 +74,13 @@ io.on('connection', (socket) => {
             }
         }
         users.set(socket.id, { id: socket.id, username, station, roomId: null, status: 'online' });
+        
+        // Update global known user dictionary
+        const known = allKnownUsers.get(username) || { username, station, bio: '', profilePic: null };
+        known.profilePic = data.profilePic || known.profilePic;
+        known.status = 'online';
+        allKnownUsers.set(username, known);
+
         broadcastRooms();
         broadcastUsers();
     });
@@ -218,6 +222,15 @@ io.on('connection', (socket) => {
         io.to(`channel:${channelId}`).emit('message-edited', { channelId, messageId, text });
     });
 
+    socket.on('delete-message', ({ channelId, messageId }) => {
+        const msgs = channelMessages.get(channelId);
+        if (!msgs) return;
+        const msgIdx = msgs.findIndex(m => m.id === messageId);
+        if (msgIdx === -1) return;
+        msgs.splice(msgIdx, 1);
+        io.to(`channel:${channelId}`).emit('message-deleted', { channelId, messageId });
+    });
+
     socket.on('react-message', ({ channelId, messageId, emoji }) => {
         const user = users.get(socket.id);
         if (!user) return;
@@ -264,11 +277,19 @@ io.on('connection', (socket) => {
     // User presence / status broadcast
     socket.on('user-status', ({ status }) => {
         const user = users.get(socket.id);
-        if (user) { user.status = status; broadcastUsers(); }
+        if (user) { 
+            user.status = status; 
+            if(allKnownUsers.has(user.username)) allKnownUsers.get(user.username).status = status;
+            broadcastUsers(); 
+        }
     });
     socket.on('user-bio', ({ bio }) => {
         const user = users.get(socket.id);
-        if (user) { user.bio = bio; }
+        if (user) { 
+            user.bio = bio; 
+            if(allKnownUsers.has(user.username)) allKnownUsers.get(user.username).bio = bio;
+            broadcastUsers();
+        }
     });
 
 
@@ -315,6 +336,9 @@ io.on('connection', (socket) => {
                 }
             }
             users.delete(socket.id);
+            if (allKnownUsers.has(user.username)) {
+                allKnownUsers.get(user.username).status = 'offline';
+            }
             broadcastRooms();
             broadcastUsers();
         }
