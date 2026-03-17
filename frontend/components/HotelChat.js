@@ -178,6 +178,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [rightCollapsed, setRightCollapsed] = useState(false);
     const [hoveredMsg, setHoveredMsg] = useState(null);
     const [emojiPickerMsg, setEmojiPickerMsg] = useState(null);
+    const prevRoomsCount = useRef(0);
 
     const playSound = async (type) => {
         try {
@@ -190,6 +191,12 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             setTimeout(() => sound.unloadAsync(), 2000);
         } catch (e) { console.log('Sound error', e); }
     };
+
+    useEffect(() => {
+        if (activeRooms.length > prevRoomsCount.current) playSound('join');
+        else if (activeRooms.length < prevRoomsCount.current) playSound('leave');
+        prevRoomsCount.current = activeRooms.length;
+    }, [activeRooms.length]);
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -223,11 +230,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         });
 
         socket.on('online-users', setOnlineUsers);
-        socket.on('rooms-update', (data) => {
-            if (activeRooms.length < data.length) playSound('join');
-            else if (activeRooms.length > data.length) playSound('leave');
-            setActiveRooms(data);
-        });
+        socket.on('rooms-update', setActiveRooms);
 
         socket.on('channel-poll-update', ({ channelId, messageId, votes }) => {
             setMessages(p => ({
@@ -837,7 +840,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             <Text style={[styles.occupancyTitle, { marginBottom: 0 }]}>TEAM</Text>
                         </View>
                         <View style={{ backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' }}>
-                            <Text style={{ color: '#C9A84C', fontSize: 10, fontWeight: '800' }}>ONLINE — {Object.values(users).filter(u => u.status === 'online').length}</Text>
+                            <Text style={{ color: '#C9A84C', fontSize: 10, fontWeight: '800' }}>ONLINE — {onlineUsers.filter(u => u.status === 'online').length}</Text>
                         </View>
                     </View>
                     <ScrollView style={{ flex: 1 }}>
