@@ -33,17 +33,15 @@ export async function requestPermission() {
 export function showMessageNotification(sender, channel, hotelName, text) {
     if (typeof window === 'undefined') return;
     if (Notification.permission !== 'granted') return;
-    if (!document.hidden) return; // Only notify when tab is not focused
-
     const truncated = text.length > 80 ? text.slice(0, 80) + '…' : text;
 
     try {
-        const n = new Notification(`${sender} — #${channel}`, {
+        const n = new Notification(`GSA — ${sender} (@${channel})`, {
             body: truncated,
             icon: '/assets/logo.png',
             badge: '/assets/logo.png',
-            tag: `gsa-msg-${channel}-${Date.now()}`,
-            renotify: false,
+            tag: `gsa-msg-${channel}`,
+            renotify: true,
             silent: false,
             data: { sender, channel, hotelName },
         });
