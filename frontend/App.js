@@ -6,7 +6,6 @@ import CallScreen from './components/CallScreen';
 import HotelChat from './components/HotelChat';
 import io from 'socket.io-client';
 import { Icon } from './components/Icons';
-
 import SplashScreen from './components/SplashScreen';
 
 const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'http://192.168.1.46:3000';
@@ -23,13 +22,13 @@ export default function App() {
   const [availableRooms, setAvailableRooms] = useState([]);
   const [currentRoom, setCurrentRoom] = useState(null);
   const [isTemp, setIsTemp] = useState(false);
-  const [callPiP, setCallPiP] = useState(false); // PiP mode
+  const [callPiP, setCallPiP] = useState(false);
+  // On mobile: flip between "call view" and "chat view"
+  const [mobileView, setMobileView] = useState('chat'); // 'chat' | 'call'
 
-  // Shared socket passed to both HotelChat and CallScreen
   const socketRef = useRef(null);
   const [socketReady, setSocketReady] = useState(false);
 
-  // ── Fluid Animations ───────────────────────────────────────────────────
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -49,7 +48,7 @@ export default function App() {
       if (saved) {
         const { user: savedUser, loginTime } = JSON.parse(saved);
         if (Date.now() - loginTime < SESSION_DURATION) {
-          handleLogin(savedUser, false); // restore without re-saving
+          handleLogin(savedUser, false);
         } else {
           localStorage.removeItem(SESSION_KEY);
         }
@@ -59,15 +58,13 @@ export default function App() {
     }
 
     // Inject global CSS for Web to remove blue focus outline
-    if (Platform.OS === 'web') {
-      const style = document.createElement('style');
-      style.textContent = `
-        *:focus { outline: none !important; }
-        input:focus { outline: none !important; }
-        textarea:focus { outline: none !important; }
-      `;
-      document.head.appendChild(style);
-    }
+    const style = document.createElement('style');
+    style.textContent = `
+      *:focus { outline: none !important; }
+      input:focus { outline: none !important; }
+      textarea:focus { outline: none !important; }
+    `;
+    document.head.appendChild(style);
   }, []);
 
   // ── Socket Management ──────────────────────────────────────────────────
@@ -82,22 +79,24 @@ export default function App() {
       s.emit('join', { ...userData, profilePic: userData.profilePic || null });
       setSocketReady(true);
     });
-    
-    // Globally handle entering a room
+
     s.on('room-created', ({ roomId, isTemp }) => {
       setCurrentRoom(roomId);
       setIsTemp(isTemp);
-      setCallPiP(false); // Start in full mode
+      setCallPiP(false);
+      // On mobile, immediately switch to call view when room created
+      if (IS_MOBILE) setMobileView('call');
     });
     s.on('room-joined', ({ roomId, isTemp }) => {
       setCurrentRoom(roomId);
       setIsTemp(isTemp);
-      setCallPiP(false); // Start in full mode
+      setCallPiP(false);
+      if (IS_MOBILE) setMobileView('call');
     });
     s.on('connect_error', () => setSocketReady(false));
     s.on('disconnect', () => setSocketReady(false));
     s.on('force-disconnect', (data) => {
-      alert(`Disconnesso: ${data.reason}`);
+      console.warn('Force disconnect:', data.reason);
       handleLogout();
     });
   };
@@ -123,9 +122,10 @@ export default function App() {
     setUser(null);
     setCurrentRoom(null);
     setCallPiP(false);
+    setMobileView('chat');
   };
 
-  // When user clicks a chat channel while in a call → shrink call to PiP
+  // Desktop: clicking a chat channel during a call → PiP
   const handleChannelClick = () => {
     if (currentRoom && !callPiP) {
       setCallPiP(true);
@@ -152,6 +152,66 @@ export default function App() {
   const inCall = !!currentRoom;
   const showCallFull = inCall && !callPiP;
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // MOBILE layout — only one view at a time
+  // ────────────────────────────────────────────────────────────────────────────
+  if (IS_MOBILE) {
+    return (
+      <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
+        <StatusBar style="light" />
+
+        {/* Chat view */}
+        {(!inCall || mobileView === 'chat') && (
+          <View style={StyleSheet.absoluteFillObject}>
+            <HotelChat
+              socket={socketRef.current}
+              user={user}
+              sidebarVisible={sidebarVisible}
+              onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
+              availableRooms={availableRooms}
+              onJoinRoom={(roomId) => socketRef.current?.emit('join-room', { roomId })}
+              onLogout={handleLogout}
+              inCall={inCall}
+              hideChatColumn={false}
+              onChannelClick={null}
+              currentRoomId={currentRoom}
+            />
+            {/* Floating "return to call" button when in a call */}
+            {inCall && mobileView === 'chat' && (
+              <TouchableOpacity
+                style={styles.mobileReturnToCall}
+                onPress={() => setMobileView('call')}
+              >
+                <Icon name="video-filled" size={14} color="#111" />
+                <Text style={styles.mobileReturnTxt}>Torna alla chiamata</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Full-screen call view on mobile */}
+        {inCall && mobileView === 'call' && (
+          <View style={StyleSheet.absoluteFillObject}>
+            <CallScreen
+              user={user}
+              socket={socketRef.current}
+              onLogout={handleLogout}
+              onRoomsUpdate={setAvailableRooms}
+              roomId={currentRoom}
+              onClose={() => { setCurrentRoom(null); setMobileView('chat'); }}
+              isTempProp={isTemp}
+              onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
+              onMinimize={() => setMobileView('chat')} // "minimize" = go to chat on mobile
+            />
+          </View>
+        )}
+      </Animated.View>
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // DESKTOP layout — side-by-side
+  // ────────────────────────────────────────────────────────────────────────────
   return (
     <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
       <StatusBar style="light" />
@@ -170,6 +230,7 @@ export default function App() {
             inCall={inCall}
             hideChatColumn={showCallFull}
             onChannelClick={handleChannelClick}
+            currentRoomId={currentRoom}
           />
         </View>
 
@@ -214,22 +275,20 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0C0B09' },
-  content: { flex: 1, flexDirection: IS_MOBILE ? 'column' : 'row', position: 'relative' },
+  content: { flex: 1, flexDirection: 'row', position: 'relative' },
 
-  chatPane: {
-    flex: 1,
-  },
-  // When call is full-screen, sidebar shrinks to just the left sidebar width
+  chatPane: { flex: 1 },
   chatPaneShrunk: {
-    width: IS_MOBILE ? '100%' : 260,
-    maxWidth: IS_MOBILE ? undefined : 260,
+    width: 260,
+    maxWidth: 260,
   },
   callPane: {
     flex: 1,
     borderLeftWidth: 1,
     borderLeftColor: 'rgba(201,168,76,0.06)',
   },
-  // PiP floating container
+
+  // PiP floating container (desktop)
   pipContainer: {
     position: 'absolute',
     bottom: 20,
@@ -245,5 +304,31 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(201,168,76,0.3)',
+  },
+
+  // Mobile — "return to call" floating button
+  mobileReturnToCall: {
+    position: 'absolute',
+    bottom: 90,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#C9A84C',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 50,
+    shadowColor: '#C9A84C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 999,
+  },
+  mobileReturnTxt: {
+    color: '#111',
+    fontWeight: '800',
+    fontSize: 13,
+    letterSpacing: 0.3,
   },
 });

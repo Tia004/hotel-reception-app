@@ -24,6 +24,7 @@ import { VoiceRecorderButton, VoiceMessageBubble } from './VoiceMessage';
 import { EMOJI_CATEGORIES, ALL_EMOJI } from '../utils/emoji_data';
 import html2pdf from 'html2pdf.js';
 import DynamicBackground from './DynamicBackground';
+import { requestPermission, showMessageNotification } from '../utils/pushNotifications';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IS_MOBILE = SCREEN_W < 768;
@@ -142,7 +143,7 @@ const PollMessage = ({ msg, onVote, user }) => {
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────
-export default function HotelChat({ socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick }) {
+export default function HotelChat({ socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId }) {
     const [activeChannel, setActiveChannel] = useState(ALL_CHANNELS[0]);
     const [messages, setMessages] = useState({});
     const [pinned, setPinned] = useState({});
@@ -214,6 +215,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     useEffect(() => {
         if (!socket) return;
         loadProfile();
+        requestPermission(); // Ask for push notification permission
 
         ALL_CHANNELS.forEach(ch => {
             socket.emit('join-channel', { channelId: ch.id });
@@ -227,6 +229,12 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
         socket.on('channel-message', ({ channelId, message }) => {
             setMessages(p => ({ ...p, [channelId]: [...(p[channelId] || []), message] }));
+            // Push notification when tab is not focused and sender is not current user
+            if (message.sender !== user.username) {
+                const ch = ALL_CHANNELS.find(c => c.id === channelId);
+                const hotel = HOTELS.find(h => channelId.startsWith(h.id));
+                showMessageNotification(message.sender, ch?.name || channelId, hotel?.name || '', message.text || '🎵 Vocale');
+            }
         });
 
         socket.on('online-users', setOnlineUsers);
@@ -519,8 +527,13 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         <TouchableOpacity
                                             style={styles.chRow}
                                             onPress={() => {
-                                                if (inCall) setAlertMsg('Sei già in una stanza. Chiudila prima di entrarne in una nuova.');
-                                                else socket.emit('join-room', { roomId: room.id });
+                                                if (inCall && currentRoomId && currentRoomId !== room.id) {
+                                                    setAlertMsg('Sei già in una stanza. Chiudila prima di entrarne in una nuova.');
+                                                } else if (!inCall) {
+                                                    socket.emit('join-room', { roomId: room.id });
+                                                } else if (onChannelClick) {
+                                                    onChannelClick(); // same room while in PiP → expand
+                                                }
                                             }}>
                                             <Icon name="volume-2" size={15} color="#6B7FC4" />
                                             <Text style={[styles.chName, { color: '#6B7FC4' }]}>{room.name}</Text>
@@ -833,20 +846,17 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             {!hideChatColumn && !IS_MOBILE && !rightCollapsed && (
                 <View style={[styles.column, styles.rightPanel]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                            <TouchableOpacity onPress={() => setRightCollapsed(true)}>
-                                <Icon name="chevron-right" size={18} color="#554E40" />
-                            </TouchableOpacity>
-                            <Text style={[styles.occupancyTitle, { marginBottom: 0 }]}>TEAM</Text>
-                        </View>
                         <View style={{ backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' }}>
                             <Text style={{ color: '#C9A84C', fontSize: 10, fontWeight: '800' }}>ONLINE — {onlineUsers.filter(u => u.status === 'online').length}</Text>
                         </View>
+                        <TouchableOpacity onPress={() => setRightCollapsed(true)} style={{ padding: 6 }}>
+                            <Icon name="chevron-right" size={18} color="#554E40" />
+                        </TouchableOpacity>
                     </View>
                     <ScrollView style={{ flex: 1 }}>
                         <TouchableOpacity style={styles.occupancyHeader} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>
                             <Icon name="users" size={14} color="#554E40" />
-                            <Text style={[styles.occupancyTitle, { fontSize: 13, marginLeft: 8 }]}>COMPONENTI</Text>
+                            <Text style={[styles.occupancyTitle, { fontSize: 13, marginLeft: 8 }]}>TEAM</Text>
                             <View style={{ flex: 1 }} />
                             <Icon name={expanded.users ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
                         </TouchableOpacity>
@@ -941,12 +951,12 @@ const styles = StyleSheet.create({
     root: { flex: 1, flexDirection: 'row', backgroundColor: 'transparent', ...NO_SELECT, position: 'relative' },
     column: { height: '100%', borderRightWidth: 1, borderRightColor: 'rgba(201,168,76,0.06)' },
 
-    hoverMenu: { position: 'absolute', top: -10, right: 10, backgroundColor: '#16140F', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 12, overflow: 'hidden', zIndex: 100, minWidth: 180, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 12 },
-    hoverEmojiBar: { flexDirection: 'row', alignItems: 'center', padding: 6, gap: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' },
-    hoverEmojiBtn: { width: 28, height: 28, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.04)', justifyContent: 'center', alignItems: 'center' },
-    hoverActionList: { padding: 4 },
-    hoverActionItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 6 },
-    hoverActionTxt: { color: '#A8A090', fontSize: 13, fontWeight: '600' },
+    hoverMenu: { position: 'absolute', top: -10, right: 10, backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.4)', borderRadius: 14, zIndex: 9999, elevation: 20, minWidth: 190, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.7, shadowRadius: 16 },
+    hoverEmojiBar: { flexDirection: 'row', alignItems: 'center', padding: 8, gap: 5, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.12)' },
+    hoverEmojiBtn: { width: 30, height: 30, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.07)', justifyContent: 'center', alignItems: 'center' },
+    hoverActionList: { padding: 6 },
+    hoverActionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, backgroundColor: 'transparent' },
+    hoverActionTxt: { color: '#D0C8BA', fontSize: 14, fontWeight: '600' },
     fullEmojiPicker: { 
         backgroundColor: 'rgba(20,18,14,0.95)', 
         borderRadius: 12, 

@@ -64,6 +64,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     // Peer connections map
     const pcsRef = useRef(new Map()); // socketId → RTCPeerConnection
     const localStreamRef = useRef(null);
+    const pipVideoRef = useRef(null); // hidden video element for Browser PiP
 
     // ── Loading Animation ────────────────────────────────────────────────
     useEffect(() => {
@@ -134,11 +135,16 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             setRemoteStreams(prev => { const next = { ...prev }; delete next[socketId]; return next; });
         };
 
+        // Request in-call chat history
+        socket.emit('room-chat-history', { roomId });
+        socket.on('room-chat-history', ({ messages: hist }) => {
+            if (hist && hist.length) setChatMessages(hist);
+        });
+
         const onChatMsg = (msg) => {
             setChatMessages(prev => [...prev, msg]);
             setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
         };
-
         const onEmojiReaction = ({ socketId, emoji }) => {
             const id = Date.now() + Math.random();
             setFloatingReactions(prev => [...prev, { id, emoji }]);
@@ -161,12 +167,54 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             socket.off('user-left-room', onUserLeft);
             socket.off('chat-message', onChatMsg);
             socket.off('emoji-reaction', onEmojiReaction);
+            socket.off('room-chat-history');
             stopLocalStream();
             // Close all peer connections
             for (const pc of pcsRef.current.values()) pc.close();
             pcsRef.current.clear();
         };
     }, [socket, roomId]);
+
+    // ── Browser Picture-in-Picture on tab hide ─────────────────────────
+    useEffect(() => {
+        if (Platform.OS !== 'web' || isPiP) return;
+
+        // Create a hidden video element that carries the stream for PiP
+        const videoEl = document.createElement('video');
+        videoEl.autoplay = true;
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        videoEl.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
+        document.body.appendChild(videoEl);
+        pipVideoRef.current = videoEl;
+
+        const onVisibilityChange = async () => {
+            if (!('pictureInPictureEnabled' in document)) return;
+            try {
+                if (document.hidden) {
+                    // Grab the best available stream: prefer remote, fall back to local
+                    const remoteKeys = Object.keys(remoteStreams);
+                    const stream = remoteKeys.length > 0
+                        ? remoteStreams[remoteKeys[0]]
+                        : localStreamRef.current;
+                    if (stream) {
+                        videoEl.srcObject = stream;
+                        await videoEl.play().catch(() => {});
+                        await videoEl.requestPictureInPicture().catch(() => {});
+                    }
+                } else if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture().catch(() => {});
+                }
+            } catch (e) { /* PiP may not be supported or allowed */ }
+        };
+
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+            if (videoEl.parentNode) videoEl.parentNode.removeChild(videoEl);
+        };
+    }, [remoteStreams, isPiP]);
 
     const startLocalStream = async (audioDeviceId, videoDeviceId) => {
         try {
@@ -280,9 +328,10 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
 
     const sendChatMessage = () => {
         if (!chatDraft.trim() || !socket) return;
-        const msg = { text: chatDraft.trim(), timestamp: Date.now() };
+        const msg = { text: chatDraft.trim(), timestamp: Date.now(), sender: user.username };
         socket.emit('chat-message', msg);
-        setChatMessages(prev => [...prev, { sender: user.username, ...msg }]);
+        socket.emit('room-chat-save', { roomId, message: msg }); // persist to server
+        setChatMessages(prev => [...prev, { ...msg }]);
         setChatDraft('');
         setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
     };
@@ -314,7 +363,15 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         }
     };
 
-    const hangUp = () => {
+    const hangUp = async () => {
+        // Play disconnect sound
+        try {
+            const audio = new window.Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
+            audio.volume = 0.6;
+            audio.play().catch(() => {});
+            // Wait a moment for sound to start before closing
+            await new Promise(r => setTimeout(r, 300));
+        } catch (e) { /* no sound on non-web */ }
         socket?.emit('leave-room');
         onClose();
     };
@@ -409,8 +466,9 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                     </View>
                 )}
                 {onMinimize && (
-                    <TouchableOpacity onPress={onMinimize} style={{ padding: 6 }}>
-                        <Icon name="minimize-2" size={18} color="#C9A84C" />
+                    <TouchableOpacity onPress={onMinimize} style={styles.minimizeBtn}>
+                        <Icon name={IS_MOBILE ? 'message-square' : 'minimize-2'} size={IS_MOBILE ? 16 : 18} color="#C9A84C" />
+                        {IS_MOBILE && <Text style={{ color: '#C9A84C', fontSize: 12, fontWeight: '700', marginLeft: 4 }}>Chat</Text>}
                     </TouchableOpacity>
                 )}
             </View>
@@ -453,6 +511,43 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                 </View>
                             </View>
                         ))}
+
+                        {/* Screen Share Tile */}
+                        {screenSharing && Platform.OS === 'web' && (() => {
+                            // Imperatively attach screenStream to a <video> element
+                            const ScreenTile = () => {
+                                const vRef = useRef(null);
+                                useEffect(() => {
+                                    if (vRef.current && screenStreamRef.current) {
+                                        vRef.current.srcObject = screenStreamRef.current;
+                                        vRef.current.play().catch(() => {});
+                                    }
+                                }, []);
+                                return (
+                                    <View style={[styles.tile, styles.tileScreen]}>
+                                        {/* eslint-disable-next-line react/no-unknown-property */}
+                                        <video
+                                            ref={vRef}
+                                            autoPlay
+                                            muted
+                                            playsInline
+                                            style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 12 }}
+                                        />
+                                        {/* Info overlay */}
+                                        <View style={styles.screenShareOverlay}>
+                                            <View style={styles.screenShareInfo}>
+                                                <Icon name="monitor" size={16} color="#C9A84C" />
+                                                <Text style={styles.screenShareTxt}>Stai condividendo lo schermo</Text>
+                                            </View>
+                                            <TouchableOpacity style={styles.screenShareStopBtn} onPress={toggleScreenShare}>
+                                                <Text style={styles.screenShareStopTxt}>Interrompi condivisione</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                );
+                            };
+                            return <ScreenTile key="screen-tile" />;
+                        })()}
                     </View>
 
                     {/* Controls */}
@@ -602,6 +697,7 @@ const styles = StyleSheet.create({
 
     // Header
     header: { height: 50, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, zIndex: 10 },
+    minimizeBtn: { flexDirection: 'row', alignItems: 'center', padding: 8, backgroundColor: 'rgba(201,168,76,0.08)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' },
     roomBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
     roomName: { color: '#C8C4B8', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
     tempBadge: { backgroundColor: '#FF8C00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
@@ -615,7 +711,13 @@ const styles = StyleSheet.create({
     tile: { backgroundColor: '#0A0908', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)', position: 'relative', elevation: 10 },
     tileCenter: { width: '70%', aspectRatio: 16 / 9, maxWidth: 800 },
     tileSide: { width: '45%', aspectRatio: 16 / 9, maxWidth: 600 },
+    tileScreen: { width: '90%', aspectRatio: 16 / 9, maxWidth: 1000, borderColor: 'rgba(201,168,76,0.3)', borderWidth: 2 },
     rtc: { flex: 1 },
+    screenShareOverlay: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'rgba(12,11,9,0.75)', paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.2)' },
+    screenShareInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    screenShareTxt: { color: '#C9A84C', fontSize: 13, fontWeight: '700' },
+    screenShareStopBtn: { backgroundColor: '#ED4245', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
+    screenShareStopTxt: { color: '#fff', fontSize: 12, fontWeight: '800' },
     avatarTile: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1A1812' },
     avatarTxt: { color: '#C9A84C', fontSize: 44, fontWeight: '800' },
     nameOverlay: { position: 'absolute', bottom: 10, left: 10, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 6 },

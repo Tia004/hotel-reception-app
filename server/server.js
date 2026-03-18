@@ -251,9 +251,36 @@ io.on('connection', (socket) => {
         if (!user?.roomId) return;
         const room = rooms.get(user.roomId);
         const msgObj = { socketId: socket.id, sender: user.username, ...data, timestamp: Date.now() };
-        // Save to room chat history
+        // Save to room chat history (in-memory)
         if (room) room.chatMessages.push(msgObj);
         socket.to(user.roomId).emit('chat-message', msgObj);
+    });
+
+    // ── Persist in-call chat to disk ─────────────────────────────────────────
+    socket.on('room-chat-save', ({ roomId, message }) => {
+        if (!roomId || !message) return;
+        const chatFile = path.join(DATA_DIR, `room_chat_${roomId}.json`);
+        try {
+            let history = [];
+            if (fs.existsSync(chatFile)) history = JSON.parse(fs.readFileSync(chatFile, 'utf8'));
+            history.push({ ...message, timestamp: message.timestamp || Date.now() });
+            // Keep max 200 messages per room
+            if (history.length > 200) history = history.slice(-200);
+            fs.writeFileSync(chatFile, JSON.stringify(history), 'utf8');
+        } catch (e) { console.error('Failed to save room chat:', e.message); }
+    });
+
+    socket.on('room-chat-history', ({ roomId }) => {
+        if (!roomId) return;
+        const chatFile = path.join(DATA_DIR, `room_chat_${roomId}.json`);
+        try {
+            if (fs.existsSync(chatFile)) {
+                const history = JSON.parse(fs.readFileSync(chatFile, 'utf8'));
+                socket.emit('room-chat-history', { messages: history });
+            } else {
+                socket.emit('room-chat-history', { messages: [] });
+            }
+        } catch (e) { socket.emit('room-chat-history', { messages: [] }); }
     });
 
     // ── Emoji Reactions (in-call) ────────────────────────────────────────────
