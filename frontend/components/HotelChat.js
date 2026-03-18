@@ -182,23 +182,32 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [leftCollapsed, setLeftCollapsed] = useState(false);
     const [rightCollapsed, setRightCollapsed] = useState(false);
     const leftAnim = useRef(new Animated.Value(0)).current; // 0 = expanded, -260 = collapsed
-    const rightAnim = useRef(new Animated.Value(0)).current; // 0 = expanded, 280 = collapsed
+    const rightAnim = useRef(new Animated.Value(0)).current; // 0 = expanded, -300 = collapsed
 
     useEffect(() => {
         Animated.timing(leftAnim, {
             toValue: leftCollapsed ? -260 : 0,
-            duration: 300,
+            duration: 350,
             useNativeDriver: false
         }).start();
     }, [leftCollapsed]);
 
     useEffect(() => {
         Animated.timing(rightAnim, {
-            toValue: rightCollapsed ? 280 : 0,
-            duration: 300,
+            toValue: rightCollapsed ? -300 : 0,
+            duration: 350,
             useNativeDriver: false
         }).start();
     }, [rightCollapsed]);
+
+    const leftRotate = leftAnim.interpolate({
+        inputRange: [-260, 0],
+        outputRange: ['180deg', '0deg']
+    });
+    const rightRotate = rightAnim.interpolate({
+        inputRange: [-300, 0],
+        outputRange: ['180deg', '0deg']
+    });
 
     const [hoveredMsg, setHoveredMsg] = useState(null);
     const [emojiPickerMsg, setEmojiPickerMsg] = useState(null);
@@ -650,16 +659,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                 </Modal>
             )}
 
-            {leftCollapsed && !IS_MOBILE && (
-                <TouchableOpacity style={styles.leftTrapezoid} onPress={() => setLeftCollapsed(false)}>
-                    <Icon name="chevron-right" size={16} color="#C9A84C" />
-                </TouchableOpacity>
-            )}
-            {rightCollapsed && !IS_MOBILE && (
-                <TouchableOpacity style={styles.rightTrapezoid} onPress={() => setRightCollapsed(false)}>
-                    <Icon name="chevron-left" size={16} color="#C9A84C" />
-                </TouchableOpacity>
-            )}
+            {/* Sidebar toggle tabs are now children of the sidebars themselves to move with them */}
 
             {/* ── LEFT SIDEBAR ────────────────────────────────────────── */}
             {(!IS_MOBILE || sidebarVisible) && (
@@ -675,13 +675,21 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 <Image source={require('../assets/logo.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
                                 <Text style={styles.brandName}>GSA HOTELS</Text>
                             </View>
-                            {!IS_MOBILE && (
-                                <TouchableOpacity onPress={() => setLeftCollapsed(true)} style={styles.collapseTabInternal}>
-                                    <Icon name="chevron-left" size={18} color="#C9A84C" />
-                                </TouchableOpacity>
-                            )}
                         </View>
                     </LinearGradient>
+
+                    {/* Unified Rhombus Tab (Left) */}
+                    {!IS_MOBILE && (
+                        <TouchableOpacity 
+                            style={[styles.externalTab, styles.leftExternalTab]} 
+                            onPress={() => setLeftCollapsed(!leftCollapsed)}
+                            activeOpacity={0.8}
+                        >
+                            <Animated.View style={{ transform: [{ rotate: leftRotate }] }}>
+                                <Icon name="chevron-left" size={16} color="#C9A84C" />
+                            </Animated.View>
+                        </TouchableOpacity>
+                    )}
 
                     <ScrollView style={{ flex: 1 }}>
                         {HOTELS.map(hotel => (
@@ -746,7 +754,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     </ScrollView>
 
                     {/* Bottom controls / Crea Stanza */}
-                    <div style={{ padding: '0 12px 12px 12px' }}>
+                    <View style={{ padding: 12, paddingBottom: 16 }}>
                         {!inCall && (
                             <TouchableOpacity style={styles.createBtn} onPress={() => socket.emit('create-room', {})}>
                                 <Icon name="plus" size={18} color="#111" />
@@ -771,17 +779,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 <Icon name="settings" size={18} color="#554E40" />
                             </TouchableOpacity>
                         </View>
-                    </div>
-
-                    {/* External Pull Tab (Left) */}
-                    {!IS_MOBILE && (
-                        <TouchableOpacity 
-                            style={[styles.externalTab, styles.leftExternalTab]} 
-                            onPress={() => setLeftCollapsed(!leftCollapsed)}
-                        >
-                            <Icon name={leftCollapsed ? "chevron-right" : "chevron-left"} size={14} color="#C9A84C" />
-                        </TouchableOpacity>
-                    )}
+                    </View>
                 </Animated.View>
             )}
 
@@ -1061,11 +1059,21 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     { marginRight: rightAnim, position: 'relative' }
                 ]}>
                     <View style={styles.rightHeader}>
-                        <TouchableOpacity onPress={() => setRightCollapsed(true)} style={styles.collapseTabInternal}>
-                            <Icon name="chevron-right" size={18} color="#C9A84C" />
-                        </TouchableOpacity>
                         <Text style={styles.rightHeaderTitle}>HUB GESTIONALE</Text>
                     </View>
+
+                    {/* Unified Rhombus Tab (Right) */}
+                    {!IS_MOBILE && (
+                        <TouchableOpacity 
+                            style={[styles.externalTab, styles.rightExternalTab]} 
+                            onPress={() => setRightCollapsed(!rightCollapsed)}
+                            activeOpacity={0.8}
+                        >
+                            <Animated.View style={{ transform: [{ rotate: rightRotate }] }}>
+                                <Icon name="chevron-right" size={16} color="#C9A84C" />
+                            </Animated.View>
+                        </TouchableOpacity>
+                    )}
 
                     <ScrollView style={{ flex: 1 }}>
                         {/* Saved Messages Section */}
@@ -1144,7 +1152,6 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
                         <View style={styles.hotelInfoBox}>
                             <Text style={styles.hotelInfoTitle}>INFORMAZIONI HOTEL</Text>
-                            <View style={[styles.hotelDotLarge, { backgroundColor: activeHotel ? activeHotel.color : '#C9A84C' }]} />
                             <Text style={styles.hotelInfoName}>{activeHotel ? activeHotel.name : 'Seleziona un hotel'}</Text>
                             <Text style={styles.hotelInfoDesc}>{activeHotel ? activeHotel.desc : ''}</Text>
                             {activeHotel && (
@@ -1210,19 +1217,22 @@ const styles = StyleSheet.create({
 
     externalTab: {
         position: 'absolute',
-        top: '50%',
-        marginTop: -30,
-        width: 20,
-        height: 60,
+        top: '40%',
+        width: 22,
+        height: 44,
         backgroundColor: '#1C1A12',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: '#2A2217',
-        zIndex: 10,
+        borderColor: 'rgba(201,168,76,0.2)',
+        zIndex: 999,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
     },
-    leftExternalTab: { right: -20, borderTopRightRadius: 8, borderBottomRightRadius: 8, borderLeftWidth: 0 },
-    rightExternalTab: { left: -20, borderTopLeftRadius: 8, borderBottomLeftRadius: 8, borderRightWidth: 0 },
+    leftExternalTab: { right: -22, borderTopRightRadius: 10, borderBottomRightRadius: 10, borderLeftWidth: 0 },
+    rightExternalTab: { left: -22, borderTopLeftRadius: 10, borderBottomLeftRadius: 10, borderRightWidth: 0 },
     collapseTabInternal: { width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(201,168,76,0.05)', justifyContent: 'center', alignItems: 'center' },
 
     // Sidebar
