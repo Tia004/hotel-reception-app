@@ -425,11 +425,19 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
         socket.on('channel-message', ({ channelId, message }) => {
             setMessages(p => ({ ...p, [channelId]: [...(p[channelId] || []), message] }));
-            // Push notification when tab is not focused and sender is not current user
+            // Push notification when sender is not current user
             if (message.sender !== user.username) {
                 const ch = ALL_CHANNELS.find(c => c.id === channelId);
                 const hotel = HOTELS.find(h => channelId.startsWith(h.id));
+                // Force notification even if tab is visible if it's a direct mention or important?
+                // For now, let's just make it more reliable.
                 showMessageNotification(message.sender, ch?.name || channelId, hotel?.name || '', message.text || '🎵 Vocale');
+            }
+        });
+
+        socket.on('user-joined-room', ({ username }) => {
+            if (username !== user.username) {
+                showRoomNotification('joined', username, 'nella stanza vocale');
             }
         });
 
@@ -671,115 +679,98 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                 ]}>
                     <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                <Image source={require('../assets/logo.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
-                                <Text style={styles.brandName}>GSA HOTELS</Text>
-                            </View>
+                            <Text style={styles.brandName}>HOTEL CHAT v3.0</Text>
                         </View>
                     </LinearGradient>
 
-                    {/* Unified Rhombus Tab (Left) */}
-                    {!IS_MOBILE && (
-                        <TouchableOpacity 
-                            style={[styles.externalTab, styles.leftExternalTab]} 
-                            onPress={() => setLeftCollapsed(!leftCollapsed)}
-                            activeOpacity={0.8}
-                        >
-                            <Animated.View style={{ transform: [{ rotate: leftRotate }] }}>
-                                <Icon name="chevron-left" size={16} color="#C9A84C" />
-                            </Animated.View>
-                        </TouchableOpacity>
-                    )}
-
                     <ScrollView style={{ flex: 1 }}>
-                        {HOTELS.map(hotel => (
-                            <View key={hotel.id}>
-                                <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, [hotel.id]: !p[hotel.id] }))}>
-                                    <View style={[styles.hotelDot, { backgroundColor: hotel.color }]} />
-                                    <Text style={styles.hotelLbl}>{hotel.name.toUpperCase()}</Text>
-                                    <Icon name={expanded[hotel.id] ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
-                                </TouchableOpacity>
-                                {expanded[hotel.id] && ALL_CHANNELS.filter(c => c.id.startsWith(hotel.id)).map(ch => (
-                                    <TouchableOpacity key={ch.id}
-                                        style={[styles.chRow, activeChannel.id === ch.id && styles.chRowActive]}
-                                        onPress={() => { setActiveChannel(ch); if (IS_MOBILE) onToggleSidebar(); if (inCall && onChannelClick) onChannelClick(); }}>
-                                        <Icon name="hash" size={15} color={activeChannel.id === ch.id ? hotel.color : '#554E40'} />
-                                        <Text style={[styles.chName, activeChannel.id === ch.id && { color: hotel.color }]}>{ch.name}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
+                        <View style={styles.navHotelRow}>
+                            <Icon name="home" size={14} color="#6E6960" />
+                            <Text style={styles.hotelLbl}>HOTEL DISPONIBILI</Text>
+                        </View>
+
+                        {HOTELS.map(h => (
+                            <TouchableOpacity 
+                                key={h.id} 
+                                style={[styles.chRow, activeHotel?.id === h.id && styles.chRowActive]}
+                                onPress={() => setActiveHotel(h)}
+                            >
+                                <View style={[styles.hotelDot, { backgroundColor: h.color }]} />
+                                <Text style={[styles.chName, activeHotel?.id === h.id && { color: '#C9A84C' }]}>{h.name}</Text>
+                            </TouchableOpacity>
                         ))}
 
-                        {/* Active Voice Rooms Section */}
-                        {activeRooms.length > 0 && (
-                            <View style={{ marginTop: 10 }}>
-                                <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, rooms: !p.rooms }))}>
-                                    <View style={[styles.hotelDot, { backgroundColor: '#6B7FC4' }]} />
-                                    <Text style={styles.hotelLbl}>STANZE ATTIVE</Text>
-                                    <Icon name={expanded.rooms ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
-                                </TouchableOpacity>
-                                {expanded.rooms && activeRooms.map(room => (
-                                    <View key={room.id}>
-                                        <TouchableOpacity
-                                            style={styles.chRow}
-                                            onPress={() => {
-                                                if (inCall && currentRoomId && currentRoomId !== room.id) {
-                                                    setAlertMsg('Sei già in una stanza. Chiudila prima di entrarne in una nuova.');
-                                                } else if (!inCall) {
-                                                    socket.emit('join-room', { roomId: room.id });
-                                                } else if (onChannelClick) {
-                                                    onChannelClick(); // same room while in PiP → expand
-                                                }
-                                            }}>
-                                            <Icon name="volume-2" size={15} color="#6B7FC4" />
-                                            <Text style={[styles.chName, { color: '#6B7FC4' }]}>{room.name}</Text>
-                                            <Text style={{ color: '#554E40', fontSize: 10, marginLeft: 'auto' }}>{room.peerCount || 0}</Text>
-                                        </TouchableOpacity>
-                                        {/* Show participant avatars */}
-                                        {room.peers && room.peers.length > 0 && (
-                                            <View style={{ flexDirection: 'row', gap: 4, paddingLeft: 38, paddingBottom: 6 }}>
-                                                {room.peers.map((p, pi) => (
-                                                    <View key={pi} style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#1A1812', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(107,127,196,0.4)' }}>
-                                                        {p.profilePic
-                                                            ? <Image source={{ uri: p.profilePic }} style={{ width: 22, height: 22, borderRadius: 11 }} />
-                                                            : <Text style={{ color: '#6B7FC4', fontSize: 9, fontWeight: '800' }}>{p.username?.[0]?.toUpperCase()}</Text>}
-                                                    </View>
-                                                ))}
-                                            </View>
+                        <View style={[styles.navHotelRow, { marginTop: 20 }]}>
+                            <Icon name="video" size={14} color="#6E6960" />
+                            <Text style={styles.hotelLbl}>STANZE VOCALI FISSE</Text>
+                        </View>
+
+                        {/* Fixed Rooms List */}
+                        {['Duchessa Vocale', 'Blumen Vocale', 'SantOrsola Vocale', 'Stanza Generale'].map((name, idx) => {
+                            const icons = ['coffee', 'flower', 'star', 'users'];
+                            const ids = ['duchessa-voice', 'blumen-voice', 'santorsola-voice', 'generale-voice'];
+                            const rid = ids[idx];
+                            const room = activeRooms.find(r => r.id === rid);
+                            const isActive = currentRoom === rid;
+
+                            return (
+                                <TouchableOpacity 
+                                    key={rid} 
+                                    style={[styles.chRow, isActive && styles.chRowActive]}
+                                    onPress={() => socket.emit('join-room', { roomId: rid })}
+                                >
+                                    <Icon name={icons[idx]} size={16} color={isActive ? '#C9A84C' : '#554E40'} />
+                                    <View style={{ flex: 1, marginLeft: 10 }}>
+                                        <Text style={[styles.chName, isActive && { color: '#C9A84C' }]}>{name.toUpperCase()}</Text>
+                                        {room && room.peerCount > 0 && (
+                                            <Text style={{ color: '#6E6960', fontSize: 10 }}>{room.peerCount} partecipanti</Text>
                                         )}
                                     </View>
-                                ))}
-                            </View>
-                        )}
+                                    {room && room.peerCount > 0 && (
+                                        <View style={{ flexDirection: 'row', gap: -6 }}>
+                                            {room.peers.slice(0, 3).map((p, pi) => (
+                                                <View key={pi} style={[styles.userAvatarSmall, { width: 18, height: 18, borderWidth: 1, borderColor: '#111' }]}>
+                                                    <Text style={{ fontSize: 8, color: '#C9A84C' }}>{p.username[0].toUpperCase()}</Text>
+                                                </View>
+                                            ))}
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                            );
+                        })}
                     </ScrollView>
 
-                    {/* Bottom controls / Crea Stanza */}
-                    <View style={{ padding: 12, paddingBottom: 16 }}>
-                        {!inCall && (
-                            <TouchableOpacity style={styles.createBtn} onPress={() => socket.emit('create-room', {})}>
-                                <Icon name="plus" size={18} color="#111" />
-                                <Text style={styles.createBtnTxt}>CREA STANZA VOCALE</Text>
-                            </TouchableOpacity>
-                        )}
-
-                        <View style={styles.userFooter}>
-                            <TouchableOpacity style={styles.avatarBtn} onPress={() => setProfileVisible(true)}>
-                                <View style={styles.avatar}>
-                                    {user.profilePic
-                                        ? <Image source={{ uri: user.profilePic }} style={{ width: 36, height: 36, borderRadius: 10 }} />
-                                        : <Text style={styles.avatarTxt}>{(user.username || '?').charAt(0).toUpperCase()}</Text>}
-                                    <View style={[styles.statusDot, { backgroundColor: statusColor(JSON.parse(localStorage.getItem('gsa_user_status') || '"online"')) }]} />
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.userName}>{user.username}</Text>
-                                    <Text style={styles.userStat}>{user.station}</Text>
-                                </View>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.gearBtn} onPress={() => setSettingsVisible(true)}>
-                                <Icon name="settings" size={18} color="#554E40" />
-                            </TouchableOpacity>
-                        </View>
+                    <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.05)' }}>
+                        <TouchableOpacity style={styles.avatarBtn} onPress={() => setShowProfile(true)}>
+                            <View style={styles.avatar}>
+                                {user.profilePic ? <Image source={{ uri: user.profilePic }} style={StyleSheet.absoluteFill} /> : <Text style={styles.avatarTxt}>{user.username[0].toUpperCase()}</Text>}
+                                <View style={[styles.statusDot, { backgroundColor: '#43B581' }]} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.userName}>{user.username}</Text>
+                                <Text style={styles.userStat}>{user.station || 'Online'}</Text>
+                            </View>
+                        </TouchableOpacity>
                     </View>
+                </Animated.View>
+            )}
+
+            {/* Unified Rhombus Tab (Left) - Moved outside to prevent clipping */}
+            {!IS_MOBILE && (
+                <Animated.View style={[
+                    styles.externalTab, 
+                    styles.leftExternalTab, 
+                    { left: leftAnim } // Move with the sidebar width
+                ]}>
+                    <TouchableOpacity 
+                        onPress={() => setLeftCollapsed(!leftCollapsed)}
+                        activeOpacity={0.8}
+                        style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+                    >
+                        <Animated.View style={{ transform: [{ rotate: leftRotate }] }}>
+                            <Icon name="chevron-left" size={16} color="#C9A84C" />
+                        </Animated.View>
+                    </TouchableOpacity>
                 </Animated.View>
             )}
 
@@ -1228,8 +1219,8 @@ const styles = StyleSheet.create({
         zIndex: 999,
         ...(Platform.OS === 'web' ? { backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)' } : {})
     },
-    leftExternalTab: { right: -22, borderTopRightRadius: 10, borderBottomRightRadius: 10, borderLeftWidth: 0 },
-    rightExternalTab: { left: -22, borderTopLeftRadius: 10, borderBottomLeftRadius: 10, borderRightWidth: 0 },
+    leftExternalTab: { left: 260, marginLeft: -11, borderTopRightRadius: 10, borderBottomRightRadius: 10, borderLeftWidth: 0 },
+    rightExternalTab: { right: 280, marginRight: -11, borderTopLeftRadius: 10, borderBottomLeftRadius: 10, borderRightWidth: 0 },
     collapseTabInternal: { width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(201,168,76,0.05)', justifyContent: 'center', alignItems: 'center' },
 
     // Sidebar
