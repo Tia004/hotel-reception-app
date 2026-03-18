@@ -283,6 +283,22 @@ io.on('connection', (socket) => {
         } catch (e) { socket.emit('room-chat-history', { messages: [] }); }
     });
 
+    // List all saved chat archives
+    socket.on('get-room-archives', () => {
+        try {
+            const files = fs.readdirSync(DATA_DIR);
+            const archives = files
+                .filter(f => f.startsWith('room_chat_') && f.endsWith('.json'))
+                .map(f => {
+                    const roomId = f.replace('room_chat_', '').replace('.json', '');
+                    const stats = fs.statSync(path.join(DATA_DIR, f));
+                    return { roomId, mtime: stats.mtimeMs };
+                })
+                .sort((a, b) => b.mtime - a.mtime);
+            socket.emit('room-archives', { archives });
+        } catch (e) { console.error('Archive list failed', e); }
+    });
+
     // ── Emoji Reactions (in-call) ────────────────────────────────────────────
     socket.on('emoji-reaction', (data) => {
         const user = users.get(socket.id);
@@ -311,9 +327,15 @@ io.on('connection', (socket) => {
         const user = users.get(socket.id);
         if (!user || !HOTEL_CHANNELS.includes(channelId)) return;
         const now = Date.now();
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
         // Get list of currently online usernames for deliveredTo
-        const onlineUsernames = [];
-        for (const u of users.values()) onlineUsernames.push(u.username);
+        const onlineUsersInfo = [];
+        for (const u of users.values()) {
+            if (u.username !== user.username) {
+                onlineUsersInfo.push({ user: u.username, time: timeStr });
+            }
+        }
         
         const msg = {
             id: `${socket.id}-${now}`,
@@ -333,7 +355,7 @@ io.on('connection', (socket) => {
             reactions: {},
             // Read receipts
             status: 'sent',
-            deliveredTo: onlineUsernames.filter(u => u !== user.username),
+            deliveredTo: onlineUsersInfo,
             readBy: [],
         };
         const msgs = channelMessages.get(channelId) || [];
@@ -350,17 +372,22 @@ io.on('connection', (socket) => {
         const msgs = channelMessages.get(channelId);
         if (!msgs) return;
         let changed = false;
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const receiptUpdate = [];
+
         for (const mid of messageIds) {
             const msg = msgs.find(m => m.id === mid);
-            if (msg && msg.sender !== user.username && !msg.readBy?.includes(user.username)) {
+            if (msg && msg.sender !== user.username && !msg.readBy?.some(r => r.user === user.username)) {
                 if (!msg.readBy) msg.readBy = [];
-                msg.readBy.push(user.username);
+                const receipt = { user: user.username, time: timeStr };
+                msg.readBy.push(receipt);
+                receiptUpdate.push({ messageId: mid, receipt });
                 changed = true;
             }
         }
         if (changed) {
             // Broadcast updated read status
-            io.to(`channel:${channelId}`).emit('read-receipt-update', { channelId, reader: user.username, messageIds });
+            io.to(`channel:${channelId}`).emit('read-receipt-update', { channelId, reader: user.username, receipts: receiptUpdate });
         }
     });
 

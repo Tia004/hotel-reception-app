@@ -95,6 +95,10 @@ export default function App() {
     });
     s.on('connect_error', () => setSocketReady(false));
     s.on('disconnect', () => setSocketReady(false));
+    s.on('rooms-update', (rooms) => {
+      setAvailableRooms(rooms);
+    });
+
     s.on('force-disconnect', (data) => {
       console.warn('Force disconnect:', data.reason);
       handleLogout();
@@ -127,9 +131,85 @@ export default function App() {
 
   // Desktop: clicking a chat channel during a call → PiP
   const handleChannelClick = () => {
-    if (currentRoom && !callPiP) {
+    if (inCall && !callPiP) {
       setCallPiP(true);
     }
+  };
+
+  // ── PiP Dragging & Magnetic Snapping ──────────────────────────────────
+  const [pipPos, setPipPos] = useState({ x: 0, y: 0 }); 
+  const isDragging = useRef(false);
+  const startPos = useRef({ x: 0, y: 0 });
+
+  const onDragStart = (e) => {
+    if (Platform.OS !== 'web') return;
+    isDragging.current = true;
+    startPos.current = { x: e.clientX - pipPos.x, y: e.clientY - pipPos.y };
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragEnd);
+  };
+
+  const onDragMove = (e) => {
+    if (!isDragging.current) return;
+    setPipPos({ x: e.clientX - startPos.current.x, y: e.clientY - startPos.current.y });
+  };
+
+  const onDragEnd = () => {
+    isDragging.current = false;
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+    
+    // Magnetic Snap Logic
+    const { width: winW, height: winH } = Dimensions.get('window');
+    const pipW = 340;
+    const pipH = 240;
+    const padding = 20;
+
+    const curX = pipPos.x;
+    const curY = pipPos.y;
+
+    // Corners
+    const snaps = [
+      { x: padding, y: padding }, // Top Left
+      { x: winW - pipW - padding, y: padding }, // Top Right
+      { x: padding, y: winH - pipH - padding }, // Bottom Left
+      { x: winW - pipW - padding, y: winH - pipH - padding }, // Bottom Right
+    ];
+
+    let closest = snaps[0];
+    let minDist = Infinity;
+    snaps.forEach(p => {
+      const dist = Math.sqrt(Math.pow(p.x - curX, 2) + Math.pow(p.y - curY, 2));
+      if (dist < minDist) { minDist = dist; closest = p; }
+    });
+    setPipPos(closest);
+  };
+
+  useEffect(() => {
+    if (callPiP && pipPos.x === 0 && pipPos.y === 0) {
+      const { width: winW, height: winH } = Dimensions.get('window');
+      setPipPos({ x: winW - 360, y: winH - 260 });
+    }
+  }, [callPiP]);
+
+  const pipContainerStyle = {
+    position: 'absolute',
+    left: pipPos.x,
+    top: pipPos.y,
+    width: 340,
+    height: 240,
+    borderRadius: 16,
+    overflow: 'hidden',
+    zIndex: 9999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.5)',
+    backgroundColor: '#0C0B09',
+    cursor: isDragging.current ? 'grabbing' : 'grab',
+    transition: isDragging.current ? 'none' : 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
   };
 
   if (loading) {
@@ -253,7 +333,10 @@ export default function App() {
 
         {/* Call Screen — PiP floating window */}
         {inCall && callPiP && (
-          <View style={styles.pipContainer}>
+          <View 
+            style={pipContainerStyle}
+            {...(Platform.OS === 'web' ? { onMouseDown: onDragStart } : {})}
+          >
             <CallScreen
               user={user}
               socket={socketRef.current}
@@ -288,25 +371,7 @@ const styles = StyleSheet.create({
     borderLeftColor: 'rgba(201,168,76,0.06)',
   },
 
-  // PiP floating container (desktop)
-  pipContainer: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 340,
-    height: 240,
-    borderRadius: 16,
-    overflow: 'hidden',
-    zIndex: 9999,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.3)',
-  },
-
-  // Mobile — "return to call" floating button
+  // PiP floating container (desktop) logic moved to component
   mobileReturnToCall: {
     position: 'absolute',
     bottom: 90,

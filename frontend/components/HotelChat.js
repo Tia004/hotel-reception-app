@@ -28,9 +28,13 @@ import { requestPermission, showMessageNotification } from '../utils/pushNotific
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IS_MOBILE = SCREEN_W < 768;
+const ALL_EMOJIS = ['❤️','👍','😂','😮','🙏','😢','🤝','🙌','🔥','✨','💯','🎉','🚀','👀','✅','❌','🤔','💡','📍','🔔','📌','📸','💼','🏠','🍕','☕','😀','😃','😄','😁','😆','😅','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾'];
 
-const NO_SELECT = Platform.OS === 'web' ? { userSelect: 'none' } : {};
-const YES_SELECT = Platform.OS === 'web' ? { userSelect: 'text' } : {};
+const NO_SELECT = Platform.OS === 'web' ? {
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    msUserSelect: 'none'
+} : {};
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const HOTELS = [
@@ -177,8 +181,30 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
     const [leftCollapsed, setLeftCollapsed] = useState(false);
     const [rightCollapsed, setRightCollapsed] = useState(false);
+    const leftAnim = useRef(new Animated.Value(0)).current; // 0 = expanded, -260 = collapsed
+    const rightAnim = useRef(new Animated.Value(0)).current; // 0 = expanded, 280 = collapsed
+
+    useEffect(() => {
+        Animated.timing(leftAnim, {
+            toValue: leftCollapsed ? -260 : 0,
+            duration: 300,
+            useNativeDriver: false
+        }).start();
+    }, [leftCollapsed]);
+
+    useEffect(() => {
+        Animated.timing(rightAnim, {
+            toValue: rightCollapsed ? 280 : 0,
+            duration: 300,
+            useNativeDriver: false
+        }).start();
+    }, [rightCollapsed]);
+
     const [hoveredMsg, setHoveredMsg] = useState(null);
     const [emojiPickerMsg, setEmojiPickerMsg] = useState(null);
+    const [forwardTarget, setForwardTarget] = useState(null);
+    const [roomArchives, setRoomArchives] = useState([]); // { roomId, mtime }
+    const [viewingArchive, setViewingArchive] = useState(null); // { roomId, messages }
     const prevRoomsCount = useRef(0);
 
     const playSound = async (type) => {
@@ -200,6 +226,167 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     }, [activeRooms.length]);
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
+
+    useEffect(() => {
+        // Clear cross-chat states when switching channels
+        setReplyingTo(null);
+        setEditingMsg(null);
+        setDraft('');
+        setEmojiPickerMsg(null);
+    }, [activeChannel]);
+
+    // ── Render Modals ───────────────────────────────────────────────────
+    const renderModals = () => (
+        <>
+            {/* Forward Modal */}
+            <Modal visible={!!forwardTarget} transparent animationType="fade">
+                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setForwardTarget(null)}>
+                    <View style={styles.infoModalBox}>
+                        <Text style={styles.infoTitle}>INOLTRA MESSAGGIO</Text>
+                        <Text style={[styles.infoLabel, { marginBottom: 16 }]}>Seleziona un canale di destinazione:</Text>
+                        <ScrollView style={{ maxHeight: 300 }}>
+                            {ALL_CHANNELS.map(ch => (
+                                <TouchableOpacity key={ch.id} style={styles.forwardItem} onPress={() => forwardMessage(ch)}>
+                                    <View style={[styles.hotelDot, { backgroundColor: HOTELS.find(h => ch.id.startsWith(h.id))?.color }]} />
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.forwardItemTxt}>{ch.name}</Text>
+                                        <Text style={{ color: '#444', fontSize: 11 }}>{HOTELS.find(h => ch.id.startsWith(h.id))?.name}</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Profile & Settings Modals */}
+            <UserProfileCard visible={profileVisible} onClose={() => setProfileVisible(false)} user={user} socket={socket} onLogout={onLogout} />
+            <MediaSettings visible={settingsVisible} onClose={() => setSettingsVisible(false)} user={user} />
+
+            {/* Poll Creator */}
+            <Modal visible={pollVisible} transparent animationType="slide">
+                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setPollVisible(false)}>
+                    <View style={styles.infoModalBox} onStartShouldSetResponder={() => true}>
+                        <Text style={styles.infoTitle}>CREA SONDAGGIO</Text>
+                        <TextInput
+                            style={styles.input} placeholder="Domanda..."
+                            placeholderTextColor="#554E40"
+                            onChangeText={t => setPollDraft(p => ({ ...p, question: t }))}
+                        />
+                        <View style={{ gap: 8, marginVertical: 12 }}>
+                            {pollDraft.options.map((opt, i) => (
+                                <TextInput key={i} style={[styles.input, { height: 40 }]} placeholder={`Opzione ${i + 1}`} placeholderTextColor="#3A3630"
+                                    onChangeText={t => {
+                                        const next = [...pollDraft.options];
+                                        next[i] = t;
+                                        setPollDraft(p => ({ ...p, options: next }));
+                                    }}
+                                />
+                            ))}
+                        </View>
+                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => setPollDraft(p => ({ ...p, options: [...p.options, ''] }))}>
+                            <Icon name="plus" size={14} color="#C9A84C" /><Text style={styles.hoverActionTxt}>Aggiungi Opzione</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.hoverActionItem, { marginTop: 10 }]} onPress={() => setPollDraft(p => ({ ...p, isMultiple: !p.isMultiple }))}>
+                            <Icon name={pollDraft.isMultiple ? "check-square" : "square"} size={14} color="#C9A84C" />
+                            <Text style={styles.hoverActionTxt}>Risposta Multipla</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.pdfBtn, { marginTop: 20, alignSelf: 'stretch', justifyContent: 'center', height: 44 }]} onPress={() => {
+                            if (pollDraft.question && pollDraft.options.filter(o => o.trim()).length >= 2) {
+                                send('', null, null, { ...pollDraft, options: pollDraft.options.filter(o => o.trim()) });
+                                setPollVisible(false);
+                            }
+                        }}><Text style={styles.pdfBtnTxt}>INVIA SONDAGGIO</Text></TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Message Info Modal */}
+            <Modal visible={!!infoModal} transparent animationType="fade">
+                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setInfoModal(null)}>
+                    <View style={styles.infoModalBox}>
+                        <Text style={styles.infoTitle}>DETTAGLI MESSAGGIO</Text>
+                        <Text style={styles.infoLabel}>Inviato da: <Text style={{ color: '#E8E4D8' }}>{infoModal?.sender}</Text></Text>
+                        <Text style={styles.infoLabel}>Ora invio: <Text style={{ color: '#E8E4D8' }}>{infoModal?.time}</Text></Text>
+
+                        {infoModal?.deliveredTo?.length > 0 && (
+                            <>
+                                <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 12 }} />
+                                <Text style={[styles.infoLabel, { color: '#6E6960', marginBottom: 8 }]}>CONSEGNATO A:</Text>
+                                <ScrollView style={{ maxHeight: 100 }}>
+                                    {infoModal.deliveredTo.map((d, i) => (
+                                        <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                                            <Text style={{ color: '#A8A090', fontSize: 13 }}>• {d.user}</Text>
+                                            <Text style={{ color: '#3A3630', fontSize: 11 }}>{d.time}</Text>
+                                        </View>
+                                    ))}
+                                </ScrollView>
+                            </>
+                        )}
+
+                        {infoModal?.readBy?.length > 0 && (
+                            <>
+                                <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 12 }} />
+                                <Text style={[styles.infoLabel, { color: '#C9A84C', marginBottom: 8 }]}>LETTO DA:</Text>
+                                <ScrollView style={{ maxHeight: 150 }}>
+                                    {infoModal.readBy.map((r, i) => (
+                                        <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                                            <Text style={{ color: '#E8E4D8', fontSize: 13, fontWeight: '600' }}>• {r.user}</Text>
+                                            <Text style={{ color: '#C9A84C', fontSize: 11 }}>{r.time}</Text>
+                                        </View>
+                                    ))}
+                                </ScrollView>
+                            </>
+                        )}
+                        <Text style={[styles.infoLabel, { marginTop: 12, fontSize: 10, color: '#333' }]}>ID: {infoModal?.id}</Text>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Archive Viewer Modal */}
+            <Modal visible={!!viewingArchive} transparent animationType="slide">
+                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setViewingArchive(null)}>
+                    <View style={styles.infoModalBox} onStartShouldSetResponder={() => true}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <Text style={styles.infoTitle}>ARCHIVIO ROOM #{viewingArchive?.roomId}</Text>
+                            <TouchableOpacity onPress={() => setViewingArchive(null)}>
+                                <Icon name="x" size={18} color="#554E40" />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView style={{ maxHeight: 400 }}>
+                            {viewingArchive?.messages?.length > 0 ? viewingArchive.messages.map((m, i) => (
+                                <View key={i} style={styles.archiveMsgRow}>
+                                    <Text style={styles.archiveMsgSender}>{m.sender}:</Text>
+                                    <Text style={styles.archiveMsgTxt}>{m.text}</Text>
+                                    <Text style={styles.archiveMsgTime}>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                </View>
+                            )) : (
+                                <Text style={styles.emptyArchiveTxt}>Nessun messaggio in questa sessione.</Text>
+                            )}
+                        </ScrollView>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* Delete Alert */}
+            <Modal visible={!!deleteTarget} transparent animationType="fade">
+                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setDeleteTarget(null)}>
+                    <View style={styles.infoModalBox}>
+                        <Text style={[styles.infoTitle, { color: '#E57373' }]}>ELIMINA MESSAGGIO?</Text>
+                        <Text style={styles.infoLabel}>L'azione è irreversibile per tutti i membri del canale.</Text>
+                        <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
+                            <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 8, alignItems: 'center' }} onPress={() => setDeleteTarget(null)}>
+                                <Text style={{ color: '#C8C4B8', fontWeight: '700' }}>ANNULLA</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={{ flex: 1, backgroundColor: '#E57373', padding: 12, borderRadius: 8, alignItems: 'center' }} onPress={() => { deleteMessage(deleteTarget); setDeleteTarget(null); }}>
+                                <Text style={{ color: '#FFF', fontWeight: '900' }}>ELIMINA</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+        </>
+    );
 
     // ── Sync Profile ───────────────────────────────────────────────────
     const loadProfile = () => {
@@ -266,16 +453,12 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             }));
         });
 
-        socket.on('read-receipt-update', ({ channelId, reader, messageIds }) => {
-            setMessages(p => ({
-                ...p, [channelId]: (p[channelId] || []).map(m => {
-                    if (messageIds.includes(m.id) && !(m.readBy || []).includes(reader)) {
-                        return { ...m, readBy: [...(m.readBy || []), reader] };
-                    }
-                    return m;
-                })
-            }));
+        socket.on('room-archives', ({ archives }) => {
+            setRoomArchives(archives);
         });
+
+        // Request archives on mount
+        socket.emit('get-room-archives');
 
         const checkPing = () => {
             const t = Date.now();
@@ -479,8 +662,13 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             )}
 
             {/* ── LEFT SIDEBAR ────────────────────────────────────────── */}
-            {((!IS_MOBILE && !leftCollapsed) || (IS_MOBILE && sidebarVisible)) && (
-                <View style={[styles.column, styles.sidebar]}>
+            {(!IS_MOBILE || sidebarVisible) && (
+                <Animated.View style={[
+                    styles.column, 
+                    styles.sidebar, 
+                    !IS_MOBILE && { marginLeft: leftAnim, position: 'relative' },
+                    IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 100 }
+                ]}>
                     <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -488,8 +676,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 <Text style={styles.brandName}>GSA HOTELS</Text>
                             </View>
                             {!IS_MOBILE && (
-                                <TouchableOpacity onPress={() => setLeftCollapsed(true)}>
-                                    <Icon name="chevron-left" size={18} color="#554E40" />
+                                <TouchableOpacity onPress={() => setLeftCollapsed(true)} style={styles.collapseTabInternal}>
+                                    <Icon name="chevron-left" size={18} color="#C9A84C" />
                                 </TouchableOpacity>
                             )}
                         </View>
@@ -558,7 +746,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     </ScrollView>
 
                     {/* Bottom controls / Crea Stanza */}
-                    <View style={styles.sidebarFooter}>
+                    <div style={{ padding: '0 12px 12px 12px' }}>
                         {!inCall && (
                             <TouchableOpacity style={styles.createBtn} onPress={() => socket.emit('create-room', {})}>
                                 <Icon name="plus" size={18} color="#111" />
@@ -583,8 +771,18 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 <Icon name="settings" size={18} color="#554E40" />
                             </TouchableOpacity>
                         </View>
-                    </View>
-                </View>
+                    </div>
+
+                    {/* External Pull Tab (Left) */}
+                    {!IS_MOBILE && (
+                        <TouchableOpacity 
+                            style={[styles.externalTab, styles.leftExternalTab]} 
+                            onPress={() => setLeftCollapsed(!leftCollapsed)}
+                        >
+                            <Icon name={leftCollapsed ? "chevron-right" : "chevron-left"} size={14} color="#C9A84C" />
+                        </TouchableOpacity>
+                    )}
+                </Animated.View>
             )}
 
             {/* ── CENTER CHAT ─────────────────────────────────────────── */}
@@ -621,66 +819,74 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                     <TouchableOpacity
                                         style={styles.bubbleWrap}
                                         activeOpacity={1}
-                                        onLongPress={() => setHoveredMsg(hoveredMsg === m.id ? null : m.id)}
+                                        onLongPress={() => setEmojiPickerMsg(emojiPickerMsg === m.id ? null : m.id)}
                                         {...(Platform.OS === 'web' ? {
                                             onMouseEnter: () => setHoveredMsg(m.id),
-                                            onMouseLeave: () => setHoveredMsg(null)
+                                            onMouseLeave: () => setHoveredMsg(null),
+                                            onContextMenu: (e) => {
+                                                e.preventDefault();
+                                                setEmojiPickerMsg(m.id);
+                                            }
                                         } : {})}
                                     >
                                         {/* Hover Action Menu — WhatsApp style */}
-                                        {hoveredMsg === m.id && (
-                                            <View style={styles.hoverMenu}>
-                                                {/* Emoji reaction bar */}
-                                                <View style={styles.hoverEmojiBar}>
-                                                    {['❤️','👍','😂','😮','🙏','😢'].map((emo, ei) => (
-                                                        <TouchableOpacity key={ei} style={styles.hoverEmojiBtn} onPress={() => { reactMessage(m.id, emo); setHoveredMsg(null); }}>
-                                                            <Text style={{ fontSize: 16 }}>{emo}</Text>
+                                        {emojiPickerMsg === m.id && (
+                                            <TouchableOpacity 
+                                                style={StyleSheet.absoluteFill} 
+                                                activeOpacity={1} 
+                                                onPress={() => setEmojiPickerMsg(null)}
+                                            >
+                                                <View style={styles.hoverMenu}>
+                                                    {/* Emoji reaction bar */}
+                                                    <View style={styles.hoverEmojiBar}>
+                                                        {['❤️','👍','😂','😮','🙏','😢'].map((emo, ei) => (
+                                                            <TouchableOpacity key={ei} style={styles.hoverEmojiBtn} onPress={() => { reactMessage(m.id, emo); setEmojiPickerMsg(null); }}>
+                                                                <Text style={{ fontSize: 16 }}>{emo}</Text>
+                                                            </TouchableOpacity>
+                                                        ))}
+                                                        <TouchableOpacity style={styles.hoverEmojiBtn} onPress={() => setEmojiPickerMsg(m.id)}>
+                                                            <Icon name="plus" size={14} color="#C9A84C" />
                                                         </TouchableOpacity>
-                                                    ))}
-                                                    <TouchableOpacity style={styles.hoverEmojiBtn} onPress={() => setEmojiPickerMsg(emojiPickerMsg === m.id ? null : m.id)}>
-                                                        <Icon name={emojiPickerMsg === m.id ? "x" : "plus"} size={14} color="#C9A84C" />
-                                                    </TouchableOpacity>
-                                                </View>
-
-                                                {emojiPickerMsg === m.id && (
-                                                    <View style={styles.fullEmojiPicker}>
-                                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 10 }}>
-                                                            {['🤝','🙌','🔥','✨','💯','🎉','🚀','👀','✅','❌','🤔','💡','📍','🔔','📌','📸','💼','🏠','🍕','☕'].map((emo, i) => (
-                                                                <TouchableOpacity key={i} onPress={() => { reactMessage(m.id, emo); setEmojiPickerMsg(null); setHoveredMsg(null); }}>
-                                                                    <Text style={{ fontSize: 18 }}>{emo}</Text>
-                                                                </TouchableOpacity>
-                                                            ))}
-                                                        </ScrollView>
                                                     </View>
-                                                )}
-                                                {/* Action list */}
-                                                <View style={styles.hoverActionList}>
-                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setReplyingTo(m); setHoveredMsg(null); }}>
-                                                        <Icon name="corner-up-left" size={14} color="#A8A090" />
-                                                        <Text style={styles.hoverActionTxt}>Rispondi</Text>
-                                                    </TouchableOpacity>
-                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setHoveredMsg(null); }}>
-                                                        <Icon name="forward" size={14} color="#A8A090" />
-                                                        <Text style={styles.hoverActionTxt}>Inoltra</Text>
-                                                    </TouchableOpacity>
-                                                    {isMine && !m.poll && (
-                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setEditingMsg(m); setDraft(m.text || ''); setHoveredMsg(null); }}>
-                                                            <Icon name="edit-2" size={14} color="#A8A090" />
-                                                            <Text style={styles.hoverActionTxt}>Modifica</Text>
+
+                                                    {/* Full Emoji Picker embedded if needed, but let's make it a scrollable row below */}
+                                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, padding: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' }}>
+                                                        {ALL_EMOJIS.slice(6).map((emo, i) => (
+                                                            <TouchableOpacity key={i} onPress={() => { reactMessage(m.id, emo); setEmojiPickerMsg(null); }}>
+                                                                <Text style={{ fontSize: 18 }}>{emo}</Text>
+                                                            </TouchableOpacity>
+                                                        ))}
+                                                    </ScrollView>
+
+                                                    {/* Action list */}
+                                                    <View style={styles.hoverActionList}>
+                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setReplyingTo(m); setEmojiPickerMsg(null); }}>
+                                                            <Icon name="corner-up-left" size={14} color="#A8A090" />
+                                                            <Text style={styles.hoverActionTxt}>Rispondi</Text>
                                                         </TouchableOpacity>
-                                                    )}
-                                                    {isMine && (
-                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setDeleteTarget(m.id); setHoveredMsg(null); }}>
-                                                            <Icon name="trash-2" size={14} color="#E57373" />
-                                                            <Text style={[styles.hoverActionTxt, { color: '#E57373' }]}>Elimina</Text>
+                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setForwardTarget(m); setEmojiPickerMsg(null); }}>
+                                                            <Icon name="forward" size={14} color="#A8A090" />
+                                                            <Text style={styles.hoverActionTxt}>Inoltra</Text>
                                                         </TouchableOpacity>
-                                                    )}
-                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setInfoModal(m); setHoveredMsg(null); }}>
-                                                        <Icon name="info" size={14} color="#A8A090" />
-                                                        <Text style={styles.hoverActionTxt}>Info</Text>
-                                                    </TouchableOpacity>
+                                                        {isMine && !m.poll && (
+                                                            <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setEditingMsg(m); setDraft(m.text || ''); setEmojiPickerMsg(null); }}>
+                                                                <Icon name="edit-2" size={14} color="#A8A090" />
+                                                                <Text style={styles.hoverActionTxt}>Modifica</Text>
+                                                            </TouchableOpacity>
+                                                        )}
+                                                        {isMine && (
+                                                            <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setDeleteTarget(m.id); setEmojiPickerMsg(null); }}>
+                                                                <Icon name="trash-2" size={14} color="#E57373" />
+                                                                <Text style={[styles.hoverActionTxt, { color: '#E57373' }]}>Elimina</Text>
+                                                            </TouchableOpacity>
+                                                        )}
+                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setInfoModal(m); setEmojiPickerMsg(null); }}>
+                                                            <Icon name="info" size={14} color="#A8A090" />
+                                                            <Text style={styles.hoverActionTxt}>Info</Text>
+                                                        </TouchableOpacity>
+                                                    </View>
                                                 </View>
-                                            </View>
+                                            </TouchableOpacity>
                                         )}
                                         {/* Reply bubble — clickable, gold left border */}
                                         {repliedMsg && (
@@ -703,6 +909,11 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         )}
 
                                         <View id={`msg-${m.id}`} style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                                            {hoveredMsg === m.id && (
+                                                <TouchableOpacity style={styles.msgCaret} onPress={() => setEmojiPickerMsg(m.id)}>
+                                                    <Icon name="chevron-down" size={16} color="#A8A090" />
+                                                </TouchableOpacity>
+                                            )}
                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                                                 <Text style={[styles.msgSender, isMine && { color: '#C9A84C' }]}>{m.sender}</Text>
                                             </View>
@@ -843,106 +1054,122 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             </View>}
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
-            {!hideChatColumn && !IS_MOBILE && !rightCollapsed && (
-                <View style={[styles.column, styles.rightPanel]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                        <View style={{ backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' }}>
-                            <Text style={{ color: '#C9A84C', fontSize: 10, fontWeight: '800' }}>ONLINE — {onlineUsers.filter(u => u.status === 'online').length}</Text>
-                        </View>
-                        <TouchableOpacity onPress={() => setRightCollapsed(true)} style={{ padding: 6 }}>
-                            <Icon name="chevron-right" size={18} color="#554E40" />
+            {!hideChatColumn && !IS_MOBILE && (
+                <Animated.View style={[
+                    styles.column, 
+                    styles.rightPanel, 
+                    { marginRight: rightAnim, position: 'relative' }
+                ]}>
+                    <View style={styles.rightHeader}>
+                        <TouchableOpacity onPress={() => setRightCollapsed(true)} style={styles.collapseTabInternal}>
+                            <Icon name="chevron-right" size={18} color="#C9A84C" />
                         </TouchableOpacity>
+                        <Text style={styles.rightHeaderTitle}>HUB GESTIONALE</Text>
                     </View>
+
                     <ScrollView style={{ flex: 1 }}>
-                        <TouchableOpacity style={styles.occupancyHeader} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>
-                            <Icon name="users" size={14} color="#554E40" />
-                            <Text style={[styles.occupancyTitle, { fontSize: 13, marginLeft: 8 }]}>TEAM</Text>
-                            <View style={{ flex: 1 }} />
-                            <Icon name={expanded.users ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
+                        {/* Saved Messages Section */}
+                        <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, saved: !p.saved }))}>
+                            <Icon name="bookmark" size={15} color="#C9A84C" />
+                            <Text style={styles.hotelLbl}>MESSAGGI SALVATI</Text>
+                            <Icon name={expanded.saved ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
                         </TouchableOpacity>
-                        {expanded.users && [...onlineUsers].sort((a,b) => {
-                            if (a.status === 'offline' && b.status !== 'offline') return 1;
-                            if (a.status !== 'offline' && b.status === 'offline') return -1;
-                            return a.username.localeCompare(b.username);
-                        }).map((u, i) => {
-                            const isDimmed = u.status === 'offline' || u.status === 'invisible';
-                            return (
-                                <View key={i} style={[styles.userRow, isDimmed && { opacity: 0.4 }]}>
-                                    <View style={styles.avatarWrapSmall}>
-                                        {u.profilePic ? 
-                                            <Image source={{ uri: u.profilePic }} style={styles.avatarImgSmall} /> :
-                                            <View style={styles.avatarFallbackSmall}><Text style={styles.avatarFallbackTxtSmall}>{u.username[0]?.toUpperCase()}</Text></View>
-                                        }
-                                        <View style={[styles.userDot, { backgroundColor: statusColor(u.status) }]} />
-                                    </View>
-                                    <Text style={[styles.userRowName, isDimmed ? { color: '#6E6960' } : { color: HOTELS.find(h => u.username.includes(h.name) || u.station.includes(h.id))?.color || '#C8C4B8' }]}>
-                                        {u.username}
-                                    </Text>
-                                    {u.roomId && <Icon name="volume-2" size={12} color="#6B7FC4" />}
-                                </View>
-                            );
-                        })}
-
-                        <View style={styles.divider} />
-
-                        {activeHotel && (
-                            <View style={styles.hotelInfo}>
-                                <Text style={styles.occupancyTitle}>INFORMAZIONI HOTEL</Text>
-                                <View style={styles.hotelBranding}>
-                                    <View style={[styles.hotelBrandDot, { backgroundColor: activeHotel.color }]} />
-                                    <Text style={[styles.hotelBrandName, { color: activeHotel.color }]}>{activeHotel.name}</Text>
-                                </View>
-                                <Text style={styles.hotelDesc}>{activeHotel.desc}</Text>
-                                <Text style={styles.hotelContact}>📞 {activeHotel.contact}</Text>
+                        {expanded.saved && (
+                            <View style={styles.savedList}>
+                                <Text style={styles.emptyArchiveTxt}>Nessun messaggio salvato</Text>
                             </View>
                         )}
+
+                        {/* Temp Chat Archive Section */}
+                        <TouchableOpacity style={styles.navHotelRow} onPress={() => {
+                            setExpanded(p => ({ ...p, voice: !p.voice }));
+                            if (!expanded.voice) socket.emit('get-room-archives');
+                        }}>
+                            <Icon name="archive" size={15} color="#C9A84C" />
+                            <Text style={styles.hotelLbl}>ARCHIVIO CHAT VOCALI</Text>
+                            <Icon name={expanded.voice ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
+                        </TouchableOpacity>
+                        {expanded.voice && (
+                            <View style={styles.savedList}>
+                                {roomArchives.length > 0 ? roomArchives.map((arc, idx) => (
+                                    <TouchableOpacity key={idx} style={styles.archiveRow} onPress={() => {
+                                        socket.emit('room-chat-history', { roomId: arc.roomId });
+                                        // The handler for room-chat-history would need to know we're opening an archive
+                                        // Let's add a one-off listener or a state flag
+                                        const onHist = ({ messages }) => {
+                                            setViewingArchive({ roomId: arc.roomId, messages });
+                                            socket.off('room-chat-history', onHist);
+                                        };
+                                        socket.on('room-chat-history', onHist);
+                                    }}>
+                                        <View style={styles.archiveIcon}>
+                                            <Icon name="message-square" size={12} color="#C9A84C" />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.archiveTitle}>Room #{arc.roomId}</Text>
+                                            <Text style={styles.archiveDate}>{new Date(arc.mtime).toLocaleDateString()} {new Date(arc.mtime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                )) : (
+                                    <Text style={styles.emptyArchiveTxt}>Nessun archivio disponibile</Text>
+                                )}
+                            </View>
+                        )}
+
+                        {/* Team Section */}
+                        <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>
+                            <Icon name="users" size={15} color="#C9A84C" />
+                            <Text style={styles.hotelLbl}>TEAM — {onlineUsers.filter(u => u.status === 'online').length}</Text>
+                            <Icon name={expanded.users ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
+                        </TouchableOpacity>
+                        
+                        {expanded.users && (
+                            <View style={styles.userList}>
+                                {onlineUsers.map((u, i) => (
+                                    <TouchableOpacity key={i} style={styles.userRow} onPress={() => { setInfoModal(null); }}>
+                                        <View style={styles.userAvatarSmall}>
+                                            {u.profilePic 
+                                                ? <Image source={{ uri: u.profilePic }} style={{ width: 24, height: 24, borderRadius: 6 }} />
+                                                : <Text style={styles.userAvatarTxtSmall}>{u.username?.[0].toUpperCase()}</Text>}
+                                            <View style={[styles.onlineDotSmall, { backgroundColor: statusColor(u.status) }]} />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[styles.userRowName, u.status === 'invisible' && { color: '#444' }]}>{u.username}</Text>
+                                            <Text style={styles.userRowStation}>{u.station}</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        )}
+
+                        <View style={styles.hotelInfoBox}>
+                            <Text style={styles.hotelInfoTitle}>INFORMAZIONI HOTEL</Text>
+                            <View style={[styles.hotelDotLarge, { backgroundColor: activeHotel ? activeHotel.color : '#C9A84C' }]} />
+                            <Text style={styles.hotelInfoName}>{activeHotel ? activeHotel.name : 'Seleziona un hotel'}</Text>
+                            <Text style={styles.hotelInfoDesc}>{activeHotel ? activeHotel.desc : ''}</Text>
+                            {activeHotel && (
+                                <TouchableOpacity style={styles.contactRow}>
+                                    <Icon name="phone" size={14} color="#C9A84C" />
+                                    <Text style={styles.contactTxt}>{activeHotel.contact}</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
                     </ScrollView>
-                </View>
+
+                    {/* External Pull Tab (Right) */}
+                    {!IS_MOBILE && (
+                        <TouchableOpacity 
+                            style={[styles.externalTab, styles.rightExternalTab]} 
+                            onPress={() => setRightCollapsed(!rightCollapsed)}
+                        >
+                            <Icon name={rightCollapsed ? "chevron-left" : "chevron-right"} size={14} color="#C9A84C" />
+                        </TouchableOpacity>
+                    )}
+                </Animated.View>
             )}
 
             {/* MODALS */}
-            <UserProfileCard visible={profileVisible} onClose={() => setProfileVisible(false)} user={user} socket={socket} onLogout={onLogout} />
-            <MediaSettings visible={settingsVisible} onClose={() => setSettingsVisible(false)} user={user} />
-
-            {/* Poll Creator */}
-            <Modal visible={pollVisible} transparent animationType="slide">
-                <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setPollVisible(false)}>
-                    <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
-                        <Text style={styles.modalTitle}>CREA SONDAGGIO</Text>
-                        <TextInput
-                            style={styles.modalInput} placeholder="Domanda..."
-                            placeholderTextColor="#554E40"
-                            onChangeText={t => setPollDraft(p => ({ ...p, question: t }))}
-                        />
-                        {pollDraft.options.map((opt, i) => (
-                            <TextInput key={i} style={styles.modalInputSmall} placeholder={`Opzione ${i + 1}`} placeholderTextColor="#3A3630"
-                                onChangeText={t => {
-                                    const next = [...pollDraft.options];
-                                    next[i] = t;
-                                    setPollDraft(p => ({ ...p, options: next }));
-                                }}
-                            />
-                        ))}
-                        <TouchableOpacity style={styles.addOptBtn} onPress={() => setPollDraft(p => ({ ...p, options: [...p.options, ''] }))}>
-                            <Icon name="plus" size={14} color="#C9A84C" /><Text style={styles.addOptTxt}>Aggiungi Opzione</Text>
-                        </TouchableOpacity>
-                        <View style={styles.modalCheckRow}>
-                            <TouchableOpacity style={styles.checkWrap} onPress={() => setPollDraft(p => ({ ...p, isMultiple: !p.isMultiple }))}>
-                                <View style={[styles.checkBox, pollDraft.isMultiple && { borderColor: '#C9A84C' }]}>
-                                    {pollDraft.isMultiple && <View style={styles.checkInner} />}
-                                </View>
-                                <Text style={styles.checkTxt}>Risposta Multipla</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <TouchableOpacity style={styles.modalSendBtn} onPress={() => {
-                            if (pollDraft.question && pollDraft.options.filter(o => o.trim()).length >= 2) {
-                                send('', null, null, { ...pollDraft, options: pollDraft.options.filter(o => o.trim()) });
-                                setPollVisible(false);
-                            }
-                        }}><Text style={styles.modalSendTxt}>INVIA SONDAGGIO</Text></TouchableOpacity>
-                    </View>
-                </TouchableOpacity>
-            </Modal>
+            {renderModals()}
         </View>
     );
 }
@@ -951,12 +1178,15 @@ const styles = StyleSheet.create({
     root: { flex: 1, flexDirection: 'row', backgroundColor: 'transparent', ...NO_SELECT, position: 'relative' },
     column: { height: '100%', borderRightWidth: 1, borderRightColor: 'rgba(201,168,76,0.06)' },
 
+    // Message context menu
     hoverMenu: { position: 'absolute', top: -10, right: 10, backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.4)', borderRadius: 14, zIndex: 9999, elevation: 20, minWidth: 190, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.7, shadowRadius: 16 },
     hoverEmojiBar: { flexDirection: 'row', alignItems: 'center', padding: 8, gap: 5, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.12)' },
     hoverEmojiBtn: { width: 30, height: 30, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.07)', justifyContent: 'center', alignItems: 'center' },
     hoverActionList: { padding: 6 },
     hoverActionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, backgroundColor: 'transparent' },
     hoverActionTxt: { color: '#D0C8BA', fontSize: 14, fontWeight: '600' },
+    msgCaret: { position: 'absolute', right: 4, top: 4, opacity: 0.8 },
+
     fullEmojiPicker: { 
         backgroundColor: 'rgba(20,18,14,0.95)', 
         borderRadius: 12, 
@@ -974,41 +1204,38 @@ const styles = StyleSheet.create({
     infoTitle: { color: '#C9A84C', fontSize: 16, fontWeight: '900', letterSpacing: 1, marginBottom: 12 },
     infoLabel: { color: '#A8A090', fontSize: 14, fontWeight: '600' },
 
+    // Pull tabs (linguette)
     leftTrapezoid: { position: 'absolute', top: '50%', left: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopRightRadius: 8, borderBottomRightRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderRightWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
     rightTrapezoid: { position: 'absolute', top: '50%', right: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopLeftRadius: 8, borderBottomLeftRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderLeftWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
 
-    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
-    modalCard: { width: 400, backgroundColor: '#16140F', borderRadius: 16, padding: 24, gap: 16, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' },
-    modalTitle: { color: '#C9A84C', fontSize: 18, fontWeight: '900', letterSpacing: 2, marginBottom: 8 },
-    modalInput: { backgroundColor: '#0E0D0C', borderRadius: 8, padding: 12, color: '#C8C4B8', fontSize: 16 },
-    modalInputSmall: { backgroundColor: '#0E0D0C', borderRadius: 8, padding: 10, color: '#A8A090', fontSize: 14 },
-    addOptBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' },
-    addOptTxt: { color: '#C9A84C', fontSize: 13, fontWeight: '600' },
-    modalCheckRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-    checkWrap: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    checkBox: { width: 20, height: 20, borderRadius: 6, borderWidth: 2, borderColor: '#554E40', justifyContent: 'center', alignItems: 'center' },
-    checkInner: { width: 10, height: 10, borderRadius: 2, backgroundColor: '#C9A84C' },
-    checkTxt: { color: '#C8C4B8', fontSize: 14, fontWeight: '600' },
-    modalSendBtn: { backgroundColor: '#C9A84C', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 12 },
-    modalSendTxt: { color: '#111', fontSize: 14, fontWeight: '800' },
+    externalTab: {
+        position: 'absolute',
+        top: '50%',
+        marginTop: -30,
+        width: 20,
+        height: 60,
+        backgroundColor: '#1C1A12',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#2A2217',
+        zIndex: 10,
+    },
+    leftExternalTab: { right: -20, borderTopRightRadius: 8, borderBottomRightRadius: 8, borderLeftWidth: 0 },
+    rightExternalTab: { left: -20, borderTopLeftRadius: 8, borderBottomLeftRadius: 8, borderRightWidth: 0 },
+    collapseTabInternal: { width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(201,168,76,0.05)', justifyContent: 'center', alignItems: 'center' },
 
     // Sidebar
-    sidebar: { width: 240, backgroundColor: 'rgba(12, 11, 9, 0.7)' },
+    sidebar: { width: 260, backgroundColor: '#141210', borderRightWidth: 1, borderRightColor: '#2A2217', zIndex: 5 },
     sidebarHeader: { padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' },
     brandName: { color: '#C9A84C', fontSize: 13, fontWeight: '800', letterSpacing: 2 },
-    brandSub: { color: '#554E40', fontSize: 9, letterSpacing: 1, marginTop: 4 },
-
     navHotelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, paddingTop: 20 },
     hotelDot: { width: 8, height: 8, borderRadius: 4 },
     hotelLbl: { flex: 1, color: '#6E6960', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
     chRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 8, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 6 },
     chRowActive: { backgroundColor: 'rgba(201,168,76,0.08)' },
     chName: { color: '#6E6960', fontSize: 15, fontWeight: '600' },
-
-    sidebarFooter: { marginTop: 'auto', padding: 12, backgroundColor: '#0B0A08', gap: 12 },
-    createBtn: { backgroundColor: '#C9A84C', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 12, borderRadius: 8 },
-    createBtnTxt: { color: '#111', fontSize: 11, fontWeight: '900' },
-    userFooter: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
+    userFooter: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4, marginTop: 10 },
     avatarBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
     avatar: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#2A2217', justifyContent: 'center', alignItems: 'center', position: 'relative' },
     avatarTxt: { color: '#C9A84C', fontSize: 16, fontWeight: '800' },
@@ -1019,51 +1246,28 @@ const styles = StyleSheet.create({
 
     // Chat
     chatCol: { flex: 1, backgroundColor: 'rgba(20, 18, 16, 0.4)' },
-    chatHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)', backgroundColor: 'rgba(20, 18, 14, 0.6)' },
+    chatHeader: { flexDirection: 'row', alignItems: 'center', height: 56, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)', backgroundColor: 'rgba(20, 18, 14, 0.6)' },
     headerChName: { color: '#C8C4B8', fontSize: 18, fontWeight: '800', marginLeft: 8 },
     pdfBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', marginRight: 16, gap: 6 },
     pdfBtnTxt: { color: '#C9A84C', fontSize: 13, fontWeight: '700' },
-    statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1812', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#3A3630' },
-    chatHeader: { height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.06)' },
-    headerChName: { color: '#C8C4B8', fontWeight: '800', fontSize: 18 },
     statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.04)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
     statusBadgeDot: { width: 8, height: 8, borderRadius: 4 },
     statusBadgeTxt: { color: '#C8C4B8', fontSize: 12, fontWeight: '600' },
-    statusDetail: { position: 'absolute', top: 40, right: 0, width: 180, backgroundColor: '#1A1812', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)', zIndex: 100 },
-    statusDetailTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', marginBottom: 10 },
-    statusDetailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-    statusDetailLbl: { color: '#6E6960', fontSize: 12 },
-    statusDetailVal: { fontWeight: '700', fontSize: 12 },
 
     messagesScroll: { flex: 1 },
     msgRow: { flexDirection: 'row', marginBottom: 8, width: '100%', position: 'relative' },
-    msgRowMine: {},
-    bubbleWrap: { maxWidth: '90%', alignItems: 'flex-start' },
-    repliedBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4, opacity: 0.6 },
-    repliedBannerTxt: { color: '#C8C4B8', fontSize: 13, fontWeight: '700' },
+    msgRowMine: { justifyContent: 'flex-end' },
+    bubbleWrap: { maxWidth: '90%', position: 'relative' },
     bubble: { padding: 12, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
     bubbleOther: { backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)' },
     bubbleMine: { backgroundColor: 'rgba(201,168,76,0.1)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)' },
     msgSender: { color: '#6E6960', fontSize: 13, fontWeight: '800' },
     msgText: { color: '#C8C4B8', fontSize: 15, lineHeight: 22 },
-
-    mdCode: { fontFamily: 'monospace', backgroundColor: '#11100D', padding: 8, borderRadius: 6, color: '#C9A84C', marginVertical: 4 },
-    mdInlineCode: { fontFamily: 'monospace', backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, color: '#C9A84C', fontSize: 14 },
-    mdBold: { fontWeight: 'bold', color: '#E8E4D8' },
-    mdItalic: { fontStyle: 'italic' },
-    mdStrike: { textDecorationLine: 'line-through', color: '#6E6960' },
-    mdH1: { fontSize: 22, fontWeight: '900', color: '#E8E4D8', marginVertical: 4 },
-    mdH2: { fontSize: 19, fontWeight: '800', color: '#E8E4D8', marginVertical: 3 },
-    mdH3: { fontSize: 17, fontWeight: '700', color: '#E8E4D8', marginVertical: 2 },
-    mdH4: { fontSize: 15, fontWeight: '700', color: '#C8C4B8', marginVertical: 2 },
-    mdBlockquote: { color: '#A8A090', fontStyle: 'italic', borderLeftWidth: 3, borderLeftColor: '#C9A84C', paddingLeft: 10, marginVertical: 4 },
-    mdListItem: { color: '#C8C4B8', fontSize: 15, lineHeight: 22, paddingLeft: 4 },
+    msgTime: { color: '#3A3630', fontSize: 11, fontWeight: '600' },
     msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6 },
     msgEdited: { color: '#554E40', fontSize: 10, fontStyle: 'italic', marginRight: 4 },
-    msgTime: { color: '#3A3630', fontSize: 11, fontWeight: '600' },
     msgImg: { width: 280, height: 180, borderRadius: 12, marginTop: 8 },
 
-    bubbleWrap: { maxWidth: '90%' },
     repliedBubble: { flexDirection: 'row', marginBottom: 6, borderRadius: 8, backgroundColor: 'rgba(201,168,76,0.06)', overflow: 'hidden' },
     repliedBubbleBar: { width: 3, backgroundColor: '#C9A84C' },
     repliedBubbleContent: { padding: 8, flex: 1 },
@@ -1088,27 +1292,28 @@ const styles = StyleSheet.create({
     sendBtnActive: { backgroundColor: '#C9A84C' },
 
     // Right Panel
-    rightPanel: { width: 240, backgroundColor: 'rgba(12, 11, 9, 0.7)', padding: 20 },
-    rightTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
-    occupancyHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
-    occupancyTitle: { flex: 1, color: '#6E6960', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-    userRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
-    avatarWrapSmall: { width: 32, height: 32, borderRadius: 16, marginRight: 10, position: 'relative' },
-    avatarImgSmall: { width: 32, height: 32, borderRadius: 16 },
-    avatarFallbackSmall: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#1A1812', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(201,168,76,0.5)' },
-    avatarFallbackTxtSmall: { color: '#C9A84C', fontSize: 13, fontWeight: '800' },
-    userDot: { position: 'absolute', bottom: -2, right: -2, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: '#0C0B09' },
-    userRowName: { flex: 1, fontSize: 14, fontWeight: '700' },
-    divider: { height: 1, backgroundColor: 'rgba(201,168,76,0.06)', marginVertical: 20 },
+    rightPanel: { width: 280, backgroundColor: '#141210', borderLeftWidth: 1, borderLeftColor: '#2A2217', padding: 16, zIndex: 5 },
+    rightHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+    rightHeaderTitle: { color: '#C9A84C', fontSize: 13, fontWeight: '800', letterSpacing: 1 },
+    savedList: { paddingLeft: 12, paddingVertical: 10 },
+    emptyArchiveTxt: { color: '#444', fontSize: 11, fontStyle: 'italic' },
+    userList: { paddingLeft: 10 },
+    userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+    userAvatarSmall: { width: 24, height: 24, borderRadius: 6, backgroundColor: '#1A1812', justifyContent: 'center', alignItems: 'center', position: 'relative' },
+    userAvatarTxtSmall: { color: '#C9A84C', fontSize: 10, fontWeight: '900' },
+    userRowName: { color: '#C8C4B8', fontSize: 14, fontWeight: '700' },
+    userRowStation: { color: '#554E40', fontSize: 10 },
+    onlineDotSmall: { position: 'absolute', bottom: -1, right: -1, width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, borderColor: '#141210' },
 
-    hotelInfo: { gap: 12 },
-    hotelBranding: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    hotelBrandDot: { width: 12, height: 12, borderRadius: 3 },
-    hotelBrandName: { fontSize: 16, fontWeight: '800' },
-    hotelDesc: { color: '#554E40', fontSize: 14, lineHeight: 22 },
-    hotelContact: { color: '#C8C4B8', fontSize: 14, fontWeight: '600' },
+    hotelInfoBox: { marginTop: 20, padding: 16, backgroundColor: 'rgba(201,168,76,0.03)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)' },
+    hotelInfoTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 16 },
+    hotelDotLarge: { width: 40, height: 40, borderRadius: 10, marginBottom: 12 },
+    hotelInfoName: { color: '#C8C4B8', fontSize: 16, fontWeight: '800', marginBottom: 4 },
+    hotelInfoDesc: { color: '#6E6960', fontSize: 13, lineHeight: 20, marginBottom: 16 },
+    contactRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    contactTxt: { color: '#C9A84C', fontSize: 14, fontWeight: '600' },
 
-    // WA Poll Style
+    // Poll
     waPoll: { backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: 14, gap: 8, marginTop: 6, minWidth: 260 },
     waPollTitle: { color: '#C8C4B8', fontSize: 17, fontWeight: '700' },
     waPollSub: { color: '#554E40', fontSize: 11, fontWeight: '600' },
@@ -1121,9 +1326,26 @@ const styles = StyleSheet.create({
     waPollCount: { color: '#C9A84C', fontSize: 14, fontWeight: '700' },
     waPollFooter: { color: '#3A3630', fontSize: 11, fontWeight: '600', marginTop: 4, textAlign: 'center' },
 
-    // Empty chat placeholder
+    // Placeholder
     emptyChat: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
     emptyChatIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(201,168,76,0.06)', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
     emptyChatTitle: { color: '#C9A84C', fontSize: 17, fontWeight: '800', letterSpacing: 1, marginBottom: 8 },
     emptyChatSub: { color: '#554E40', fontSize: 13, textAlign: 'center', maxWidth: 260, lineHeight: 20 },
+
+    // Utility
+    createBtnTxt: { color: '#111', fontSize: 11, fontWeight: '900' },
+    mdCode: { fontFamily: 'monospace', backgroundColor: '#11100D', padding: 8, borderRadius: 6, color: '#C9A84C', marginVertical: 4 },
+    mdInlineCode: { fontFamily: 'monospace', backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, color: '#C9A84C', fontSize: 14 },
+    mdBold: { fontWeight: 'bold', color: '#E8E4D8' },
+    mdItalic: { fontStyle: 'italic' },
+    mdStrike: { textDecorationLine: 'line-through', color: '#6E6960' },
+    mdH1: { fontSize: 22, fontWeight: '900', color: '#E8E4D8', marginVertical: 4 },
+    mdH2: { fontSize: 19, fontWeight: '800', color: '#E8E4D8', marginVertical: 3 },
+    mdH3: { fontSize: 17, fontWeight: '700', color: '#E8E4D8', marginVertical: 2 },
+    mdH4: { fontSize: 15, fontWeight: '700', color: '#C8C4B8', marginVertical: 2 },
+    mdBlockquote: { color: '#A8A090', fontStyle: 'italic', borderLeftWidth: 3, borderLeftColor: '#C9A84C', paddingLeft: 10, marginVertical: 4 },
+    mdListItem: { color: '#C8C4B8', fontSize: 15, lineHeight: 22, paddingLeft: 4 },
+
+    forwardItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.05)' },
+    forwardItemTxt: { color: '#C8C4B8', fontSize: 15, fontWeight: '600' },
 });

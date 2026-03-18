@@ -533,15 +533,21 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                             playsInline
                                             style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 12 }}
                                         />
-                                        {/* Info overlay */}
-                                        <View style={styles.screenShareOverlay}>
-                                            <View style={styles.screenShareInfo}>
-                                                <Icon name="monitor" size={16} color="#C9A84C" />
-                                                <Text style={styles.screenShareTxt}>Stai condividendo lo schermo</Text>
+                                        
+                                        {/* Discord-style Patina Overlay */}
+                                        <View style={styles.screenSharePatina}>
+                                            <View style={styles.screenShareCenterBox}>
+                                                <View style={styles.screenShareIconCircle}>
+                                                    <Icon name="screen-share" size={32} color="#C9A84C" />
+                                                </View>
+                                                <Text style={styles.screenShareMainTxt}>Stai condividendo lo schermo</Text>
+                                                <Text style={styles.screenShareSubTxt}>I partecipanti vedono il tuo schermo in tempo reale</Text>
+                                                
+                                                <TouchableOpacity style={styles.screenShareCentralBtn} onPress={toggleScreenShare}>
+                                                    <Icon name="stop-circle" size={18} color="#fff" />
+                                                    <Text style={styles.screenShareStopTxt}>Interrompi condivisione</Text>
+                                                </TouchableOpacity>
                                             </View>
-                                            <TouchableOpacity style={styles.screenShareStopBtn} onPress={toggleScreenShare}>
-                                                <Text style={styles.screenShareStopTxt}>Interrompi condivisione</Text>
-                                            </TouchableOpacity>
                                         </View>
                                     </View>
                                 );
@@ -711,13 +717,15 @@ const styles = StyleSheet.create({
     tile: { backgroundColor: '#0A0908', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)', position: 'relative', elevation: 10 },
     tileCenter: { width: '70%', aspectRatio: 16 / 9, maxWidth: 800 },
     tileSide: { width: '45%', aspectRatio: 16 / 9, maxWidth: 600 },
-    tileScreen: { width: '90%', aspectRatio: 16 / 9, maxWidth: 1000, borderColor: 'rgba(201,168,76,0.3)', borderWidth: 2 },
+    tileScreen: { width: '100%', aspectRatio: 16 / 9, maxWidth: 1000, borderColor: 'rgba(201,168,76,0.3)', borderWidth: 2, marginBottom: 10 },
     rtc: { flex: 1 },
-    screenShareOverlay: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: 'rgba(12,11,9,0.75)', paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.2)' },
-    screenShareInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    screenShareTxt: { color: '#C9A84C', fontSize: 13, fontWeight: '700' },
-    screenShareStopBtn: { backgroundColor: '#ED4245', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
-    screenShareStopTxt: { color: '#fff', fontSize: 12, fontWeight: '800' },
+    screenSharePatina: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(12,11,9,0.88)', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
+    screenShareCenterBox: { alignItems: 'center', gap: 14 },
+    screenShareIconCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(201,168,76,0.08)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' },
+    screenShareMainTxt: { color: '#E8E4D8', fontSize: 20, fontWeight: '900', letterSpacing: 0.5 },
+    screenShareSubTxt: { color: '#6E6960', fontSize: 13, textAlign: 'center', maxWidth: 350, lineHeight: 18 },
+    screenShareCentralBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#ED4245', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 10, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+    screenShareStopTxt: { color: '#fff', fontSize: 14, fontWeight: '800' },
     avatarTile: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1A1812' },
     avatarTxt: { color: '#C9A84C', fontSize: 44, fontWeight: '800' },
     nameOverlay: { position: 'absolute', bottom: 10, left: 10, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 6 },
