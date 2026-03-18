@@ -181,12 +181,12 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
     const [leftCollapsed, setLeftCollapsed] = useState(false);
     const [rightCollapsed, setRightCollapsed] = useState(false);
-    const leftAnim = useRef(new Animated.Value(0)).current; // 0 = expanded, -260 = collapsed
-    const rightAnim = useRef(new Animated.Value(0)).current; // 0 = expanded, -300 = collapsed
+    const leftAnim = useRef(new Animated.Value(260)).current; // width: 0 to 260
+    const rightAnim = useRef(new Animated.Value(280)).current; // width: 0 to 280
 
     useEffect(() => {
         Animated.timing(leftAnim, {
-            toValue: leftCollapsed ? -260 : 0,
+            toValue: leftCollapsed ? 0 : 260,
             duration: 350,
             useNativeDriver: false
         }).start();
@@ -194,18 +194,18 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
     useEffect(() => {
         Animated.timing(rightAnim, {
-            toValue: rightCollapsed ? -300 : 0,
+            toValue: rightCollapsed ? 0 : 280,
             duration: 350,
             useNativeDriver: false
         }).start();
     }, [rightCollapsed]);
 
     const leftRotate = leftAnim.interpolate({
-        inputRange: [-260, 0],
+        inputRange: [0, 260],
         outputRange: ['180deg', '0deg']
     });
     const rightRotate = rightAnim.interpolate({
-        inputRange: [-300, 0],
+        inputRange: [0, 280],
         outputRange: ['180deg', '0deg']
     });
 
@@ -666,8 +666,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                 <Animated.View style={[
                     styles.column, 
                     styles.sidebar, 
-                    !IS_MOBILE && { marginLeft: leftAnim, position: 'relative' },
-                    IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 100 }
+                    !IS_MOBILE && { width: leftAnim, overflow: 'hidden', borderRightWidth: leftCollapsed ? 0 : 1 },
+                    IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 100, width: 260 }
                 ]}>
                     <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1056,7 +1056,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                 <Animated.View style={[
                     styles.column, 
                     styles.rightPanel, 
-                    { marginRight: rightAnim, position: 'relative' }
+                    { width: rightAnim, overflow: 'hidden', borderLeftWidth: rightCollapsed ? 0 : 1, padding: rightCollapsed ? 0 : 16 }
                 ]}>
                     <View style={styles.rightHeader}>
                         <Text style={styles.rightHeaderTitle}>HUB GESTIONALE</Text>
@@ -1220,23 +1220,20 @@ const styles = StyleSheet.create({
         top: '40%',
         width: 22,
         height: 44,
-        backgroundColor: '#1C1A12',
+        backgroundColor: 'rgba(28, 26, 18, 0.9)',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
         borderColor: 'rgba(201,168,76,0.2)',
         zIndex: 999,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.5,
-        shadowRadius: 10,
+        ...(Platform.OS === 'web' ? { backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)' } : {})
     },
     leftExternalTab: { right: -22, borderTopRightRadius: 10, borderBottomRightRadius: 10, borderLeftWidth: 0 },
     rightExternalTab: { left: -22, borderTopLeftRadius: 10, borderBottomLeftRadius: 10, borderRightWidth: 0 },
     collapseTabInternal: { width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(201,168,76,0.05)', justifyContent: 'center', alignItems: 'center' },
 
     // Sidebar
-    sidebar: { width: 260, backgroundColor: '#141210', borderRightWidth: 1, borderRightColor: '#2A2217', zIndex: 5 },
+    sidebar: { backgroundColor: 'rgba(20, 18, 16, 0.7)', borderRightColor: 'rgba(201,168,76,0.1)', zIndex: 10, ...(Platform.OS === 'web' ? { backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } : {}) },
     sidebarHeader: { padding: 20, paddingTop: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' },
     brandName: { color: '#C9A84C', fontSize: 13, fontWeight: '800', letterSpacing: 2 },
     navHotelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, paddingTop: 20 },
@@ -1255,8 +1252,8 @@ const styles = StyleSheet.create({
     gearBtn: { padding: 8 },
 
     // Chat
-    chatCol: { flex: 1, backgroundColor: 'rgba(20, 18, 16, 0.4)' },
-    chatHeader: { flexDirection: 'row', alignItems: 'center', height: 56, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)', backgroundColor: 'rgba(20, 18, 14, 0.6)' },
+    chatCol: { flex: 1, backgroundColor: 'rgba(20, 18, 16, 0.2)' },
+    chatHeader: { flexDirection: 'row', alignItems: 'center', height: 56, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.15)', backgroundColor: 'rgba(20, 18, 14, 0.7)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } : {}) },
     headerChName: { color: '#C8C4B8', fontSize: 18, fontWeight: '800', marginLeft: 8 },
     pdfBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', marginRight: 16, gap: 6 },
     pdfBtnTxt: { color: '#C9A84C', fontSize: 13, fontWeight: '700' },
@@ -1289,10 +1286,10 @@ const styles = StyleSheet.create({
     reactionEmoji: { fontSize: 12 },
     reactionCount: { color: '#6E6960', fontSize: 11, fontWeight: '700' },
 
-    activeActionBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: 'rgba(201,168,76,0.05)', borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.06)' },
+    activeActionBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: 'rgba(201,168,76,0.1)', borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' } : {}) },
     activeActionTxt: { flex: 1, color: '#C8C4B8', fontSize: 13, fontStyle: 'italic' },
 
-    inputArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, padding: 12 },
+    inputArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, padding: 12, backgroundColor: 'rgba(20, 18, 14, 0.6)', borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.1)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } : {}) },
     input: { flex: 1, backgroundColor: '#1C1A12', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10, color: '#C8C4B8', fontSize: 16, maxHeight: SCREEN_H * 0.15 },
     plusBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1C1A12', justifyContent: 'center', alignItems: 'center', marginBottom: 2 },
     plusMenu: { position: 'absolute', bottom: 50, left: 0, width: 200, backgroundColor: '#1A1812', borderRadius: 12, padding: 6, borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)', zIndex: 1000 },
@@ -1302,7 +1299,7 @@ const styles = StyleSheet.create({
     sendBtnActive: { backgroundColor: '#C9A84C' },
 
     // Right Panel
-    rightPanel: { width: 280, backgroundColor: '#141210', borderLeftWidth: 1, borderLeftColor: '#2A2217', padding: 16, zIndex: 5 },
+    rightPanel: { backgroundColor: 'rgba(20, 18, 16, 0.7)', borderLeftColor: 'rgba(201,168,76,0.1)', zIndex: 10, ...(Platform.OS === 'web' ? { backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } : {}) },
     rightHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
     rightHeaderTitle: { color: '#C9A84C', fontSize: 13, fontWeight: '800', letterSpacing: 1 },
     savedList: { paddingLeft: 12, paddingVertical: 10 },
@@ -1343,7 +1340,21 @@ const styles = StyleSheet.create({
     emptyChatSub: { color: '#554E40', fontSize: 13, textAlign: 'center', maxWidth: 260, lineHeight: 20 },
 
     // Utility
-    createBtnTxt: { color: '#111', fontSize: 11, fontWeight: '900' },
+    createBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#C9A84C',
+        paddingVertical: 12,
+        borderRadius: 10,
+        gap: 10,
+        marginBottom: 16,
+        shadowColor: '#C9A84C',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+    },
+    createBtnTxt: { color: '#111', fontSize: 13, fontWeight: '900', letterSpacing: 0.5 },
     mdCode: { fontFamily: 'monospace', backgroundColor: '#11100D', padding: 8, borderRadius: 6, color: '#C9A84C', marginVertical: 4 },
     mdInlineCode: { fontFamily: 'monospace', backgroundColor: 'rgba(201,168,76,0.1)', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, color: '#C9A84C', fontSize: 14 },
     mdBold: { fontWeight: 'bold', color: '#E8E4D8' },
