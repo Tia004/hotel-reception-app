@@ -634,7 +634,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                 placeholder="Scrivi un messaggio..."
                                 placeholderTextColor="#554E40"
                                 value={chatDraft}
-                                onChangeText={setChatDraft}
+                                onChangeText={setDraft}
                                 {...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})}
                                 onKeyPress={(e) => {
                                     if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
