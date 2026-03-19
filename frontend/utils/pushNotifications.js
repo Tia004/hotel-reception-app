@@ -68,7 +68,7 @@ export function showMessageNotification(sender, channel, hotelName, text) {
 export function showRoomNotification(type, username, roomName) {
     if (typeof window === 'undefined') return;
     if (Notification.permission !== 'granted') return;
-    if (!document.hidden) return;
+    // if (!document.hidden) return; // Removed for better reliability on Mac as requested
 
     const msg = type === 'joined'
         ? `${username} è entrato/a nella stanza ${roomName}`
