@@ -181,33 +181,19 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
     const [leftCollapsed, setLeftCollapsed] = useState(false);
     const [rightCollapsed, setRightCollapsed] = useState(false);
-    const leftAnim = useRef(new Animated.Value(260)).current; // width: 0 to 260
-    const rightAnim = useRef(new Animated.Value(280)).current; // width: 0 to 280
+    const leftAnim = useRef(new Animated.Value(260)).current; 
+    const rightAnim = useRef(new Animated.Value(280)).current;
 
     useEffect(() => {
-        Animated.timing(leftAnim, {
-            toValue: leftCollapsed ? 0 : 260,
-            duration: 350,
-            useNativeDriver: false
-        }).start();
+        Animated.spring(leftAnim, { toValue: leftCollapsed ? 0 : 260, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
     }, [leftCollapsed]);
 
     useEffect(() => {
-        Animated.timing(rightAnim, {
-            toValue: rightCollapsed ? 0 : 280,
-            duration: 350,
-            useNativeDriver: false
-        }).start();
+        Animated.spring(rightAnim, { toValue: rightCollapsed ? 0 : 280, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
     }, [rightCollapsed]);
 
-    const leftRotate = leftAnim.interpolate({
-        inputRange: [0, 260],
-        outputRange: ['180deg', '0deg']
-    });
-    const rightRotate = rightAnim.interpolate({
-        inputRange: [0, 280],
-        outputRange: ['180deg', '0deg']
-    });
+    const leftRotate = leftCollapsed ? '180deg' : '0deg';
+    const rightRotate = rightCollapsed ? '180deg' : '0deg';
 
     const [hoveredMsg, setHoveredMsg] = useState(null);
     const [emojiPickerMsg, setEmojiPickerMsg] = useState(null);
@@ -671,107 +657,119 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
             {/* ── LEFT SIDEBAR ────────────────────────────────────────── */}
             {(!IS_MOBILE || sidebarVisible) && (
-                <Animated.View style={[
-                    styles.column, 
-                    styles.sidebar, 
-                    !IS_MOBILE && { width: leftAnim, overflow: 'hidden', borderRightWidth: leftCollapsed ? 0 : 1 },
-                    IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 100, width: 260 }
-                ]}>
-                    <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <Text style={styles.brandName}>HOTEL CHAT v3.0</Text>
-                        </View>
-                    </LinearGradient>
+                <View style={{ position: 'relative', height: '100%' }}>
+                    <Animated.View style={[
+                        styles.column, 
+                        styles.sidebar, 
+                        !IS_MOBILE && { width: leftAnim, overflow: 'hidden' },
+                        IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 100, width: 260 }
+                    ]}>
+                        <View style={{ width: 260, height: '100%' }}>
+                            <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <Text style={styles.brandName}>HOTEL CHAT v3.0</Text>
+                                    <TouchableOpacity style={styles.gearBtn} onPress={() => setSettingsVisible(true)}>
+                                        <Icon name="settings" size={16} color="#554E40" />
+                                    </TouchableOpacity>
+                                </View>
+                            </LinearGradient>
 
-                    <ScrollView style={{ flex: 1 }}>
-                        <View style={styles.navHotelRow}>
-                            <Icon name="home" size={14} color="#6E6960" />
-                            <Text style={styles.hotelLbl}>HOTEL DISPONIBILI</Text>
-                        </View>
+                            <ScrollView style={{ flex: 1 }}>
+                                <View style={styles.navHotelRow}>
+                                    <Icon name="home" size={14} color="#6E6960" />
+                                    <Text style={styles.hotelLbl}>HOTEL DISPONIBILI</Text>
+                                </View>
 
-                        {HOTELS.map(h => (
-                            <TouchableOpacity 
-                                key={h.id} 
-                                style={[styles.chRow, activeHotel?.id === h.id && styles.chRowActive]}
-                                onPress={() => setActiveHotel(h)}
-                            >
-                                <View style={[styles.hotelDot, { backgroundColor: h.color }]} />
-                                <Text style={[styles.chName, activeHotel?.id === h.id && { color: '#C9A84C' }]}>{h.name}</Text>
-                            </TouchableOpacity>
-                        ))}
+                                {HOTELS.map(h => (
+                                    <TouchableOpacity 
+                                        key={h.id} 
+                                        style={[styles.chRow, activeHotel?.id === h.id && styles.chRowActive]}
+                                        onPress={() => {
+                                            setActiveHotel(h);
+                                            setActiveChannel(h.channels[0]);
+                                        }}
+                                    >
+                                        <View style={[styles.hotelDot, { backgroundColor: h.color }]} />
+                                        <Text style={[styles.chName, activeHotel?.id === h.id && { color: '#C9A84C' }]}>{h.name}</Text>
+                                    </TouchableOpacity>
+                                ))}
 
-                        <View style={[styles.navHotelRow, { marginTop: 20 }]}>
-                            <Icon name="video" size={14} color="#6E6960" />
-                            <Text style={styles.hotelLbl}>STANZE VOCALI FISSE</Text>
-                        </View>
+                                <View style={[styles.navHotelRow, { marginTop: 20 }]}>
+                                    <Icon name="video" size={14} color="#6E6960" />
+                                    <Text style={styles.hotelLbl}>STANZE VOCALI FISSE</Text>
+                                </View>
 
-                        {/* Fixed Rooms List */}
-                        {['Duchessa Vocale', 'Blumen Vocale', 'SantOrsola Vocale', 'Stanza Generale'].map((name, idx) => {
-                            const icons = ['coffee', 'flower', 'star', 'users'];
-                            const ids = ['duchessa-voice', 'blumen-voice', 'santorsola-voice', 'generale-voice'];
-                            const rid = ids[idx];
-                            const room = activeRooms.find(r => r.id === rid);
-                            const isActive = currentRoomId === rid;
+                                {/* Fixed Rooms List */}
+                                {['Duchessa Vocale', 'Blumen Vocale', 'SantOrsola Vocale', 'Stanza Generale'].map((name, idx) => {
+                                    const ids = ['duchessa-voice', 'blumen-voice', 'santorsola-voice', 'generale-voice'];
+                                    const rid = ids[idx];
+                                    const room = activeRooms.find(r => r.id === rid);
+                                    const isActive = currentRoomId === rid;
 
-                            return (
-                                <TouchableOpacity 
-                                    key={rid} 
-                                    style={[styles.chRow, isActive && styles.chRowActive]}
-                                    onPress={() => socket.emit('join-room', { roomId: rid })}
-                                >
-                                    <Icon name={icons[idx]} size={16} color={isActive ? '#C9A84C' : '#554E40'} />
-                                    <View style={{ flex: 1, marginLeft: 10 }}>
-                                        <Text style={[styles.chName, isActive && { color: '#C9A84C' }]}>{name.toUpperCase()}</Text>
-                                        {room && room.peerCount > 0 && (
-                                            <Text style={{ color: '#6E6960', fontSize: 10 }}>{room.peerCount} partecipanti</Text>
-                                        )}
-                                    </View>
-                                    {room && room.peerCount > 0 && (
-                                        <View style={{ flexDirection: 'row', gap: -6 }}>
-                                            {room.peers.slice(0, 3).map((p, pi) => (
-                                                <View key={pi} style={[styles.userAvatarSmall, { width: 18, height: 18, borderWidth: 1, borderColor: '#111' }]}>
-                                                    <Text style={{ fontSize: 8, color: '#C9A84C' }}>{p.username[0].toUpperCase()}</Text>
+                                    return (
+                                        <TouchableOpacity 
+                                            key={rid} 
+                                            style={[styles.chRow, isActive && styles.chRowActive]}
+                                            onPress={() => socket.emit('join-room', { roomId: rid })}
+                                        >
+                                            <Icon name="volume-2" size={16} color={isActive ? '#C9A84C' : '#554E40'} />
+                                            <View style={{ flex: 1, marginLeft: 10 }}>
+                                                <Text style={[styles.chName, isActive && { color: '#C9A84C' }]}>{name.toUpperCase()}</Text>
+                                                {room && room.peerCount > 0 && (
+                                                    <Text style={{ color: '#6E6960', fontSize: 10 }}>{room.peerCount} partecipanti</Text>
+                                                )}
+                                            </View>
+                                            {room && room.peerCount > 0 && (
+                                                <View style={{ flexDirection: 'row', gap: -6 }}>
+                                                    {room.peers.slice(0, 3).map((p, pi) => (
+                                                        <View key={pi} style={[styles.userAvatarSmall, { width: 18, height: 18, borderWidth: 1, borderColor: '#111' }]}>
+                                                            <Text style={{ fontSize: 8, color: '#C9A84C' }}>{p.username[0].toUpperCase()}</Text>
+                                                        </View>
+                                                    ))}
                                                 </View>
-                                            ))}
-                                        </View>
-                                    )}
+                                            )}
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </ScrollView>
+
+                            <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.05)' }}>
+                                <TouchableOpacity style={styles.avatarBtn} onPress={() => setProfileVisible(true)}>
+                                    <View style={styles.avatar}>
+                                        {user.profilePic ? <Image source={{ uri: user.profilePic }} style={StyleSheet.absoluteFill} /> : <Text style={styles.avatarTxt}>{user.username[0].toUpperCase()}</Text>}
+                                        <View style={[styles.statusDot, { backgroundColor: '#43B581' }]} />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.userName}>{user.username}</Text>
+                                        <Text style={styles.userStat}>{user.station || 'Online'}</Text>
+                                    </View>
+                                    <TouchableOpacity onPress={() => setSettingsVisible(true)} style={styles.gearBtn}>
+                                        <Icon name="settings" size={16} color="#554E40" />
+                                    </TouchableOpacity>
                                 </TouchableOpacity>
-                            );
-                        })}
-                    </ScrollView>
-
-                    <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.05)' }}>
-                        <TouchableOpacity style={styles.avatarBtn} onPress={() => setShowProfile(true)}>
-                            <View style={styles.avatar}>
-                                {user.profilePic ? <Image source={{ uri: user.profilePic }} style={StyleSheet.absoluteFill} /> : <Text style={styles.avatarTxt}>{user.username[0].toUpperCase()}</Text>}
-                                <View style={[styles.statusDot, { backgroundColor: '#43B581' }]} />
                             </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.userName}>{user.username}</Text>
-                                <Text style={styles.userStat}>{user.station || 'Online'}</Text>
-                            </View>
-                        </TouchableOpacity>
-                    </View>
-                </Animated.View>
-            )}
+                        </View>
+                    </Animated.View>
 
-            {/* Unified Rhombus Tab (Left) - Moved outside to prevent clipping */}
-            {!IS_MOBILE && (
-                <Animated.View style={[
-                    styles.externalTab, 
-                    styles.leftExternalTab, 
-                    { left: leftAnim } // Move with the sidebar width
-                ]}>
-                    <TouchableOpacity 
-                        onPress={() => setLeftCollapsed(!leftCollapsed)}
-                        activeOpacity={0.8}
-                        style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
-                    >
-                        <Animated.View style={{ transform: [{ rotate: leftRotate }] }}>
-                            <Icon name="chevron-left" size={16} color="#C9A84C" />
+                    {/* Unified Rhombus Tab (Left) - Now sibling of Animated.View but positioned absolutely */}
+                    {!IS_MOBILE && (
+                        <Animated.View style={[
+                            styles.externalTab, 
+                            styles.leftExternalTab, 
+                            { left: leftAnim, marginLeft: -11 } 
+                        ]}>
+                            <TouchableOpacity 
+                                onPress={() => setLeftCollapsed(!leftCollapsed)}
+                                activeOpacity={0.8}
+                                style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+                            >
+                                <View style={{ transform: [{ rotate: leftRotate }] }}>
+                                    <Icon name="chevron-left" size={16} color="#C9A84C" />
+                                </View>
+                            </TouchableOpacity>
                         </Animated.View>
-                    </TouchableOpacity>
-                </Animated.View>
+                    )}
+                </View>
             )}
 
             {/* ── CENTER CHAT ─────────────────────────────────────────── */}
@@ -826,26 +824,14 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                 onPress={() => setEmojiPickerMsg(null)}
                                             >
                                                 <View style={styles.hoverMenu}>
-                                                    {/* Emoji reaction bar */}
+                                                    {/* Compact Emoji reaction bar */}
                                                     <View style={styles.hoverEmojiBar}>
                                                         {['❤️','👍','😂','😮','🙏','😢'].map((emo, ei) => (
                                                             <TouchableOpacity key={ei} style={styles.hoverEmojiBtn} onPress={() => { reactMessage(m.id, emo); setEmojiPickerMsg(null); }}>
-                                                                <Text style={{ fontSize: 16 }}>{emo}</Text>
-                                                            </TouchableOpacity>
-                                                        ))}
-                                                        <TouchableOpacity style={styles.hoverEmojiBtn} onPress={() => setEmojiPickerMsg(m.id)}>
-                                                            <Icon name="plus" size={14} color="#C9A84C" />
-                                                        </TouchableOpacity>
-                                                    </View>
-
-                                                    {/* Full Emoji Picker embedded if needed, but let's make it a scrollable row below */}
-                                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, padding: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' }}>
-                                                        {ALL_EMOJIS.slice(6).map((emo, i) => (
-                                                            <TouchableOpacity key={i} onPress={() => { reactMessage(m.id, emo); setEmojiPickerMsg(null); }}>
                                                                 <Text style={{ fontSize: 18 }}>{emo}</Text>
                                                             </TouchableOpacity>
                                                         ))}
-                                                    </ScrollView>
+                                                    </View>
 
                                                     {/* Action list */}
                                                     <View style={styles.hoverActionList}>
@@ -1044,130 +1030,139 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
             {!hideChatColumn && !IS_MOBILE && (
-                <Animated.View style={[
-                    styles.column, 
-                    styles.rightPanel, 
-                    { width: rightAnim, overflow: 'hidden', borderLeftWidth: rightCollapsed ? 0 : 1, padding: rightCollapsed ? 0 : 16 }
-                ]}>
-                    <View style={styles.rightHeader}>
-                        <Text style={styles.rightHeaderTitle}>HUB GESTIONALE</Text>
-                    </View>
-
-                    {/* Unified Rhombus Tab (Right) */}
-                    {!IS_MOBILE && (
-                        <TouchableOpacity 
-                            style={[styles.externalTab, styles.rightExternalTab]} 
-                            onPress={() => setRightCollapsed(!rightCollapsed)}
-                            activeOpacity={0.8}
-                        >
-                            <Animated.View style={{ transform: [{ rotate: rightRotate }] }}>
-                                <Icon name="chevron-right" size={16} color="#C9A84C" />
-                            </Animated.View>
-                        </TouchableOpacity>
-                    )}
-
-                    <ScrollView style={{ flex: 1 }}>
-                        {/* Saved Messages Section */}
-                        <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, saved: !p.saved }))}>
-                            <Icon name="bookmark" size={15} color="#C9A84C" />
-                            <Text style={styles.hotelLbl}>MESSAGGI SALVATI</Text>
-                            <Icon name={expanded.saved ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
-                        </TouchableOpacity>
-                        {expanded.saved && (
-                            <View style={styles.savedList}>
-                                <Text style={styles.emptyArchiveTxt}>Nessun messaggio salvato</Text>
+                <View style={{ position: 'relative', height: '100%' }}>
+                    <Animated.View style={[
+                        styles.column, 
+                        styles.rightPanel, 
+                        { width: rightAnim, overflow: 'hidden' }
+                    ]}>
+                        <View style={{ width: 280, height: '100%', padding: 16 }}>
+                            <View style={styles.rightHeader}>
+                                <Text style={styles.rightHeaderTitle}>HUB GESTIONALE</Text>
                             </View>
-                        )}
 
-                        {/* Temp Chat Archive Section */}
-                        <TouchableOpacity style={styles.navHotelRow} onPress={() => {
-                            setExpanded(p => ({ ...p, voice: !p.voice }));
-                            if (!expanded.voice) socket.emit('get-room-archives');
-                        }}>
-                            <Icon name="archive" size={15} color="#C9A84C" />
-                            <Text style={styles.hotelLbl}>ARCHIVIO CHAT VOCALI</Text>
-                            <Icon name={expanded.voice ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
-                        </TouchableOpacity>
-                        {expanded.voice && (
-                            <View style={styles.savedList}>
-                                {roomArchives.length > 0 ? roomArchives.map((arc, idx) => (
-                                    <TouchableOpacity key={idx} style={styles.archiveRow} onPress={() => {
-                                        socket.emit('room-chat-history', { roomId: arc.roomId });
-                                        // The handler for room-chat-history would need to know we're opening an archive
-                                        // Let's add a one-off listener or a state flag
-                                        const onHist = ({ messages }) => {
-                                            setViewingArchive({ roomId: arc.roomId, messages });
-                                            socket.off('room-chat-history', onHist);
-                                        };
-                                        socket.on('room-chat-history', onHist);
-                                    }}>
-                                        <View style={styles.archiveIcon}>
-                                            <Icon name="message-square" size={12} color="#C9A84C" />
-                                        </View>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.archiveTitle}>Room #{arc.roomId}</Text>
-                                            <Text style={styles.archiveDate}>{new Date(arc.mtime).toLocaleDateString()} {new Date(arc.mtime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                                        </View>
-                                    </TouchableOpacity>
-                                )) : (
-                                    <Text style={styles.emptyArchiveTxt}>Nessun archivio disponibile</Text>
-                                )}
-                            </View>
-                        )}
-
-                        {/* Team Section */}
-                        <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>
-                            <Icon name="users" size={15} color="#C9A84C" />
-                            <Text style={styles.hotelLbl}>TEAM — {onlineUsers.filter(u => u.status === 'online').length}</Text>
-                            <Icon name={expanded.users ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
-                        </TouchableOpacity>
-                        
-                        {expanded.users && (
-                            <View style={styles.userList}>
-                                {onlineUsers.map((u, i) => (
-                                    <TouchableOpacity key={i} style={styles.userRow} onPress={() => { setInfoModal(null); }}>
-                                        <View style={styles.userAvatarSmall}>
-                                            {u.profilePic 
-                                                ? <Image source={{ uri: u.profilePic }} style={{ width: 24, height: 24, borderRadius: 6 }} />
-                                                : <Text style={styles.userAvatarTxtSmall}>{u.username?.[0].toUpperCase()}</Text>}
-                                            <View style={[styles.onlineDotSmall, { backgroundColor: statusColor(u.status) }]} />
-                                        </View>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={[styles.userRowName, u.status === 'invisible' && { color: '#444' }]}>{u.username}</Text>
-                                            <Text style={styles.userRowStation}>{u.station}</Text>
-                                        </View>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        )}
-
-                        <View style={styles.hotelInfoBox}>
-                            <Text style={styles.hotelInfoTitle}>INFORMAZIONI HOTEL</Text>
-                            <Text style={styles.hotelInfoName}>{activeHotel ? activeHotel.name : 'Seleziona un hotel'}</Text>
-                            <Text style={styles.hotelInfoDesc}>{activeHotel ? activeHotel.desc : ''}</Text>
-                            {activeHotel && (
-                                <TouchableOpacity style={styles.contactRow}>
-                                    <Icon name="phone" size={14} color="#C9A84C" />
-                                    <Text style={styles.contactTxt}>{activeHotel.contact}</Text>
+                            <ScrollView style={{ flex: 1 }}>
+                                {/* Saved Messages Section */}
+                                <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, saved: !p.saved }))}>
+                                    <Icon name="bookmark" size={15} color="#C9A84C" />
+                                    <Text style={styles.hotelLbl}>MESSAGGI SALVATI</Text>
+                                    <Icon name={expanded.saved ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
                                 </TouchableOpacity>
-                            )}
-                        </View>
-                    </ScrollView>
+                                {expanded.saved && (
+                                    <View style={styles.savedList}>
+                                        <Text style={styles.emptyArchiveTxt}>Nessun messaggio salvato</Text>
+                                    </View>
+                                )}
 
-                    {/* External Pull Tab (Right) */}
+                                {/* Temp Chat Archive Section */}
+                                <TouchableOpacity style={styles.navHotelRow} onPress={() => {
+                                    setExpanded(p => ({ ...p, voice: !p.voice }));
+                                    if (!expanded.voice) socket.emit('get-room-archives');
+                                }}>
+                                    <Icon name="archive" size={15} color="#C9A84C" />
+                                    <Text style={styles.hotelLbl}>ARCHIVIO CHAT VOCALI</Text>
+                                    <Icon name={expanded.voice ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
+                                </TouchableOpacity>
+                                {expanded.voice && (
+                                    <View style={styles.savedList}>
+                                        {roomArchives.length > 0 ? roomArchives.map((arc, idx) => (
+                                            <TouchableOpacity key={idx} style={styles.archiveRow} onPress={() => {
+                                                socket.emit('room-chat-history', { roomId: arc.roomId });
+                                                const onHist = ({ messages }) => {
+                                                    setViewingArchive({ roomId: arc.roomId, messages });
+                                                    socket.off('room-chat-history', onHist);
+                                                };
+                                                socket.on('room-chat-history', onHist);
+                                            }}>
+                                                <View style={styles.archiveIcon}>
+                                                    <Icon name="message-square" size={12} color="#C9A84C" />
+                                                </View>
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={styles.archiveTitle}>Room #{arc.roomId}</Text>
+                                                    <Text style={styles.archiveDate}>{new Date(arc.mtime).toLocaleDateString()} {new Date(arc.mtime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        )) : (
+                                            <Text style={styles.emptyArchiveTxt}>Nessun archivio disponibile</Text>
+                                        )}
+                                    </View>
+                                )}
+
+                                {/* Team Section */}
+                                <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>
+                                    <Icon name="users" size={15} color="#C9A84C" />
+                                    <Text style={styles.hotelLbl}>TEAM — {onlineUsers.length}</Text>
+                                    <Icon name={expanded.users ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
+                                </TouchableOpacity>
+                                
+                                {expanded.users && (
+                                    <View style={styles.userList}>
+                                        {onlineUsers.map((u, i) => (
+                                            <TouchableOpacity key={i} style={styles.userRow} onPress={() => { setInfoModal(null); }}>
+                                                <View style={styles.userAvatarSmall}>
+                                                    {u.profilePic 
+                                                        ? <Image source={{ uri: u.profilePic }} style={{ width: 24, height: 24, borderRadius: 6 }} />
+                                                        : <Text style={styles.userAvatarTxtSmall}>{u.username?.[0].toUpperCase()}</Text>}
+                                                    <View style={[styles.onlineDotSmall, { backgroundColor: statusColor(u.status) }]} />
+                                                </View>
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={[styles.userRowName, u.status === 'invisible' && { color: '#444' }]}>{u.username}</Text>
+                                                    <Text style={styles.userRowStation}>{u.station}</Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                )}
+
+                                <View style={styles.hotelInfoBox}>
+                                    <Text style={styles.hotelInfoTitle}>INFORMAZIONI HOTEL</Text>
+                                    <Text style={styles.hotelInfoName}>{activeHotel ? activeHotel.name : 'Seleziona un hotel'}</Text>
+                                    <Text style={styles.hotelInfoDesc}>{activeHotel ? activeHotel.desc : ''}</Text>
+                                    {activeHotel && (
+                                        <TouchableOpacity style={styles.contactRow}>
+                                            <Icon name="phone" size={14} color="#C9A84C" />
+                                            <Text style={styles.contactTxt}>{activeHotel.contact}</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            </ScrollView>
+                        </View>
+                    </Animated.View>
+
+                    {/* Unified Rhombus Tab (Right) - Sibling and outside overflow */}
                     {!IS_MOBILE && (
-                        <TouchableOpacity 
-                            style={[styles.externalTab, styles.rightExternalTab]} 
-                            onPress={() => setRightCollapsed(!rightCollapsed)}
-                        >
-                            <Icon name={rightCollapsed ? "chevron-left" : "chevron-right"} size={14} color="#C9A84C" />
-                        </TouchableOpacity>
+                        <Animated.View style={[
+                            styles.externalTab, 
+                            styles.rightExternalTab, 
+                            { right: rightAnim, marginRight: -11 }
+                        ]}>
+                            <TouchableOpacity 
+                                onPress={() => setRightCollapsed(!rightCollapsed)}
+                                activeOpacity={0.8}
+                                style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+                            >
+                                <View style={{ transform: [{ rotate: rightRotate }] }}>
+                                    <Icon name="chevron-right" size={16} color="#C9A84C" />
+                                </View>
+                            </TouchableOpacity>
+                        </Animated.View>
                     )}
-                </Animated.View>
+                </View>
             )}
 
             {/* MODALS */}
             {renderModals()}
+            <UserProfileCard 
+                visible={profileVisible} 
+                onClose={() => setProfileVisible(false)} 
+                user={user} 
+                socket={socket} 
+                onLogout={onLogout} 
+            />
+            <MediaSettings 
+                visible={settingsVisible} 
+                onClose={() => setSettingsVisible(false)} 
+            />
         </View>
     );
 }
@@ -1177,12 +1172,12 @@ const styles = StyleSheet.create({
     column: { height: '100%', borderRightWidth: 1, borderRightColor: 'rgba(201,168,76,0.06)' },
 
     // Message context menu
-    hoverMenu: { position: 'absolute', top: -10, right: 10, backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.4)', borderRadius: 14, zIndex: 9999, elevation: 20, minWidth: 190, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.7, shadowRadius: 16 },
-    hoverEmojiBar: { flexDirection: 'row', alignItems: 'center', padding: 8, gap: 5, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.12)' },
-    hoverEmojiBtn: { width: 30, height: 30, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.07)', justifyContent: 'center', alignItems: 'center' },
-    hoverActionList: { padding: 6 },
-    hoverActionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, backgroundColor: 'transparent' },
-    hoverActionTxt: { color: '#D0C8BA', fontSize: 14, fontWeight: '600' },
+    hoverMenu: { position: 'absolute', top: -50, right: 0, backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 12, zIndex: 9999, minWidth: 200, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 20, overflow: 'hidden' },
+    hoverEmojiBar: { flexDirection: 'row', justifyContent: 'space-around', padding: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' },
+    hoverEmojiBtn: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center', borderRadius: 6 },
+    hoverActionList: { padding: 4 },
+    hoverActionItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 8 },
+    hoverActionTxt: { color: '#E8E4D8', fontSize: 13, fontWeight: '600' },
     msgCaret: { position: 'absolute', right: 4, top: 4, opacity: 0.8 },
 
     fullEmojiPicker: { 
@@ -1219,8 +1214,8 @@ const styles = StyleSheet.create({
         zIndex: 999,
         ...(Platform.OS === 'web' ? { backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)' } : {})
     },
-    leftExternalTab: { left: 260, marginLeft: -11, borderTopRightRadius: 10, borderBottomRightRadius: 10, borderLeftWidth: 0 },
-    rightExternalTab: { right: 280, marginRight: -11, borderTopLeftRadius: 10, borderBottomLeftRadius: 10, borderRightWidth: 0 },
+    leftExternalTab: { position: 'absolute', top: '40%', borderTopRightRadius: 10, borderBottomRightRadius: 10, borderLeftWidth: 0, zIndex: 1000 },
+    rightExternalTab: { position: 'absolute', top: '40%', borderTopLeftRadius: 10, borderBottomLeftRadius: 10, borderRightWidth: 0, zIndex: 1000 },
     collapseTabInternal: { width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(201,168,76,0.05)', justifyContent: 'center', alignItems: 'center' },
 
     // Sidebar
