@@ -131,10 +131,10 @@ function broadcastUsers() {
     io.emit('online-users', list);
 }
 
-// Schedule room auto-delete when empty
+// Schedule room auto-delete when empty (only for temp rooms)
 function scheduleRoomDelete(roomId) {
     const room = rooms.get(roomId);
-    if (!room) return;
+    if (!room || !room.isTemp) return; 
     if (room.deleteTimer) clearTimeout(room.deleteTimer);
     room.deleteTimer = setTimeout(() => {
         const r = rooms.get(roomId);
@@ -177,23 +177,35 @@ io.on('connection', (socket) => {
     });
 
     // ── Room Management ──────────────────────────────────────────────────────
-    socket.on('create-room', ({ isTemp = false } = {}) => {
+    socket.on('create-room', ({ hotelId } = {}) => {
         const user = users.get(socket.id);
         if (!user) return;
-        const roomId = Math.floor(1000 + Math.random() * 9000).toString();
-        rooms.set(roomId, {
-            id: roomId,
-            name: `Stanza di ${user.username}`,
-            creatorName: user.username,
-            creatorStation: user.station,
-            peers: [socket.id],
-            isTemp,
-            chatMessages: [],
-        });
-        user.roomId = roomId;
-        socket.join(roomId);
-        socket.emit('room-created', { roomId, isTemp });
-        broadcastRooms();
+        
+        // Redirect to fixed room based on hotelId or default to general
+        let roomId = 'generale-voice';
+        if (hotelId === 'duchessa') roomId = 'duchessa-voice';
+        if (hotelId === 'blumen') roomId = 'blumen-voice';
+        if (hotelId === 'santorsola') roomId = 'santorsola-voice';
+
+        const room = rooms.get(roomId);
+        if (room) {
+            // If user already in another room, leave it
+            if (user.roomId && user.roomId !== roomId) {
+                const oldRoom = rooms.get(user.roomId);
+                if (oldRoom) {
+                    oldRoom.peers = oldRoom.peers.filter(id => id !== socket.id);
+                    socket.to(user.roomId).emit('user-left-room', { socketId: socket.id });
+                    socket.leave(user.roomId);
+                }
+            }
+            
+            if (!room.peers.includes(socket.id)) room.peers.push(socket.id);
+            user.roomId = roomId;
+            socket.join(roomId);
+            socket.emit('room-joined', { roomId, peers: room.peers, isTemp: room.isTemp });
+            socket.to(roomId).emit('user-joined-room', { socketId: socket.id, username: user.username });
+            broadcastRooms();
+        }
     });
 
     socket.on('join-room', ({ roomId }) => {
