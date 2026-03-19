@@ -35,9 +35,11 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     const [remoteStreams, setRemoteStreams] = useState({}); // socketId → MediaStream
     const [micOn, setMicOn] = useState(true);
     const [camOn, setCamOn] = useState(true);
+    const [deafenOn, setDeafenOn] = useState(false); // Discord-style deafen
     const [handRaised, setHandRaised] = useState(false);
     const [screenSharing, setScreenSharing] = useState(false);
     const screenStreamRef = useRef(null);
+    const [remoteStates, setRemoteStates] = useState({}); // socketId → { micOn, camOn, deafenOn }
 
     // Chat
     const [chatVisible, setChatVisible] = useState(false);
@@ -151,6 +153,10 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2500);
         };
 
+        const onMediaState = ({ socketId, ...state }) => {
+            setRemoteStates(prev => ({ ...prev, [socketId]: { ...prev[socketId], ...state } }));
+        };
+
         socket.on('user-joined-room', onUserJoined);
         socket.on('offer', onOffer);
         socket.on('answer', onAnswer);
@@ -158,6 +164,10 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         socket.on('user-left-room', onUserLeft);
         socket.on('chat-message', onChatMsg);
         socket.on('emoji-reaction', onEmojiReaction);
+        socket.on('media-state-change', onMediaState);
+
+        // Sync initial state
+        socket.emit('media-state-change', { micOn, camOn, deafenOn });
 
         return () => {
             socket.off('user-joined-room', onUserJoined);
@@ -167,6 +177,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             socket.off('user-left-room', onUserLeft);
             socket.off('chat-message', onChatMsg);
             socket.off('emoji-reaction', onEmojiReaction);
+            socket.off('media-state-change', onMediaState);
             socket.off('room-chat-history');
             stopLocalStream();
             // Close all peer connections
@@ -175,16 +186,22 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         };
     }, [socket, roomId]);
 
-    // ── Browser Picture-in-Picture on tab hide ─────────────────────────
+    // ── Browser Picture-in-Picture logic ─────────────────────────
     useEffect(() => {
-        if (Platform.OS !== 'web' || isPiP) return;
+        if (Platform.OS !== 'web') return;
 
-        // Create a hidden video element that carries the stream for PiP
+        // Automatically EXIT PiP when we are expanding back to full screen
+        if (!isPiP && document.pictureInPictureElement) {
+            document.exitPictureInPicture().catch(() => {});
+        }
+
+        if (isPiP) return; // Don't setup the hide listener if already in PiP
+
         const videoEl = document.createElement('video');
         videoEl.autoplay = true;
         videoEl.muted = true;
         videoEl.playsInline = true;
-        videoEl.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
+        videoEl.style.cssText = 'position:fixed;left:-9999px;opacity:0;';
         document.body.appendChild(videoEl);
         pipVideoRef.current = videoEl;
 
@@ -192,41 +209,48 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             if (!('pictureInPictureEnabled' in document)) return;
             try {
                 if (document.hidden) {
-                    // Grab the best available stream: prefer remote, fall back to local
                     const remoteKeys = Object.keys(remoteStreams);
-                    const stream = remoteKeys.length > 0
-                        ? remoteStreams[remoteKeys[0]]
-                        : localStreamRef.current;
+                    const stream = remoteKeys.length > 0 ? remoteStreams[remoteKeys[0]] : localStreamRef.current;
                     if (stream) {
                         videoEl.srcObject = stream;
-                        await videoEl.play().catch(() => {});
-                        await videoEl.requestPictureInPicture().catch(() => {});
+                        await videoEl.play();
+                        await videoEl.requestPictureInPicture();
                     }
-                } else if (document.pictureInPictureElement) {
-                    await document.exitPictureInPicture().catch(() => {});
                 }
-            } catch (e) { /* PiP may not be supported or allowed */ }
+            } catch (e) { console.warn('PiP auto-trigger failed', e); }
         };
 
         document.addEventListener('visibilitychange', onVisibilityChange);
         return () => {
             document.removeEventListener('visibilitychange', onVisibilityChange);
-            if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
             if (videoEl.parentNode) videoEl.parentNode.removeChild(videoEl);
         };
     }, [remoteStreams, isPiP]);
 
     const startLocalStream = async (audioDeviceId, videoDeviceId) => {
         try {
+            // Use ideal instead of exact to avoid rejection if browser/device is picky
             const constraints = {
-                audio: audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true,
-                video: videoDeviceId ? { deviceId: { exact: videoDeviceId }, width: 1280, height: 720 } : { width: 1280, height: 720 },
+                audio: audioDeviceId ? { deviceId: { ideal: audioDeviceId } } : true,
+                video: videoDeviceId ? { deviceId: { ideal: videoDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } : { width: { ideal: 1280 }, height: { ideal: 720 } },
             };
             const stream = await mediaDevices.getUserMedia(constraints);
             localStreamRef.current = stream;
             setLocalStream(stream);
+            // Re-sync media states
+            socket.emit('media-state-change', { micOn, camOn, deafenOn });
             return stream;
-        } catch (e) { console.error('Local stream failed', e); }
+        } catch (e) { 
+            console.error('Local stream failed', e);
+            // Fallback to audio only or video only if possible
+            try {
+                const fallback = await mediaDevices.getUserMedia({ audio: true, video: false });
+                localStreamRef.current = fallback;
+                setLocalStream(fallback);
+                setCamOn(false);
+                return fallback;
+            } catch (e2) {}
+        }
     };
 
     const stopLocalStream = () => {
@@ -258,15 +282,30 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     const toggleMic = () => {
         if (localStreamRef.current) {
             const t = localStreamRef.current.getAudioTracks()[0];
-            if (t) { t.enabled = !t.enabled; setMicOn(t.enabled); }
+            if (t) { 
+                t.enabled = !t.enabled; 
+                setMicOn(t.enabled);
+                socket.emit('media-state-change', { micOn: t.enabled });
+            }
         }
     };
 
     const toggleCam = () => {
         if (localStreamRef.current) {
             const t = localStreamRef.current.getVideoTracks()[0];
-            if (t) { t.enabled = !t.enabled; setCamOn(t.enabled); }
+            if (t) { 
+                t.enabled = !t.enabled; 
+                setCamOn(t.enabled);
+                socket.emit('media-state-change', { camOn: t.enabled });
+            }
         }
+    };
+
+    const toggleDeafen = () => {
+        const next = !deafenOn;
+        setDeafenOn(next);
+        if (next) setMicOn(false); // Discord style: deafening mutes you
+        socket.emit('media-state-change', { deafenOn: next, micOn: !next && micOn });
     };
 
     const toggleHandRaise = () => {
@@ -364,14 +403,17 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     };
 
     const hangUp = async () => {
+        // Exit PiP if active
+        if (Platform.OS === 'web' && document.pictureInPictureElement) {
+            document.exitPictureInPicture().catch(() => {});
+        }
         // Play disconnect sound
         try {
             const audio = new window.Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
-            audio.volume = 0.6;
+            audio.volume = 0.5;
             audio.play().catch(() => {});
-            // Wait a moment for sound to start before closing
-            await new Promise(r => setTimeout(r, 300));
-        } catch (e) { /* no sound on non-web */ }
+            await new Promise(r => setTimeout(r, 200));
+        } catch (e) {}
         socket?.emit('leave-room');
         onClose();
     };
@@ -473,13 +515,12 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 )}
             </View>
 
-            {/* Main content: video + optional chat */}
+            {/* Main content: Grid */}
             <View style={styles.mainContent}>
-                {/* Video Grid */}
                 <View style={styles.videoArea}>
-                    <View style={styles.videoGrid}>
-                        {/* Local video */}
-                        <View style={[styles.tile, remoteEntries.length > 0 ? styles.tileSide : styles.tileCenter]}>
+                    <ScrollView contentContainerStyle={styles.videoGrid} scrollEnabled={!IS_MOBILE}>
+                        {/* Local video Tile */}
+                        <View style={[styles.tile, remoteEntries.length === 0 ? styles.tileLarge : styles.tileMedium]}>
                             {camOn && localStream ? (
                                 <RTCView
                                     streamURL={localStream.toURL ? localStream.toURL() : localStream}
@@ -490,154 +531,103 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                 />
                             ) : (
                                 <View style={styles.avatarTile}>
-                                    <Text style={styles.avatarTxt}>{(user.username || '?')[0].toUpperCase()}</Text>
+                                    <View style={styles.avatarCircleLarge}>
+                                        <Text style={styles.avatarTxtLarge}>{(user.username || '?')[0].toUpperCase()}</Text>
+                                    </View>
                                 </View>
                             )}
-                            <View style={styles.nameOverlay}>
-                                <Text style={styles.nameTxt}>Tu {!micOn && '🔇'}</Text>
+                            
+                            {/* Discord-style Participant Overlay */}
+                            <View style={styles.participantOverlay}>
+                                <Text style={styles.participantName}>Tu</Text>
+                                <View style={styles.participantIcons}>
+                                    {!micOn && <Icon name="mic-off-filled" size={12} color="#ED4245" />}
+                                    {deafenOn && <Icon name="speaker-off" size={12} color="#ED4245" />}
+                                </View>
                             </View>
                         </View>
 
-                        {/* Remote videos */}
-                        {remoteEntries.map(([sid, stream]) => (
-                            <View key={sid} style={[styles.tile, styles.tileSide]}>
-                                <RTCView
-                                    streamURL={stream.toURL ? stream.toURL() : stream}
-                                    style={styles.rtc}
-                                    objectFit="cover"
-                                />
-                                <View style={styles.nameOverlay}>
-                                    <Text style={styles.nameTxt}>{remoteUsernames[sid] || 'Partecipante'}</Text>
-                                </View>
-                            </View>
-                        ))}
-
-                        {/* Screen Share Tile */}
-                        {screenSharing && Platform.OS === 'web' && (() => {
-                            // Imperatively attach screenStream to a <video> element
-                            const ScreenTile = () => {
-                                const vRef = useRef(null);
-                                useEffect(() => {
-                                    if (vRef.current && screenStreamRef.current) {
-                                        vRef.current.srcObject = screenStreamRef.current;
-                                        vRef.current.play().catch(() => {});
-                                    }
-                                }, []);
-                                return (
-                                    <View style={[styles.tile, styles.tileScreen]}>
-                                        {/* eslint-disable-next-line react/no-unknown-property */}
-                                        <video
-                                            ref={vRef}
-                                            autoPlay
-                                            muted
-                                            playsInline
-                                            style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 12 }}
+                        {/* Remote participants */}
+                        {remoteEntries.map(([sid, stream]) => {
+                            const rState = remoteStates[sid] || { micOn: true, camOn: true, deafenOn: false };
+                            return (
+                                <View key={sid} style={[styles.tile, styles.tileMedium]}>
+                                    {rState.camOn ? (
+                                        <RTCView
+                                            streamURL={stream.toURL ? stream.toURL() : stream}
+                                            style={styles.rtc}
+                                            objectFit="cover"
+                                            muted={deafenOn} // Mute if I am deafened
                                         />
-                                        
-                                        {/* Discord-style Patina Overlay */}
-                                        <View style={styles.screenSharePatina}>
-                                            <View style={styles.screenShareCenterBox}>
-                                                <View style={styles.screenShareIconCircle}>
-                                                    <Icon name="screen-share" size={32} color="#C9A84C" />
-                                                </View>
-                                                <Text style={styles.screenShareMainTxt}>Stai condividendo lo schermo</Text>
-                                                <Text style={styles.screenShareSubTxt}>I partecipanti vedono il tuo schermo in tempo reale</Text>
-                                                
-                                                <TouchableOpacity style={styles.screenShareCentralBtn} onPress={toggleScreenShare}>
-                                                    <Icon name="stop-circle" size={18} color="#fff" />
-                                                    <Text style={styles.screenShareStopTxt}>Interrompi condivisione</Text>
-                                                </TouchableOpacity>
+                                    ) : (
+                                        <View style={styles.avatarTile}>
+                                            <View style={styles.avatarCircle}>
+                                                <Text style={styles.avatarTxt}>{remoteUsernames[sid]?.[0]?.toUpperCase() || '?'}</Text>
                                             </View>
                                         </View>
+                                    )}
+                                    <View style={styles.participantOverlay}>
+                                        <Text style={styles.participantName}>{remoteUsernames[sid] || 'Partecipante'}</Text>
+                                        <View style={styles.participantIcons}>
+                                            {!rState.micOn && <Icon name="mic-off-filled" size={12} color="#ED4245" />}
+                                            {rState.deafenOn && <Icon name="speaker-off" size={12} color="#ED4245" />}
+                                        </View>
                                     </View>
-                                );
-                            };
-                            return <ScreenTile key="screen-tile" />;
-                        })()}
-                    </View>
+                                </View>
+                            );
+                        })}
 
-                    {/* Controls */}
+                        {/* Screen Share Tile */}
+                        {screenSharing && Platform.OS === 'web' && (
+                            <View style={[styles.tile, styles.tileFull]}>
+                                <ScreenSharePlaceholder toggle={toggleScreenShare} />
+                            </View>
+                        )}
+                    </ScrollView>
+
+                    {/* Controls Bar - Expanded with Deafen */}
                     <View style={styles.controls}>
-                        {/* Mic with device selector */}
-                        <View style={{ position: 'relative' }}>
+                        <View style={styles.controlGroup}>
                             <View style={[styles.ctrlPill, !micOn && styles.ctrlPillOff]}>
                                 <TouchableOpacity style={styles.ctrlPillMain} onPress={toggleMic}>
                                     <Icon name={micOn ? 'mic-filled' : 'mic-off-filled'} size={20} color={micOn ? '#C8C4B8' : '#ED4245'} />
                                 </TouchableOpacity>
                                 <View style={styles.ctrlDivider} />
-                                <TouchableOpacity style={styles.ctrlPillArrow} onPress={() => { setShowMicDevices(!showMicDevices); setShowCamDevices(false); }}>
-                                    <Icon name="arrow-down" size={12} color={micOn ? '#C8C4B8' : '#ED4245'} />
+                                <TouchableOpacity style={styles.ctrlPillArrow} onPress={() => setShowMicDevices(!showMicDevices)}>
+                                    <Icon name="arrow-down" size={10} color={micOn ? '#C8C4B8' : '#ED4245'} />
                                 </TouchableOpacity>
                             </View>
-                            {showMicDevices && (
-                                <View style={styles.deviceDropdown}>
-                                    <Text style={styles.deviceDropdownTitle}>MICROFONO</Text>
-                                    {devices.audio.map((d, i) => (
-                                        <TouchableOpacity key={i} style={[styles.deviceOpt, selectedMic === d.deviceId && styles.deviceOptActive]}
-                                            onPress={() => switchMicDevice(d.deviceId)}>
-                                            <Text style={styles.deviceOptTxt}>{d.label || `Microfono ${i + 1}`}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            )}
-                        </View>
 
-                        {/* Camera with device selector */}
-                        <View style={{ position: 'relative' }}>
+                            <TouchableOpacity style={[styles.ctrlBtn, deafenOn && styles.ctrlBtnOff]} onPress={toggleDeafen}>
+                                <Icon name={deafenOn ? 'speaker-off' : 'speaker'} size={20} color={deafenOn ? '#ED4245' : '#C8C4B8'} />
+                            </TouchableOpacity>
+
                             <View style={[styles.ctrlPill, !camOn && styles.ctrlPillOff]}>
                                 <TouchableOpacity style={styles.ctrlPillMain} onPress={toggleCam}>
                                     <Icon name={camOn ? 'video-filled' : 'video-off-filled'} size={20} color={camOn ? '#C8C4B8' : '#ED4245'} />
                                 </TouchableOpacity>
                                 <View style={styles.ctrlDivider} />
-                                <TouchableOpacity style={styles.ctrlPillArrow} onPress={() => { setShowCamDevices(!showCamDevices); setShowMicDevices(false); }}>
-                                    <Icon name="arrow-down" size={12} color={camOn ? '#C8C4B8' : '#ED4245'} />
+                                <TouchableOpacity style={styles.ctrlPillArrow} onPress={() => setShowCamDevices(!showCamDevices)}>
+                                    <Icon name="arrow-down" size={10} color={camOn ? '#C8C4B8' : '#ED4245'} />
                                 </TouchableOpacity>
                             </View>
-                            {showCamDevices && (
-                                <View style={styles.deviceDropdown}>
-                                    <Text style={styles.deviceDropdownTitle}>VIDEOCAMERA</Text>
-                                    {devices.video.map((d, i) => (
-                                        <TouchableOpacity key={i} style={[styles.deviceOpt, selectedCam === d.deviceId && styles.deviceOptActive]}
-                                            onPress={() => switchCamDevice(d.deviceId)}>
-                                            <Text style={styles.deviceOptTxt}>{d.label || `Camera ${i + 1}`}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            )}
                         </View>
 
-                        {/* Screen Share */}
-                        <TouchableOpacity style={[styles.ctrlBtn, screenSharing && styles.ctrlBtnActive]} onPress={toggleScreenShare}>
-                            <Icon name="screen-share" size={20} color={screenSharing ? '#C9A84C' : '#C8C4B8'} />
-                        </TouchableOpacity>
-
-                        {/* Reactions */}
-                        <View style={{ position: 'relative' }}>
+                        <View style={styles.controlGroup}>
+                            <TouchableOpacity style={[styles.ctrlBtn, screenSharing && styles.ctrlBtnActive]} onPress={toggleScreenShare}>
+                                <Icon name="screen-share" size={20} color={screenSharing ? '#C9A84C' : '#C8C4B8'} />
+                            </TouchableOpacity>
                             <TouchableOpacity style={[styles.ctrlBtn, showReactions && styles.ctrlBtnActive]} onPress={() => setShowReactions(!showReactions)}>
                                 <Icon name="happy" size={20} color={showReactions ? '#C9A84C' : '#C8C4B8'} />
                             </TouchableOpacity>
-                            {showReactions && (
-                                <View style={styles.reactionPicker}>
-                                    {EMOJI_REACTIONS.map((e, i) => (
-                                        <TouchableOpacity key={i} style={styles.reactionBtn} onPress={() => sendReaction(e)}>
-                                            <Text style={{ fontSize: 20 }}>{e}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            )}
+                            <TouchableOpacity style={styles.ctrlBtn} onPress={toggleHandRaise}>
+                                <Icon name={handRaised ? 'hand-raised' : 'hand'} size={20} color={handRaised ? '#C9A84C' : '#C8C4B8'} />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.ctrlBtn, chatVisible && styles.ctrlBtnActive]} onPress={() => setChatVisible(!chatVisible)}>
+                                <Icon name="message-square" size={20} color={chatVisible ? '#C9A84C' : '#C8C4B8'} />
+                            </TouchableOpacity>
                         </View>
 
-                        {/* Hand Raise */}
-                        <TouchableOpacity style={[styles.ctrlBtn, handRaised && styles.ctrlBtnActive]} onPress={toggleHandRaise}>
-                            <Icon name={handRaised ? 'hand-raised' : 'hand'} size={20} color={handRaised ? '#C9A84C' : '#C8C4B8'} />
-                        </TouchableOpacity>
-
-                        {/* Chat toggle */}
-                        <TouchableOpacity style={[styles.ctrlBtn, chatVisible && styles.ctrlBtnActive]} onPress={() => setChatVisible(!chatVisible)}>
-                            <Icon name="message-square" size={20} color={chatVisible ? '#C9A84C' : '#C8C4B8'} />
-                        </TouchableOpacity>
-
-                        {/* Hang up */}
                         <TouchableOpacity style={styles.hangupBtn} onPress={hangUp}>
                             <Icon name="phone-off" size={22} color="#FFF" />
                         </TouchableOpacity>
@@ -691,14 +681,29 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     );
 }
 
+const ScreenSharePlaceholder = ({ toggle }) => (
+    <View style={styles.screenSharePatina}>
+        <View style={styles.screenShareCenterBox}>
+            <View style={styles.screenShareIconCircle}>
+                <Icon name="screen-share" size={32} color="#C9A84C" />
+            </View>
+            <Text style={styles.screenShareMainTxt}>Stai condividendo lo schermo</Text>
+            <Text style={styles.screenShareSubTxt}>I partecipanti vedono il tuo schermo in tempo reale</Text>
+            <TouchableOpacity style={styles.screenShareCentralBtn} onPress={toggle}>
+                <Icon name="stop-circle" size={18} color="#fff" />
+                <Text style={styles.screenShareStopTxt}>Interrompi condivisione</Text>
+            </TouchableOpacity>
+        </View>
+    </View>
+);
+
 const styles = StyleSheet.create({
-    root: { flex: 1, position: 'relative' },
+    root: { flex: 1, position: 'relative', backgroundColor: '#0C0B09' },
 
     // Loading
     loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 20 },
     loadingLogo: { width: 80, height: 80 },
     spinner: { width: 60, height: 60, borderRadius: 30, borderWidth: 3, borderColor: 'transparent', borderTopColor: '#C9A84C', borderRightColor: 'rgba(201,168,76,0.3)' },
-    spinnerArc: {},
     loadingText: { color: '#554E40', fontSize: 14, fontWeight: '600', letterSpacing: 1 },
 
     // Header
@@ -711,94 +716,103 @@ const styles = StyleSheet.create({
     handIndicator: { backgroundColor: 'rgba(201,168,76,0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
 
     // Main layout
-    mainContent: { flex: 1, flexDirection: 'column' },
-    videoArea: { flex: 1, justifyContent: 'center' },
-    videoGrid: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 12, padding: 16 },
-    tile: { backgroundColor: '#0A0908', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)', position: 'relative', elevation: 10 },
-    tileCenter: { width: '70%', aspectRatio: 16 / 9, maxWidth: 800 },
-    tileSide: { width: '45%', aspectRatio: 16 / 9, maxWidth: 600 },
-    tileScreen: { width: '100%', aspectRatio: 16 / 9, maxWidth: 1000, borderColor: 'rgba(201,168,76,0.3)', borderWidth: 2, marginBottom: 10 },
+    mainContent: { flex: 1 },
+    videoArea: { flex: 1, justifyContent: 'space-between' },
+    videoGrid: { 
+        padding: 16, 
+        flexDirection: 'row', 
+        flexWrap: 'wrap', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        gap: 12 
+    },
+    
+    // Tiles (Discord style)
+    tile: { 
+        backgroundColor: '#050505', 
+        borderRadius: 16, 
+        overflow: 'hidden', 
+        borderWidth: 1, 
+        borderColor: 'rgba(255,255,255,0.05)',
+        position: 'relative',
+        shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 10, elevation: 5
+    },
+    tileLarge: { width: '80%', aspectRatio: 16/9, maxWidth: 900 },
+    tileMedium: { width: '45%', aspectRatio: 16/9, maxWidth: 450 },
+    tileFull: { width: '100%', aspectRatio: 16/9, maxWidth: 1000 },
+    
     rtc: { flex: 1 },
-    screenSharePatina: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(12,11,9,0.88)', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
-    screenShareCenterBox: { alignItems: 'center', gap: 14 },
-    screenShareIconCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(201,168,76,0.08)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' },
-    screenShareMainTxt: { color: '#E8E4D8', fontSize: 20, fontWeight: '900', letterSpacing: 0.5 },
-    screenShareSubTxt: { color: '#6E6960', fontSize: 13, textAlign: 'center', maxWidth: 350, lineHeight: 18 },
-    screenShareCentralBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#ED4245', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 10, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-    screenShareStopTxt: { color: '#fff', fontSize: 14, fontWeight: '800' },
-    avatarTile: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1A1812' },
-    avatarTxt: { color: '#C9A84C', fontSize: 44, fontWeight: '800' },
-    nameOverlay: { position: 'absolute', bottom: 10, left: 10, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 6 },
-    nameTxt: { color: '#C8C4B8', fontSize: 11, fontWeight: '600' },
+    
+    avatarTile: { flex: 1, backgroundColor: '#141210', justifyContent: 'center', alignItems: 'center' },
+    avatarCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#1C1A16', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(201,168,76,0.2)' },
+    avatarCircleLarge: { width: 120, height: 120, borderRadius: 60, backgroundColor: '#1C1A16', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(201,168,76,0.2)' },
+    avatarTxt: { color: '#C9A84C', fontSize: 32, fontWeight: '800' },
+    avatarTxtLarge: { color: '#C9A84C', fontSize: 48, fontWeight: '800' },
+
+    // Discord-style Overlay
+    participantOverlay: {
+        position: 'absolute', bottom: 12, left: 12, right: 12,
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingHorizontal: 8, paddingVertical: 4, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 6
+    },
+    participantName: { color: '#E8E4D8', fontSize: 12, fontWeight: '700' },
+    participantIcons: { flexDirection: 'row', gap: 6 },
 
     // Controls
-    controls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, paddingVertical: 12, paddingBottom: 8, flexWrap: 'wrap' },
-
-    // Discord-style pill buttons for mic/cam
+    controls: { 
+        flexDirection: 'row', justifyContent: 'center', alignItems: 'center', 
+        gap: 16, paddingVertical: 24, backgroundColor: 'rgba(12,11,9,0.95)',
+        borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)'
+    },
+    controlGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    
     ctrlPill: {
-        flexDirection: 'row', alignItems: 'center', height: 44, borderRadius: 22,
-        backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)', overflow: 'hidden',
+        flexDirection: 'row', alignItems: 'center', height: 46, borderRadius: 12,
+        backgroundColor: '#2B2D31', overflow: 'hidden', borderWidth: 1, borderColor: '#3F4147'
     },
-    ctrlPillOff: { backgroundColor: 'rgba(237,66,69,0.1)', borderColor: '#ED4245' },
-    ctrlPillMain: { paddingHorizontal: 14, height: '100%', justifyContent: 'center', alignItems: 'center' },
-    ctrlDivider: { width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.08)' },
-    ctrlPillArrow: { paddingHorizontal: 8, height: '100%', justifyContent: 'center', alignItems: 'center' },
+    ctrlPillOff: { backgroundColor: '#ED4245', borderColor: '#ED4245' },
+    ctrlPillMain: { paddingHorizontal: 14, height: '100%', justifyContent: 'center' },
+    ctrlDivider: { width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.1)' },
+    ctrlPillArrow: { paddingHorizontal: 8, height: '100%', justifyContent: 'center' },
 
-    // Simple round button
-    ctrlBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1C1A12', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
+    ctrlBtn: { 
+        width: 46, height: 46, borderRadius: 12, backgroundColor: '#2B2D31', 
+        justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#3F4147'
+    },
     ctrlBtnActive: { backgroundColor: 'rgba(201,168,76,0.1)', borderColor: '#C9A84C' },
-    hangupBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#ED4245', justifyContent: 'center', alignItems: 'center', shadowColor: '#ED4245', shadowOpacity: 0.4, shadowRadius: 10 },
-
-    // Device dropdown
-    deviceDropdown: {
-        position: 'absolute', bottom: 54, left: 0, minWidth: 220,
-        backgroundColor: '#16140F', borderRadius: 12, borderWidth: 1,
-        borderColor: 'rgba(201,168,76,0.2)', padding: 8, zIndex: 200,
-        shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 20,
+    ctrlBtnOff: { backgroundColor: '#ED4245', borderColor: '#ED4245' },
+    
+    hangupBtn: { 
+        width: 64, height: 46, borderRadius: 12, backgroundColor: '#ED4245', 
+        justifyContent: 'center', alignItems: 'center', shadowColor: '#ED4245', shadowOpacity: 0.4, shadowRadius: 10 
     },
-    deviceDropdownTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1, paddingHorizontal: 8, paddingVertical: 4 },
-    deviceOpt: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
-    deviceOptActive: { backgroundColor: 'rgba(201,168,76,0.1)' },
-    deviceOptTxt: { color: '#C8C4B8', fontSize: 12, fontWeight: '500' },
 
-    // Reaction picker
-    reactionPicker: {
-        position: 'absolute', bottom: 54, left: -80,
-        flexDirection: 'row', flexWrap: 'wrap', gap: 4,
-        backgroundColor: '#16140F', borderRadius: 12, borderWidth: 1,
-        borderColor: 'rgba(201,168,76,0.2)', padding: 8, width: 200, zIndex: 200,
-    },
-    reactionBtn: { width: 40, height: 40, borderRadius: 8, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)' },
+    // Screen Share Overlay
+    screenSharePatina: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(12,11,9,0.9)', justifyContent: 'center', alignItems: 'center' },
+    screenShareCenterBox: { alignItems: 'center', gap: 12 },
+    screenShareIconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(201,168,76,0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#C9A84C' },
+    screenShareMainTxt: { color: '#fff', fontSize: 18, fontWeight: '800' },
+    screenShareSubTxt: { color: '#6E6960', fontSize: 12, textAlign: 'center', paddingHorizontal: 20 },
+    screenShareCentralBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#ED4245', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+    screenShareStopTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-    // Floating reactions
-    floatingEmoji: { position: 'absolute', bottom: 100, right: 20, fontSize: 32, zIndex: 1000 },
-
-    // Chat panel
-    chatPanel: {
-        height: 250, borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.08)',
-        backgroundColor: 'rgba(14,13,12,0.95)',
-    },
-    chatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.05)' },
-    chatTitle: { color: '#554E40', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
-    chatScroll: { flex: 1, padding: 10 },
-    chatInfo: { color: '#3A3630', fontSize: 11, textAlign: 'center', marginBottom: 8 },
-    chatMsg: { marginBottom: 6, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 10, alignSelf: 'flex-start', maxWidth: '80%' },
-    chatMsgMine: { alignSelf: 'flex-end', backgroundColor: 'rgba(201,168,76,0.1)' },
-    chatMsgSender: { color: '#C9A84C', fontSize: 10, fontWeight: '700', marginBottom: 2 },
-    chatMsgText: { color: '#C8C4B8', fontSize: 13 },
-    chatInputRow: { flexDirection: 'row', alignItems: 'center', padding: 8, gap: 8, borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.05)' },
-    chatInput: { flex: 1, backgroundColor: '#1A1812', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, color: '#C8C4B8', fontSize: 13, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
-    chatSendBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#C9A84C', justifyContent: 'center', alignItems: 'center' },
-
-    // PiP mode
-    pipRoot: { flex: 1, borderRadius: 14, overflow: 'hidden' },
+    // PIP
+    pipRoot: { flex: 1, backgroundColor: '#000' },
     pipVideoArea: { flex: 1 },
-    pipControls: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-        paddingVertical: 8, backgroundColor: 'rgba(14,13,12,0.95)',
-    },
-    pipCtrl: {
-        width: 30, height: 30, borderRadius: 15,
-        backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center',
-    },
+    pipControls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 4, gap: 8, position: 'absolute', bottom: 4, left: 0, right: 0 },
+    pipCtrl: { width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+
+    // Chat
+    chatPanel: { width: '100%', height: 250, backgroundColor: 'rgba(20,18,16,0.98)', borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.2)' },
+    chatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, height: 40, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+    chatTitle: { color: '#C9A84C', fontWeight: '800', fontSize: 11, letterSpacing: 1 },
+    chatScroll: { flex: 1, padding: 12 },
+    chatInfo: { color: '#554E40', fontSize: 10, fontStyle: 'italic', marginBottom: 12, textAlign: 'center' },
+    chatMsg: { marginBottom: 10, padding: 8, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 8, alignSelf: 'flex-start', maxWidth: '85%' },
+    chatMsgMine: { alignSelf: 'flex-end', backgroundColor: 'rgba(201,168,76,0.1)' },
+    chatMsgSender: { color: '#C9A84C', fontSize: 11, fontWeight: '800', marginBottom: 2 },
+    chatMsgText: { color: '#C8C4B8', fontSize: 14 },
+    chatInputRow: { flexDirection: 'row', padding: 10, gap: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
+    chatInput: { flex: 1, backgroundColor: '#1C1A12', borderRadius: 8, paddingHorizontal: 12, height: 36, color: '#C8C4B8' },
+    chatSendBtn: { width: 36, height: 36, borderRadius: 8, backgroundColor: '#C9A84C', justifyContent: 'center', alignItems: 'center' },
 });
