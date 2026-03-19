@@ -359,10 +359,10 @@ export default function App() {
 const styles = StyleSheet.create({
   root: { 
     flex: 1, 
-    backgroundColor: 'rgba(12, 11, 9, 0.4)',
+    backgroundColor: '#0C0B09',
     ...(Platform.OS === 'web' ? { backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' } : {})
   },
-  content: { flex: 1, flexDirection: 'row', position: 'relative' },
+  content: { flex: 1, flexDirection: 'row', position: 'relative', backgroundColor: '#0C0B09' },
 
   chatPane: { flex: 1 },
   chatPaneShrunk: {
