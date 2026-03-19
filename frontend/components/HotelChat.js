@@ -711,7 +711,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             const ids = ['duchessa-voice', 'blumen-voice', 'santorsola-voice', 'generale-voice'];
                             const rid = ids[idx];
                             const room = activeRooms.find(r => r.id === rid);
-                            const isActive = currentRoom === rid;
+                            const isActive = currentRoomId === rid;
 
                             return (
                                 <TouchableOpacity 

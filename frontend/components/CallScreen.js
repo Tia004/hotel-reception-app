@@ -1,14 +1,3 @@
-/**
- * CallScreen.js — v2.7.2
- * Complete redesign:
- * - Local video muted (no echo)
- * - Multi-peer connections via Map
- * - Loading animation with GSA logo
- * - Chat panel below video
- * - Device selector dropdowns (Discord-style pill buttons)
- * - Reactions, Hand Raise, Screen Share
- * - No X close button (leave via hangup only)
- */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput,
@@ -634,7 +623,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                 placeholder="Scrivi un messaggio..."
                                 placeholderTextColor="#554E40"
                                 value={chatDraft}
-                                onChangeText={setDraft}
+                                onChangeText={setChatDraft}
                                 {...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})}
                                 onKeyPress={(e) => {
                                     if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
