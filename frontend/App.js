@@ -249,7 +249,13 @@ export default function App() {
               sidebarVisible={sidebarVisible}
               onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
               availableRooms={availableRooms}
-              onJoinRoom={(roomId) => socketRef.current?.emit('join-room', { roomId })}
+              onJoinRoom={(roomId) => {
+                socketRef.current?.emit('join-room', { roomId });
+                setCurrentRoom(roomId);
+                setIsTemp(false);
+                setCallPiP(false);
+                if (IS_MOBILE) setMobileView('call');
+              }}
               onLogout={handleLogout}
               inCall={inCall}
               hideChatColumn={false}
@@ -305,7 +311,13 @@ export default function App() {
             sidebarVisible={sidebarVisible}
             onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
             availableRooms={availableRooms}
-            onJoinRoom={(roomId) => socketRef.current?.emit('join-room', { roomId })}
+            onJoinRoom={(roomId) => {
+              socketRef.current?.emit('join-room', { roomId });
+              setCurrentRoom(roomId);
+              setIsTemp(false);
+              setCallPiP(false);
+              if (IS_MOBILE) setMobileView('call');
+            }}
             onLogout={handleLogout}
             inCall={inCall}
             hideChatColumn={showCallFull}

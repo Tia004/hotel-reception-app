@@ -687,7 +687,6 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                             <TouchableOpacity 
                                                 style={[styles.chRow, isHotelActive && styles.chRowActive]}
                                                 onPress={() => {
-                                                    setActiveHotel(h);
                                                     setActiveChannel(h.channels[0]);
                                                 }}
                                             >
@@ -702,9 +701,12 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                     style={[styles.chRow, { paddingLeft: 36, paddingVertical: 8 }, activeChannel?.id === ch.id && { backgroundColor: 'rgba(201,168,76,0.05)' }]}
                                                     onPress={() => setActiveChannel(ch)}
                                                 >
-                                                    <Text style={[styles.chName, { fontSize: 13, color: activeChannel?.id === ch.id ? '#C9A84C' : '#6E6960' }]}>
-                                                        {ch.name === 'Generale' ? '# ' : ch.name === 'Media' ? '🖼️ ' : '📢 '} {ch.name}
-                                                    </Text>
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                        <Icon name={ch.name.toLowerCase() === 'generale' ? 'hash' : ch.name.toLowerCase() === 'media' ? 'image' : 'bell'} size={14} color={activeChannel?.id === ch.id ? '#C9A84C' : '#6E6960'} />
+                                                        <Text style={[styles.chName, { fontSize: 13, marginLeft: 6, color: activeChannel?.id === ch.id ? '#C9A84C' : '#6E6960' }]}>
+                                                            {ch.name}
+                                                        </Text>
+                                                    </View>
                                                 </TouchableOpacity>
                                             ))}
                                         </View>
@@ -773,7 +775,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                         <Animated.View style={[
                             styles.externalTab, 
                             styles.leftExternalTab, 
-                            { left: leftAnim, marginLeft: -11 } 
+                            { left: '100%', marginLeft: -1 } 
                         ]}>
                             <TouchableOpacity 
                                 onPress={() => setLeftCollapsed(!leftCollapsed)}
@@ -1153,7 +1155,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                         <Animated.View style={[
                             styles.externalTab, 
                             styles.rightExternalTab, 
-                            { right: rightAnim, marginRight: -11 }
+                            { right: '100%', marginRight: -1 }
                         ]}>
                             <TouchableOpacity 
                                 onPress={() => setRightCollapsed(!rightCollapsed)}
@@ -1234,8 +1236,8 @@ const styles = StyleSheet.create({
         zIndex: 999,
         ...(Platform.OS === 'web' ? { backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)' } : {})
     },
-    leftExternalTab: { position: 'absolute', top: '45%', left: 0, borderTopRightRadius: 14, borderBottomRightRadius: 14, borderLeftWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' },
-    rightExternalTab: { position: 'absolute', top: '45%', right: 0, borderTopLeftRadius: 14, borderBottomLeftRadius: 14, borderRightWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: -4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)' },
+    leftExternalTab: { position: 'absolute', top: '45%', borderTopRightRadius: 14, borderBottomRightRadius: 14, borderLeftWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
+    rightExternalTab: { position: 'absolute', top: '45%', borderTopLeftRadius: 14, borderBottomLeftRadius: 14, borderRightWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: -4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
     collapseTabInternal: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
 
     // Sidebar
