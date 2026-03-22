@@ -12,64 +12,6 @@ const USERS = {
     'mobile_lobby': { password: 'password123', role: 'Telefono Hall' }
 };
 
-// Vanta.js Clouds Background — loads THREE.js + Vanta via CDN
-const VantaClouds = () => {
-    const vantaRef = useRef(null);
-    const vantaEffect = useRef(null);
-
-    useEffect(() => {
-        if (Platform.OS !== 'web') return;
-        // Load THREE.js first, then Vanta
-        const loadScript = (src) => new Promise((resolve, reject) => {
-            const existing = document.querySelector(`script[src="${src}"]`);
-            if (existing) { resolve(); return; }
-            const s = document.createElement('script');
-            s.src = src;
-            s.onload = resolve;
-            s.onerror = reject;
-            document.head.appendChild(s);
-        });
-
-        const init = async () => {
-            try {
-                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js');
-                await loadScript('https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.clouds.min.js');
-                if (vantaRef.current && window.VANTA) {
-                    vantaEffect.current = window.VANTA.CLOUDS({
-                        el: vantaRef.current,
-                        mouseControls: true,
-                        touchControls: true,
-                        gyroControls: false,
-                        minHeight: height,
-                        minWidth: width,
-                        skyColor: 0x0c0b09,
-                        cloudColor: 0x1a1812,
-                        cloudShadowColor: 0x0a0908,
-                        sunColor: 0xc9a84c,
-                        sunGlareColor: 0xaa8c2c,
-                        sunlightColor: 0x3a2e1d,
-                        speed: 0.6,
-                    });
-                }
-            } catch (e) {
-                console.log('Vanta load failed, using fallback:', e);
-            }
-        };
-        init();
-        return () => { if (vantaEffect.current) vantaEffect.current.destroy(); };
-    }, []);
-
-    return (
-        <View
-            ref={vantaRef}
-            style={{
-                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                zIndex: 0, backgroundColor: '#0C0B09',
-            }}
-        />
-    );
-};
-
 export default function LoginScreen({ onLogin }) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -86,8 +28,7 @@ export default function LoginScreen({ onLogin }) {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Vanta.js Clouds Background */}
-            <VantaClouds />
+            <LinearGradient colors={['#050505', '#11100C', '#050505']} style={StyleSheet.absoluteFillObject} />
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.formWrapper}>
                 <Animated.View entering={FadeInDown.duration(800).springify().damping(15)} style={styles.glassPanel}>
@@ -141,7 +82,7 @@ export default function LoginScreen({ onLogin }) {
 
                         <TouchableOpacity style={styles.button} onPress={handleLogin} activeOpacity={0.8}>
                             <LinearGradient
-                                colors={['#D4AF37', '#AA8C2C']} // Soft Metallic Gold gradient
+                                colors={['#1a1a1a', '#0a0a0a']}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
                                 style={styles.buttonGradient}
@@ -235,9 +176,9 @@ const styles = StyleSheet.create({
     button: {
         marginTop: 30,
         borderRadius: 100,
-        shadowColor: '#C9A84C',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
+        shadowOpacity: 0.5,
         shadowRadius: 15,
         elevation: 10,
     },
@@ -246,10 +187,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderRadius: 100,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
+        borderColor: 'rgba(201,168,76,0.2)',
     },
     buttonText: {
-        color: '#111',
+        color: '#C9A84C',
         fontWeight: '800',
         fontSize: 15,
         letterSpacing: 2,

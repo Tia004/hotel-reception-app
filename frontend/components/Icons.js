@@ -62,6 +62,7 @@ const ICON_MAP = {
     'paperclip': { pack: 'feather', name: 'paperclip' },
     'hash': { pack: 'feather', name: 'hash' },
     'star': { pack: 'feather', name: 'star' },
+    'building': { pack: 'ionicons', name: 'business' },
     'bookmark': { pack: 'feather', name: 'bookmark' },
     'bell': { pack: 'feather', name: 'bell' },
     'pin': { pack: 'ionicons', name: 'pin-outline' },

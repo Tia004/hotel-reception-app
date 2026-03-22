@@ -154,9 +154,30 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [onlineUsers, setOnlineUsers] = useState([]);
     const [activeRooms, setActiveRooms] = useState([]);
     const [expanded, setExpanded] = useState({ duchessa: true, blumen: false, santorsola: false, voice: true, saved: false, users: true, rooms: true });
-    const [draft, setDraft] = useState('');
+    
+    // Per-channel state isolation
+    const [draftMap, setDraftMap] = useState({});
+    const [replyingToMap, setReplyingToMap] = useState({});
+
+    const draft = activeChannel ? (draftMap[activeChannel.id] || '') : '';
+    const setDraft = (val) => {
+        if (!activeChannel) return;
+        setDraftMap(prev => ({
+            ...prev,
+            [activeChannel.id]: typeof val === 'function' ? val(prev[activeChannel.id] || '') : val
+        }));
+    };
+
+    const replyingTo = activeChannel ? (replyingToMap[activeChannel.id] || null) : null;
+    const setReplyingTo = (val) => {
+        if (!activeChannel) return;
+        setReplyingToMap(prev => ({
+            ...prev,
+            [activeChannel.id]: typeof val === 'function' ? val(prev[activeChannel.id] || null) : val
+        }));
+    };
+
     const [savedChats, setSavedChats] = useState([]);
-    const [replyingTo, setReplyingTo] = useState(null);
     const [editingMsg, setEditingMsg] = useState(null);
 
     // UI States
@@ -181,22 +202,24 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
     const [leftCollapsed, setLeftCollapsed] = useState(false);
     const [rightCollapsed, setRightCollapsed] = useState(false);
-    const leftAnim = useRef(new Animated.Value(260)).current; 
-    const rightAnim = useRef(new Animated.Value(280)).current;
+    const leftAnim = useRef(new Animated.Value(0)).current; 
+    const rightAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        Animated.spring(leftAnim, { toValue: leftCollapsed ? 0 : 260, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
+        Animated.spring(leftAnim, { toValue: leftCollapsed ? -260 : 0, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
     }, [leftCollapsed]);
 
     useEffect(() => {
-        Animated.spring(rightAnim, { toValue: rightCollapsed ? 0 : 280, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
+        Animated.spring(rightAnim, { toValue: rightCollapsed ? -280 : 0, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
     }, [rightCollapsed]);
 
     const leftRotate = leftCollapsed ? '180deg' : '0deg';
     const rightRotate = rightCollapsed ? '180deg' : '0deg';
 
     const [hoveredMsg, setHoveredMsg] = useState(null);
-    const [emojiPickerMsg, setEmojiPickerMsg] = useState(null);
+    const [emojiPickerMsg, setEmojiPickerMsg] = useState(null); // Used for Action Menu
+    const [reactionPickerMsg, setReactionPickerMsg] = useState(null); // Used for Emojis
+    const [fullPickerVisible, setFullPickerVisible] = useState(null); // Full Unicode picker
     const [forwardTarget, setForwardTarget] = useState(null);
     const [roomArchives, setRoomArchives] = useState([]); // { roomId, mtime }
     const [viewingArchive, setViewingArchive] = useState(null); // { roomId, messages }
@@ -508,7 +531,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     useEffect(() => {
         if (Platform.OS !== 'web') return;
         const onCtx = (e) => { e.preventDefault(); setContextMenu({ x: e.pageX, y: e.pageY }); };
-        const onClk = () => setContextMenu(null);
+        const onClk = () => { setContextMenu(null); setEmojiPickerMsg(null); setReactionPickerMsg(null); };
         document.addEventListener('contextmenu', onCtx);
         document.addEventListener('click', onClk);
         return () => { document.removeEventListener('contextmenu', onCtx); document.removeEventListener('click', onClk); };
@@ -661,7 +684,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     <Animated.View style={[
                         styles.column, 
                         styles.sidebar, 
-                        !IS_MOBILE && { width: leftAnim, overflow: 'hidden' },
+                        !IS_MOBILE && { marginLeft: leftAnim },
                         IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 100, width: 260 }
                     ]}>
                         <View style={{ width: 260, height: '100%' }}>
@@ -676,7 +699,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
                             <ScrollView style={{ flex: 1 }}>
                                 <View style={styles.navHotelRow}>
-                                    <Icon name="home" size={14} color="#6E6960" />
+                                    <Icon name="building" size={14} color="#6E6960" />
                                     <Text style={styles.hotelLbl}>HOTEL DISPONIBILI</Text>
                                 </View>
 
@@ -688,6 +711,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                 style={[styles.chRow, isHotelActive && styles.chRowActive]}
                                                 onPress={() => {
                                                     setActiveChannel(h.channels[0]);
+                                                    onChannelClick?.();
                                                 }}
                                             >
                                                 <View style={[styles.hotelDot, { backgroundColor: h.color }]} />
@@ -699,7 +723,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                 <TouchableOpacity 
                                                     key={ch.id} 
                                                     style={[styles.chRow, { paddingLeft: 36, paddingVertical: 8 }, activeChannel?.id === ch.id && { backgroundColor: 'rgba(201,168,76,0.05)' }]}
-                                                    onPress={() => setActiveChannel(ch)}
+                                                    onPress={() => { 
+                                                        setActiveChannel(ch); 
+                                                        onChannelClick?.(); 
+                                                    }}
                                                 >
                                                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                                         <Icon name={ch.name.toLowerCase() === 'generale' ? 'hash' : ch.name.toLowerCase() === 'media' ? 'image' : 'bell'} size={14} color={activeChannel?.id === ch.id ? '#C9A84C' : '#6E6960'} />
@@ -714,7 +741,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 })}
 
                                 <View style={[styles.navHotelRow, { marginTop: 20 }]}>
-                                    <Icon name="video" size={14} color="#6E6960" />
+                                    <Icon name="mic" size={14} color="#6E6960" />
                                     <Text style={styles.hotelLbl}>STANZE VOCALI FISSE</Text>
                                 </View>
 
@@ -731,7 +758,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                             style={[styles.chRow, isActive && styles.chRowActive]}
                                             onPress={() => onJoinRoom(rid)}
                                         >
-                                            <Icon name="volume-2" size={16} color={isActive ? '#C9A84C' : '#554E40'} />
+                                            <Icon name="mic" size={16} color={isActive ? '#C9A84C' : '#554E40'} />
                                             <View style={{ flex: 1, marginLeft: 10 }}>
                                                 <Text style={[styles.chName, isActive && { color: '#C9A84C' }]}>{name.toUpperCase()}</Text>
                                                 {room && room.peerCount > 0 && (
@@ -836,53 +863,50 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                             onDoubleClick: () => setReplyingTo(m)
                                         } : {})}
                                     >
-                                        {/* Hover Action Menu — Discord style */}
+                                        {/* Inline Context Menu — WhatsApp/Discord style */}
                                         {emojiPickerMsg === m.id && (
-                                            <Modal transparent visible={true} animationType="fade" onRequestClose={() => setEmojiPickerMsg(null)}>
-                                                <TouchableOpacity 
-                                                    style={styles.menuOverlay} 
-                                                    activeOpacity={1} 
-                                                    onPress={() => setEmojiPickerMsg(null)}
-                                                >
-                                                    <View style={styles.hoverMenu}>
-                                                        {/* Compact Emoji reaction bar */}
-                                                        <View style={styles.hoverEmojiBar}>
-                                                            {['❤️','👍','😂','😮','🙏','😢'].map((emo, ei) => (
-                                                                <TouchableOpacity key={ei} style={styles.hoverEmojiBtn} onPress={() => { reactMessage(m.id, emo); setEmojiPickerMsg(null); }}>
-                                                                    <Text style={{ fontSize: 18 }}>{emo}</Text>
-                                                                </TouchableOpacity>
-                                                            ))}
-                                                        </View>
-                                                        {/* Action list */}
-                                                        <View style={styles.hoverActionList}>
-                                                            <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setReplyingTo(m); setEmojiPickerMsg(null); }}>
-                                                                <Icon name="corner-up-left" size={14} color="#A8A090" />
-                                                                <Text style={styles.hoverActionTxt}>Rispondi</Text>
-                                                            </TouchableOpacity>
-                                                            <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setForwardTarget(m); setEmojiPickerMsg(null); }}>
-                                                                <Icon name="forward" size={14} color="#A8A090" />
-                                                                <Text style={styles.hoverActionTxt}>Inoltra</Text>
-                                                            </TouchableOpacity>
-                                                            {isMine && !m.poll && (
-                                                                <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setEditingMsg(m); setDraft(m.text || ''); setEmojiPickerMsg(null); }}>
-                                                                    <Icon name="edit-2" size={14} color="#A8A090" />
-                                                                    <Text style={styles.hoverActionTxt}>Modifica</Text>
-                                                                </TouchableOpacity>
-                                                            )}
-                                                            {isMine && (
-                                                                <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setDeleteTarget(m.id); setEmojiPickerMsg(null); }}>
-                                                                    <Icon name="trash-2" size={14} color="#E57373" />
-                                                                    <Text style={[styles.hoverActionTxt, { color: '#E57373' }]}>Elimina</Text>
-                                                                </TouchableOpacity>
-                                                            )}
-                                                            <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setInfoModal(m); setEmojiPickerMsg(null); }}>
-                                                                <Icon name="info" size={14} color="#A8A090" />
-                                                                <Text style={styles.hoverActionTxt}>Info</Text>
-                                                            </TouchableOpacity>
-                                                        </View>
-                                                    </View>
+                                            <View style={[styles.msgActionMenu, isMine ? styles.msgActionMenuRight : styles.msgActionMenuLeft]}>
+                                                <View style={styles.hoverActionList}>
+                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setReplyingTo(m); setEmojiPickerMsg(null); }}>
+                                                        <Icon name="corner-up-left" size={14} color="#A8A090" />
+                                                        <Text style={styles.hoverActionTxt}>Rispondi</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setForwardTarget(m); setEmojiPickerMsg(null); }}>
+                                                        <Icon name="forward" size={14} color="#A8A090" />
+                                                        <Text style={styles.hoverActionTxt}>Inoltra</Text>
+                                                    </TouchableOpacity>
+                                                    {isMine && !m.poll && (
+                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setEditingMsg(m); setDraft(m.text || ''); setEmojiPickerMsg(null); }}>
+                                                            <Icon name="edit-2" size={14} color="#A8A090" />
+                                                            <Text style={styles.hoverActionTxt}>Modifica</Text>
+                                                        </TouchableOpacity>
+                                                    )}
+                                                    {isMine && (
+                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setDeleteTarget(m.id); setEmojiPickerMsg(null); }}>
+                                                            <Icon name="trash-2" size={14} color="#E57373" />
+                                                            <Text style={[styles.hoverActionTxt, { color: '#E57373' }]}>Elimina</Text>
+                                                        </TouchableOpacity>
+                                                    )}
+                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setInfoModal(m); setEmojiPickerMsg(null); }}>
+                                                        <Icon name="info" size={14} color="#A8A090" />
+                                                        <Text style={styles.hoverActionTxt}>Info</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+                                        )}
+
+                                        {/* Inline Reaction Picker */}
+                                        {reactionPickerMsg === m.id && (
+                                            <View style={[styles.msgEmojiPicker, isMine ? styles.msgEmojiPickerRight : styles.msgEmojiPickerLeft]}>
+                                                {['❤️','👍','😂','😮','🙏','😢'].map((emo, ei) => (
+                                                    <TouchableOpacity key={ei} style={styles.hoverEmojiBtn} onPress={(e) => { e.stopPropagation(); reactMessage(m.id, emo); setReactionPickerMsg(null); }}>
+                                                        <Text style={{ fontSize: 18 }}>{emo}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                                <TouchableOpacity style={styles.hoverEmojiBtn} onPress={(e) => { e.stopPropagation(); setFullPickerVisible(m.id); setReactionPickerMsg(null); }}>
+                                                    <Icon name="plus" size={18} color="#C8C4B8" />
                                                 </TouchableOpacity>
-                                            </Modal>
+                                            </View>
                                         )}
                                         {/* Reply bubble — clickable, gold left border */}
                                         {repliedMsg && (
@@ -906,9 +930,14 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
                                         <View id={`msg-${m.id}`} style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
                                             {hoveredMsg === m.id && (
-                                                <TouchableOpacity style={styles.msgCaret} onPress={() => setEmojiPickerMsg(m.id)}>
-                                                    <Icon name="chevron-down" size={20} color="#A8A090" />
-                                                </TouchableOpacity>
+                                                <View style={styles.msgHoverActions}>
+                                                    <TouchableOpacity style={styles.msgCaretBtn} onPress={(e) => { e.stopPropagation(); setReactionPickerMsg(m.id); }}>
+                                                        <Icon name="smile" size={18} color="#A8A090" />
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity style={styles.msgCaretBtn} onPress={(e) => { e.stopPropagation(); setEmojiPickerMsg(m.id); }}>
+                                                        <Icon name="chevron-down" size={20} color="#A8A090" />
+                                                    </TouchableOpacity>
+                                                </View>
                                             )}
                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                                                 <Text style={[styles.msgSender, isMine && { color: '#C9A84C' }]}>{m.sender}</Text>
@@ -1172,6 +1201,20 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             )}
 
             {/* MODALS */}
+            <Modal visible={!!fullPickerVisible} transparent animationType="fade">
+                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setFullPickerVisible(null)}>
+                    <View style={styles.fullEmojiBox}>
+                        <Text style={styles.infoTitle}>Seleziona Emoji</Text>
+                        <ScrollView contentContainerStyle={styles.fullEmojiGrid}>
+                            {ALL_EMOJIS.map(emo => (
+                                <TouchableOpacity key={emo} style={styles.fullEmojiItem} onPress={() => { reactMessage(fullPickerVisible, emo); setFullPickerVisible(null); }}>
+                                    <Text style={{ fontSize: 24 }}>{emo}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
             {renderModals()}
             <UserProfileCard 
                 visible={profileVisible} 
@@ -1192,27 +1235,26 @@ const styles = StyleSheet.create({
     root: { flex: 1, flexDirection: 'row', backgroundColor: 'transparent', ...NO_SELECT, position: 'relative' },
     column: { height: '100%', borderRightWidth: 1, borderRightColor: 'rgba(201,168,76,0.06)' },
 
-    // Message context menu
-    hoverMenu: { position: 'absolute', top: -50, right: 0, backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 12, zIndex: 9999, minWidth: 200, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 20, overflow: 'hidden' },
-    hoverEmojiBar: { flexDirection: 'row', justifyContent: 'space-around', padding: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' },
+    // Message context menu & reactions
+    msgHoverActions: { position: 'absolute', top: 4, right: 4, flexDirection: 'row', gap: 4, backgroundColor: 'rgba(20,18,16,0.8)', borderRadius: 12, padding: 2, zIndex: 10 },
+    msgCaretBtn: { width: 24, height: 24, justifyContent: 'center', alignItems: 'center' },
+
+    msgActionMenu: { position: 'absolute', top: 28, right: 0, backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 12, zIndex: 1000, width: 180, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 20, overflow: 'hidden' },
+    msgActionMenuLeft: { right: 'auto', left: 0 },
+    msgActionMenuRight: { right: 0, left: 'auto' },
+
+    msgEmojiPicker: { position: 'absolute', top: 28, right: 28, flexDirection: 'row', backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 20, paddingHorizontal: 6, paddingVertical: 6, zIndex: 1001, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 20 },
+    msgEmojiPickerLeft: { right: 'auto', left: 28 },
+    msgEmojiPickerRight: { right: 28, left: 'auto' },
+
+    fullEmojiBox: { width: 320, maxHeight: 400, backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 16, padding: 16 },
+    fullEmojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 20 },
+    fullEmojiItem: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 8 },
+
     hoverEmojiBtn: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center', borderRadius: 6 },
     hoverActionList: { padding: 4 },
     hoverActionItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 8 },
     hoverActionTxt: { color: '#E8E4D8', fontSize: 13, fontWeight: '600' },
-    msgCaret: { position: 'absolute', right: 4, top: 4, opacity: 0.8 },
-
-    fullEmojiPicker: { 
-        backgroundColor: 'rgba(20,18,14,0.95)', 
-        borderRadius: 12, 
-        paddingVertical: 8, 
-        marginTop: 4, 
-        borderWidth: 1, 
-        borderColor: 'rgba(201,168,76,0.2)',
-        width: 260,
-        zIndex: 100,
-        ...(Platform.OS === 'web' ? { backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' } : {})
-    },
-    menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
 
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
     infoModalBox: { width: 300, backgroundColor: '#100E0C', borderRadius: 16, padding: 24, borderWidth: 1, borderColor: '#C9A84C', gap: 8 },
@@ -1270,15 +1312,15 @@ const styles = StyleSheet.create({
     statusBadgeTxt: { color: '#C8C4B8', fontSize: 12, fontWeight: '600' },
 
     messagesScroll: { flex: 1 },
-    msgRow: { flexDirection: 'row', marginBottom: 8, width: '100%', position: 'relative' },
+    msgRow: { flexDirection: 'row', marginBottom: 16, width: '100%', position: 'relative' },
     msgRowMine: { justifyContent: 'flex-end' },
-    bubbleWrap: { maxWidth: '90%', position: 'relative' },
-    bubble: { padding: 12, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
-    bubbleOther: { backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)' },
-    bubbleMine: { backgroundColor: 'rgba(201,168,76,0.1)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)' },
+    bubbleWrap: { maxWidth: '85%', position: 'relative' },
+    bubble: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+    bubbleOther: { backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)', borderTopLeftRadius: 4 },
+    bubbleMine: { backgroundColor: '#1E2B22', borderWidth: 1, borderColor: '#2D4A38', borderTopRightRadius: 4 }, // WhatsApp deep green shade
     msgSender: { color: '#6E6960', fontSize: 13, fontWeight: '800' },
-    msgText: { color: '#C8C4B8', fontSize: 15, lineHeight: 22 },
-    msgTime: { color: '#3A3630', fontSize: 11, fontWeight: '600' },
+    msgText: { color: '#E8E4D8', fontSize: 16, lineHeight: 24 }, // Slightly bigger for readability
+    msgTime: { color: '#888275', fontSize: 11, fontWeight: '600' },
     msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6 },
     msgEdited: { color: '#554E40', fontSize: 10, fontStyle: 'italic', marginRight: 4 },
     msgImg: { width: 280, height: 180, borderRadius: 12, marginTop: 8 },
