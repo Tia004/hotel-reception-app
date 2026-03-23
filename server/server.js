@@ -433,6 +433,20 @@ io.on('connection', (socket) => {
         if (!msg) return;
 
         if (!msg.reactions) msg.reactions = {};
+        
+        // Ensure single reaction per user: remove user from any other emoji array
+        for (const existingEmoji in msg.reactions) {
+            if (existingEmoji !== emoji) {
+                const userIdx = msg.reactions[existingEmoji].indexOf(user.username);
+                if (userIdx > -1) {
+                    msg.reactions[existingEmoji].splice(userIdx, 1);
+                    if (msg.reactions[existingEmoji].length === 0) {
+                        delete msg.reactions[existingEmoji];
+                    }
+                }
+            }
+        }
+
         if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
 
         const idx = msg.reactions[emoji].indexOf(user.username);

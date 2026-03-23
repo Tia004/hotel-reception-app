@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
-    TextInput, Image, Dimensions, Platform, Modal, Animated, FlatList
+    TextInput, Image, Dimensions, Platform, Modal, Animated, FlatList, LayoutAnimation
 } from 'react-native';
 import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,7 +28,8 @@ import { requestPermission, showMessageNotification } from '../utils/pushNotific
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const IS_MOBILE = SCREEN_W < 768;
-const ALL_EMOJIS = ['❤️','👍','😂','😮','🙏','😢','🤝','🙌','🔥','✨','💯','🎉','🚀','👀','✅','❌','🤔','💡','📍','🔔','📌','📸','💼','🏠','🍕','☕','😀','😃','😄','😁','😆','😅','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾'];
+// All emojis mapped statically via unicode ranges or static lists above the components
+const ALL_EMOJIS = ALL_EMOJI;
 
 const NO_SELECT = Platform.OS === 'web' ? {
     userSelect: 'none',
@@ -85,27 +86,12 @@ const parseInline = (text) => {
 
 // ─── Server Status Badge ──────────────────────────────────────────────────
 const StatusBadge = ({ ping, status }) => {
-    const [open, setOpen] = useState(false);
     const color = status === 'Eccellente' ? '#23A559' : status === 'Buono' ? '#C9A84C' : '#ED4245';
+    // Ensure no native tooltips or shifting layout
     return (
-        <View style={{ position: 'relative' }}>
-            <TouchableOpacity style={styles.statusBadge} onPress={() => setOpen(!open)}>
-                <View style={[styles.statusBadgeDot, { backgroundColor: color }]} />
-                <Text style={styles.statusBadgeTxt}>{ping ? `${ping}ms` : '...'}</Text>
-            </TouchableOpacity>
-            {open && (
-                <View style={styles.statusDetail}>
-                    <Text style={styles.statusDetailTitle}>STATO RETE</Text>
-                    <View style={styles.statusDetailRow}>
-                        <Text style={styles.statusDetailLbl}>Latenza:</Text>
-                        <Text style={[styles.statusDetailVal, { color }]}>{ping} ms</Text>
-                    </View>
-                    <View style={styles.statusDetailRow}>
-                        <Text style={styles.statusDetailLbl}>Qualità:</Text>
-                        <Text style={[styles.statusDetailVal, { color }]}>{status}</Text>
-                    </View>
-                </View>
-            )}
+        <View style={styles.statusBadge}>
+            <View style={[styles.statusBadgeDot, { backgroundColor: color }]} />
+            <Text style={styles.statusBadgeTxt}>{ping ? `${ping}ms` : '...'}</Text>
         </View>
     );
 };
@@ -153,29 +139,13 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [pinned, setPinned] = useState({});
     const [onlineUsers, setOnlineUsers] = useState([]);
     const [activeRooms, setActiveRooms] = useState([]);
-    const [expanded, setExpanded] = useState({ duchessa: true, blumen: false, santorsola: false, voice: true, saved: false, users: true, rooms: true });
+    const [expanded, setExpanded] = useState({ voice: true, saved: false, users: true, rooms: true });
+    const [expandedHotels, setExpandedHotels] = useState({ duchessa: true, blumen: false, santorsola: false });
     
     // Per-channel state isolation
-    const [draftMap, setDraftMap] = useState({});
-    const [replyingToMap, setReplyingToMap] = useState({});
-
-    const draft = activeChannel ? (draftMap[activeChannel.id] || '') : '';
-    const setDraft = (val) => {
-        if (!activeChannel) return;
-        setDraftMap(prev => ({
-            ...prev,
-            [activeChannel.id]: typeof val === 'function' ? val(prev[activeChannel.id] || '') : val
-        }));
-    };
-
-    const replyingTo = activeChannel ? (replyingToMap[activeChannel.id] || null) : null;
-    const setReplyingTo = (val) => {
-        if (!activeChannel) return;
-        setReplyingToMap(prev => ({
-            ...prev,
-            [activeChannel.id]: typeof val === 'function' ? val(prev[activeChannel.id] || null) : val
-        }));
-    };
+    const [channelDrafts, setChannelDrafts] = useState({}); // { channelId: { text: string, replyingTo: object } }
+    const [draft, setDraft] = useState('');
+    const [replyingTo, setReplyingTo] = useState(null);
 
     const [savedChats, setSavedChats] = useState([]);
     const [editingMsg, setEditingMsg] = useState(null);
@@ -187,7 +157,16 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [alertMsg, setAlertMsg] = useState('');
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [isRecording, setIsRecording] = useState(false);
+    const [selectedImage, setSelectedImage] = useState(null);
     const [plusVisible, setPlusVisible] = useState(false);
+    
+    // Server Keep-Alive
+    useEffect(() => {
+        const ping = () => fetch('/ping').catch(() => {});
+        const interval = setInterval(ping, 5 * 60 * 1000); // 5 min
+        ping();
+        return () => clearInterval(interval);
+    }, []);
     const [pollVisible, setPollVisible] = useState(false);
     const [pollDraft, setPollDraft] = useState({ question: '', options: ['', ''], isMultiple: false });
 
@@ -255,6 +234,38 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         setDraft('');
         setEmojiPickerMsg(null);
     }, [activeChannel]);
+
+    // Handle draft persistence when channel changes
+    useEffect(() => {
+        if (!activeChannel) return;
+        
+        // Load current channel draft
+        const currentData = channelDrafts[activeChannel.id] || { text: '', replyingTo: null };
+        setDraft(currentData.text);
+        setReplyingTo(currentData.replyingTo);
+    }, [activeChannel?.id]);
+
+    useEffect(() => {
+        if (!activeChannel) return;
+        setChannelDrafts(prev => ({
+            ...prev,
+            [activeChannel.id]: { text: draft, replyingTo: replyingTo }
+        }));
+    }, [draft, replyingTo, activeChannel?.id]);
+
+    useEffect(() => {
+        if (Platform.OS !== 'web') return;
+        const onCtx = (e) => { e.preventDefault(); setContextMenu({ x: e.pageX, y: e.pageY }); };
+        const onClk = () => { 
+            setContextMenu(null); 
+            setEmojiPickerMsg(null); 
+            setReactionPickerMsg(null); 
+            setPlusVisible(false);
+        };
+        document.addEventListener('contextmenu', onCtx);
+        document.addEventListener('click', onClk);
+        return () => { document.removeEventListener('contextmenu', onCtx); document.removeEventListener('click', onClk); };
+    }, []);
 
     // ── Render Modals ───────────────────────────────────────────────────
     const renderModals = () => (
@@ -406,6 +417,13 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     </View>
                 </TouchableOpacity>
             </Modal>
+            {selectedImage && (
+                <ImageLightbox 
+                    visible={!!selectedImage} 
+                    imageUri={selectedImage} 
+                    onClose={() => setSelectedImage(null)} 
+                />
+            )}
         </>
     );
 
@@ -534,7 +552,12 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     useEffect(() => {
         if (Platform.OS !== 'web') return;
         const onCtx = (e) => { e.preventDefault(); setContextMenu({ x: e.pageX, y: e.pageY }); };
-        const onClk = () => { setContextMenu(null); setEmojiPickerMsg(null); setReactionPickerMsg(null); };
+        const onClk = () => { 
+            setContextMenu(null); 
+            setEmojiPickerMsg(null); 
+            setReactionPickerMsg(null); 
+            setPlusVisible(false);
+        };
         document.addEventListener('contextmenu', onCtx);
         document.addEventListener('click', onClk);
         return () => { document.removeEventListener('contextmenu', onCtx); document.removeEventListener('click', onClk); };
@@ -707,22 +730,22 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 </View>
 
                                 {HOTELS.map(h => {
-                                    const isHotelActive = activeHotel?.id === h.id;
+                                    const isExpanded = !!expandedHotels[h.id];
                                     return (
                                         <View key={h.id}>
                                             <TouchableOpacity 
-                                                style={[styles.chRow, isHotelActive && styles.chRowActive]}
+                                                style={[styles.chRow, isExpanded && styles.chRowActive]}
                                                 onPress={() => {
-                                                    setActiveChannel(h.channels[0]);
-                                                    onChannelClick?.();
+                                                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                                    setExpandedHotels(prev => ({ ...prev, [h.id]: !isExpanded }));
                                                 }}
                                             >
                                                 <View style={[styles.hotelDot, { backgroundColor: h.color }]} />
-                                                <Text style={[styles.chName, isHotelActive && { color: '#C9A84C' }]}>{h.name}</Text>
-                                                <Icon name={isHotelActive ? "chevron-down" : "chevron-right"} size={12} color="#554E40" />
+                                                <Text style={[styles.chName, isExpanded && { color: '#C9A84C' }]}>{h.name}</Text>
+                                                <Icon name={isExpanded ? "chevron-down" : "chevron-right"} size={12} color="#554E40" />
                                             </TouchableOpacity>
                                             
-                                            {isHotelActive && h.channels.map(ch => (
+                                            {isExpanded && h.channels.map(ch => (
                                                 <TouchableOpacity 
                                                     key={ch.id} 
                                                     style={[styles.chRow, { paddingLeft: 36, paddingVertical: 8 }, activeChannel?.id === ch.id && { backgroundColor: 'rgba(201,168,76,0.05)' }]}
@@ -748,20 +771,20 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                     <Text style={styles.hotelLbl}>STANZE VOCALI FISSE</Text>
                                 </View>
 
-                                {/* Fixed Rooms List */}
                                 {['Duchessa Vocale', 'Blumen Vocale', 'SantOrsola Vocale', 'Stanza Generale'].map((name, idx) => {
                                     const ids = ['duchessa-voice', 'blumen-voice', 'santorsola-voice', 'generale-voice'];
                                     const rid = ids[idx];
                                     const room = activeRooms.find(r => r.id === rid);
+                                    const roomUsers = onlineUsers.filter(u => u.roomId === rid);
                                     const isActive = currentRoomId === rid;
 
                                     return (
                                         <TouchableOpacity 
-                                            key={rid} 
+                                            key={rid}
                                             style={[styles.chRow, isActive && styles.chRowActive]}
                                             onPress={() => onJoinRoom(rid)}
                                         >
-                                            <Icon name="speaker" size={16} color={isActive ? '#C9A84C' : '#554E40'} />
+                                            <Icon name="mic" size={14} color={isActive ? '#C9A84C' : '#554E40'} />
                                             <View style={{ flex: 1, marginLeft: 10 }}>
                                                 <Text style={[styles.chName, isActive && { color: '#C9A84C' }]}>{name.toUpperCase()}</Text>
                                                 {room && room.peerCount > 0 && (
@@ -852,6 +875,14 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
                             return (
                                 <View key={m.id} style={[styles.msgRow, isMine && styles.msgRowMine]}>
+                                    {/* Side Reaction Button for My Messages (Left of Bubble) */}
+                                    {isMine && hoveredMsg === m.id && (
+                                        <TouchableOpacity style={styles.reactionSideBtn} onPress={() => setFullPickerVisible(m.id)}>
+                                            <Icon name="smile" size={16} color="#888275" />
+                                            <Text style={styles.reactionSidePlus}>+</Text>
+                                        </TouchableOpacity>
+                                    )}
+
                                     <View
                                         style={styles.bubbleWrap}
                                         {...(Platform.OS === 'web' ? {
@@ -901,27 +932,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                         <Icon name="info" size={14} color="#A8A090" />
                                                         <Text style={styles.hoverActionTxt}>Info</Text>
                                                     </TouchableOpacity>
-                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setReactionPickerMsg(reactionPickerMsg === m.id ? null : m.id); setEmojiPickerMsg(null); }}>
-                                                        <Icon name="smile" size={14} color="#A8A090" />
-                                                        <Text style={styles.hoverActionTxt}>Reagisci</Text>
-                                                    </TouchableOpacity>
                                                 </View>
                                             </View>
                                         )}
-
-                                        {/* Inline Reaction Picker */}
-                                        {reactionPickerMsg === m.id && (
-                                            <View style={[styles.msgEmojiPicker, isMine ? styles.msgEmojiPickerRight : styles.msgEmojiPickerLeft]}>
-                                                {['❤️','👍','😂','😮','🙏','😢'].map((emo, ei) => (
-                                                    <TouchableOpacity key={ei} style={styles.hoverEmojiBtn} onPress={(e) => { e.stopPropagation(); reactMessage(m.id, emo); setReactionPickerMsg(null); }}>
-                                                        <Text style={{ fontSize: 18 }}>{emo}</Text>
-                                                    </TouchableOpacity>
-                                                ))}
-                                                <TouchableOpacity style={styles.hoverEmojiBtn} onPress={(e) => { e.stopPropagation(); setFullPickerVisible(m.id); setReactionPickerMsg(null); }}>
-                                                    <Icon name="plus" size={18} color="#C8C4B8" />
-                                                </TouchableOpacity>
-                                            </View>
-                                        )}
+                                        {/* END HOVER MENUS */}
                                         {/* Reply bubble — clickable, gold left border */}
                                         {repliedMsg && (
                                             <TouchableOpacity style={styles.repliedBubble} activeOpacity={0.7} onPress={() => {
@@ -994,6 +1008,14 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                             </View>
                                         )}
                                     </View>
+
+                                    {/* Side Reaction Button for Other Messages (Right of Bubble) */}
+                                    {!isMine && hoveredMsg === m.id && (
+                                        <TouchableOpacity style={styles.reactionSideBtn} onPress={() => setFullPickerVisible(m.id)}>
+                                            <Icon name="smile" size={16} color="#888275" />
+                                            <Text style={styles.reactionSidePlus}>+</Text>
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
                             );
                         })}
@@ -1059,6 +1081,11 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             </View>
                         )}
                         {!isRecording && (
+                            <TouchableOpacity style={{ padding: 8, marginRight: 2 }} onPress={() => setFullPickerVisible('INPUT')}>
+                                <Icon name="smile" size={20} color="#888275" />
+                            </TouchableOpacity>
+                        )}
+                        {!isRecording && (
                             <TextInput
                                 style={styles.input}
                                 placeholder={`Scrivi in #${activeChannel.name}...`}
@@ -1089,8 +1116,9 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             </TouchableOpacity>
                         ) : null}
                     </View>
+                    </View>
                 </View>
-            </View>}
+            }
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
             {!hideChatColumn && !IS_MOBILE && (
@@ -1162,7 +1190,13 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 
                                 {expanded.users && (
                                     <View style={styles.userList}>
-                                        {onlineUsers.map((u, i) => (
+                                        {[...onlineUsers].sort((a,b) => {
+                                            const statusOrder = { online: 0, idle: 1, dnd: 2, invisible: 3 };
+                                            const aS = statusOrder[a.status] ?? 99;
+                                            const bS = statusOrder[b.status] ?? 99;
+                                            if (aS !== bS) return aS - bS;
+                                            return (a.username || '').localeCompare(b.username || '');
+                                        }).map((u, i) => (
                                             <TouchableOpacity key={i} style={styles.userRow} onPress={() => { setInfoModal(null); }}>
                                                 <View style={styles.userAvatarSmall}>
                                                     {u.profilePic 
@@ -1216,18 +1250,25 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             )}
 
             {/* MODALS */}
-            <Modal visible={!!fullPickerVisible} transparent animationType="fade">
+            <Modal visible={!!fullPickerVisible} transparent animationType="fade" onRequestClose={() => setFullPickerVisible(null)}>
                 <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setFullPickerVisible(null)}>
-                    <View style={styles.fullEmojiBox}>
-                        <Text style={styles.infoTitle}>Seleziona Emoji</Text>
-                        <ScrollView contentContainerStyle={styles.fullEmojiGrid}>
-                            {ALL_EMOJIS.map(emo => (
-                                <TouchableOpacity key={emo} style={styles.fullEmojiItem} onPress={() => { reactMessage(fullPickerVisible, emo); setFullPickerVisible(null); }}>
-                                    <Text style={{ fontSize: 24 }}>{emo}</Text>
-                                </TouchableOpacity>
+                    <TouchableOpacity activeOpacity={1} style={[styles.fullEmojiBox, { height: '60%' }]}>
+                        <Text style={[styles.infoTitle, { marginBottom: 12 }]}>Seleziona Emoji</Text>
+                        <ScrollView style={{ flex: 1 }}>
+                            {EMOJI_CATEGORIES.map(cat => (
+                                <View key={cat.name} style={{ marginBottom: 16 }}>
+                                    <Text style={styles.emojiCategoryTitle}>{cat.name}</Text>
+                                    <View style={styles.fullEmojiGrid}>
+                                        {cat.emoji.map(emo => (
+                                            <TouchableOpacity key={emo} style={styles.fullEmojiItem} onPress={() => { reactMessage(fullPickerVisible, emo); setFullPickerVisible(null); }}>
+                                                <Text style={{ fontSize: 24 }}>{emo}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                </View>
                             ))}
                         </ScrollView>
-                    </View>
+                    </TouchableOpacity>
                 </TouchableOpacity>
             </Modal>
             {renderModals()}
@@ -1293,8 +1334,8 @@ const styles = StyleSheet.create({
         zIndex: 999,
         ...(Platform.OS === 'web' ? { backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)' } : {})
     },
-    leftExternalTab: { position: 'absolute', top: '45%', borderTopRightRadius: 14, borderBottomRightRadius: 14, borderLeftWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
-    rightExternalTab: { position: 'absolute', top: '45%', borderTopLeftRadius: 14, borderBottomLeftRadius: 14, borderRightWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: -4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
+    leftExternalTab: { position: 'absolute', top: '45%', borderTopRightRadius: 14, borderBottomRightRadius: 14, borderLeftWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: 'rgba(20, 18, 16, 0.7)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } : {}) },
+    rightExternalTab: { position: 'absolute', top: '45%', borderTopLeftRadius: 14, borderBottomLeftRadius: 14, borderRightWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: -4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: 'rgba(20, 18, 16, 0.7)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } : {}) },
     collapseTabInternal: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
 
     // Sidebar
@@ -1316,6 +1357,14 @@ const styles = StyleSheet.create({
     userStat: { color: '#554E40', fontSize: 11 },
     gearBtn: { padding: 8 },
 
+    roomBadge: { backgroundColor: 'rgba(201,168,76,0.2)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
+    roomBadgeTxt: { color: '#C9A84C', fontSize: 10, fontWeight: '900' },
+    roomUserAvatars: { flexDirection: 'row', paddingLeft: 34, gap: -8, paddingBottom: 10 },
+    miniAvatarContainer: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: '#141210', overflow: 'hidden' },
+    miniAvatar: { width: '100%', height: '100%' },
+    miniAvatarPlaceholder: { width: '100%', height: '100%', backgroundColor: '#2A2217', justifyContent: 'center', alignItems: 'center' },
+    miniAvatarTxt: { color: '#C9A84C', fontSize: 8, fontWeight: '900' },
+
     // Chat
     chatCol: { flex: 1, backgroundColor: 'rgba(20, 18, 16, 0.2)' },
     chatHeader: { flexDirection: 'row', alignItems: 'center', height: 56, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.15)', backgroundColor: 'rgba(20, 18, 14, 0.7)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } : {}) },
@@ -1326,20 +1375,23 @@ const styles = StyleSheet.create({
     statusBadgeDot: { width: 8, height: 8, borderRadius: 4 },
     statusBadgeTxt: { color: '#C8C4B8', fontSize: 12, fontWeight: '600' },
 
+    reactionSideBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(28, 26, 20, 0.8)', justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginHorizontal: 8, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
+    reactionSidePlus: { position: 'absolute', top: 4, right: 4, fontSize: 10, color: '#C9A84C', fontWeight: 'bold' },
+
     messagesScroll: { flex: 1 },
-    msgRow: { flexDirection: 'row', marginBottom: 16, width: '100%', position: 'relative' },
-    msgRowMine: { justifyContent: 'flex-end' },
-    bubbleWrap: { maxWidth: '85%', position: 'relative' },
-    bubble: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
-    bubbleOther: { backgroundColor: '#141210', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)', borderTopLeftRadius: 4 },
-    bubbleMine: { backgroundColor: '#1C1A14', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)', borderTopRightRadius: 4 },
-    msgSender: { color: '#6E6960', fontSize: 13, fontWeight: '800' },
-    msgText: { color: '#E8E4D8', fontSize: 16, lineHeight: 24 }, // Slightly bigger for readability
-    msgTime: { color: '#888275', fontSize: 11, fontWeight: '600' },
-    msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6 },
+    msgRow: { flexDirection: 'row', marginBottom: 6, width: '100%', position: 'relative', paddingHorizontal: 16 },
+    msgRowMine: { flexDirection: 'row-reverse' },
+    bubbleWrap: { maxWidth: '85%', minWidth: 100, position: 'relative' },
+    bubble: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 6, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 },
+    bubbleOther: { backgroundColor: '#1C1A16', borderTopLeftRadius: 2 },
+    bubbleMine: { backgroundColor: '#28241C', borderTopRightRadius: 2 },
+    msgSender: { color: '#C9A84C', fontSize: 12, fontWeight: '800', marginBottom: 1 },
+    msgText: { color: '#E8E4D8', fontSize: 16, lineHeight: 22 }, 
+    msgTime: { color: '#6E6960', fontSize: 10, fontWeight: '600' },
+    msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 },
     msgEdited: { color: '#554E40', fontSize: 10, fontStyle: 'italic', marginRight: 4 },
     msgChevron: { position: 'absolute', top: 8, right: 8, zIndex: 10, width: 24, height: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12 },
-    msgImg: { width: 280, height: 180, borderRadius: 12, marginTop: 8 },
+    msgImg: { width: 300, height: 200, borderRadius: 12, marginTop: 4, backgroundColor: '#000' },
 
     repliedBubble: { flexDirection: 'row', marginBottom: 6, borderRadius: 8, backgroundColor: 'rgba(201,168,76,0.06)', overflow: 'hidden' },
     repliedBubbleBar: { width: 3, backgroundColor: '#C9A84C' },

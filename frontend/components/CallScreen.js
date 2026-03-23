@@ -18,7 +18,7 @@ const ICE_CONFIG = {
 const { width: W, height: H } = Dimensions.get('window');
 const IS_MOBILE = W < 768;
 
-const EMOJI_REACTIONS = ['👍', '👏', '😂', '❤️', '🎉', '🔥', '😮', '🤔'];
+const EMOJI_REACTIONS = ['👍', '👏', '😂', '❤️', '🎉', '🔥', '😮', '🤔', '🙌', '✨', '🎈', '🍕', '🚀', '💯', '✅', '❌'];
 
 const FloatingEmoji = ({ emoji, onComplete }) => {
     const translateY = useRef(new Animated.Value(0)).current;
@@ -234,8 +234,13 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         };
 
         document.addEventListener('visibilitychange', onVisibilityChange);
+        window.addEventListener('blur', onVisibilityChange);
+        window.addEventListener('focus', onVisibilityChange);
+
         return () => {
             document.removeEventListener('visibilitychange', onVisibilityChange);
+            window.removeEventListener('blur', onVisibilityChange);
+            window.removeEventListener('focus', onVisibilityChange);
             if (videoEl.parentNode) videoEl.parentNode.removeChild(videoEl);
         };
     }, [remoteStreams, isPiP]);
@@ -321,8 +326,13 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     const toggleDeafen = () => {
         const next = !deafenOn;
         setDeafenOn(next);
-        if (next) setMicOn(false); 
-        socket.emit('media-state-change', { deafenOn: next, micOn: !next && micOn });
+        // If un-deafening, restore mic if it was on
+        const nextMic = next ? false : true; 
+        setMicOn(nextMic);
+        socket.emit('media-state-change', { deafenOn: next, micOn: nextMic });
+        if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach(t => t.enabled = nextMic);
+        }
     };
 
     const toggleHandRaise = () => {
@@ -588,11 +598,6 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                     {isTempProp && <View style={styles.tempBadge}><Text style={styles.tempTxt}>TEMP</Text></View>}
                 </View>
                 <View style={{ flex: 1 }} />
-                {handRaised && (
-                    <View style={styles.handIndicator}>
-                        <Text style={{ fontSize: 16 }}>✋</Text>
-                    </View>
-                )}
                 {onMinimize && (
                     <TouchableOpacity onPress={onMinimize} style={styles.minimizeBtn}>
                         <Icon name={IS_MOBILE ? 'message-square' : 'minimize-2'} size={IS_MOBILE ? 16 : 18} color="#C9A84C" />
@@ -628,18 +633,14 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                         </View>
                                     )}
                                     <View style={styles.participantOverlay}>
-                                        <Text style={styles.participantName}>Tu</Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                            <Text style={styles.participantName}>Tu</Text>
+                                            {handRaised && <Text style={{ fontSize: 14 }}>✋</Text>}
+                                        </View>
                                         <View style={styles.participantIcons}>
                                             {!micOn && (
-                                                <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
-                                                    <Icon name="mic-filled" size={10} color="#FFF" />
-                                                    <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
-                                                </View>
-                                            )}
-                                            {deafenOn && (
-                                                <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
-                                                    <Icon name="speaker" size={10} color="#FFF" />
-                                                    <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
+                                                <View style={styles.statusIconRed}>
+                                                    <Icon name="mic-off-filled" size={10} color="#FFF" />
                                                 </View>
                                             )}
                                         </View>
@@ -663,18 +664,14 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                                 </View>
                                             )}
                                             <View style={styles.participantOverlay}>
-                                                <Text style={styles.participantName}>{remoteUsernames[sid] || 'Partecipante'}</Text>
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                    <Text style={styles.participantName}>{remoteUsernames[sid] || 'Partecipante'}</Text>
+                                                    {rState.handRaised && <Text style={{ fontSize: 14 }}>✋</Text>}
+                                                </View>
                                                 <View style={styles.participantIcons}>
                                                     {!rState.micOn && (
-                                                        <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
-                                                            <Icon name="mic-filled" size={10} color="#FFF" />
-                                                            <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
-                                                        </View>
-                                                    )}
-                                                    {rState.deafenOn && (
-                                                        <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
-                                                            <Icon name="speaker" size={10} color="#FFF" />
-                                                            <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
+                                                        <View style={styles.statusIconRed}>
+                                                            <Icon name="mic-off-filled" size={10} color="#FFF" />
                                                         </View>
                                                     )}
                                                 </View>
@@ -821,17 +818,13 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
 
                 {showReactions && (
                     <View style={styles.reactionsPopup}>
-                        {['👍', '❤️', '😂', '🔥', '👏', '🎉'].map(emoji => (
-                            <TouchableOpacity key={emoji} style={styles.reactionBtn} onPress={() => {
-                                socket.emit('emoji-reaction', { roomId, emoji });
-                                const id = Date.now() + Math.random();
-                                setFloatingReactions(prev => [...prev, { id, emoji }]);
-                                setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2500);
-                                setShowReactions(false);
-                            }}>
-                                <Text style={styles.reactionTxt}>{emoji}</Text>
-                            </TouchableOpacity>
-                        ))}
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 4 }}>
+                            {EMOJI_REACTIONS.map(emoji => (
+                                <TouchableOpacity key={emoji} style={styles.reactionBtn} onPress={() => sendReaction(emoji)}>
+                                    <Text style={styles.reactionTxt}>{emoji}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
                     </View>
                 )}
 
@@ -948,8 +941,9 @@ const styles = StyleSheet.create({
     avatarTxtLarge: { color: '#C9A84C', fontSize: 48, fontWeight: '800' },
     avatarTxtHuge: { color: '#C9A84C', fontSize: 64, fontWeight: '800' },
 
-    participantOverlay: { position: 'absolute', bottom: 12, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 6 },
-    participantName: { color: '#E8E4D8', fontSize: 12, fontWeight: '700' },
+    participantOverlay: { position: 'absolute', bottom: 12, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4 },
+    participantName: { color: '#E8E4D8', fontSize: 13, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+    statusIconRed: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#ED4245', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' },
     participantIcons: { flexDirection: 'row', gap: 6 },
     controls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16, paddingVertical: 24, backgroundColor: 'rgba(12,11,9,0.95)', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
     controlGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },

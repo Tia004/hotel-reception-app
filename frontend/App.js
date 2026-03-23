@@ -63,6 +63,8 @@ export default function App() {
       *:focus { outline: none !important; }
       input:focus { outline: none !important; }
       textarea:focus { outline: none !important; }
+      body { background-color: #0C0B09 !important; margin: 0; padding: 0; }
+      html { background-color: #0C0B09 !important; }
     `;
     document.head.appendChild(style);
   }, []);
