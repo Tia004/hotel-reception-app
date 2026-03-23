@@ -23,6 +23,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
 const PINNED_FILE = path.join(DATA_DIR, 'pinned.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const ARCHIVES_FILE = path.join(DATA_DIR, 'voice_archives.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -47,6 +48,11 @@ function savePinned() {
     const obj = {};
     for (const [k, v] of pinnedMessages.entries()) obj[k] = v;
     saveJSON(PINNED_FILE, obj);
+}
+function saveVoiceArchives() {
+    const obj = {};
+    for (const [k, v] of voiceArchives.entries()) obj[k] = v;
+    saveJSON(ARCHIVES_FILE, obj);
 }
 function saveKnownUsers() {
     const obj = {};
@@ -84,6 +90,11 @@ const savedMessages = loadJSON(MESSAGES_FILE, {});
 const channelMessages = new Map();
 const savedPinned = loadJSON(PINNED_FILE, {});
 const pinnedMessages = new Map();
+for (const k in savedPinned) pinnedMessages.set(k, savedPinned[k]);
+
+const voiceArchives = new Map();
+const objArch = loadJSON(ARCHIVES_FILE, {});
+for (const k in objArch) voiceArchives.set(k, objArch[k]);
 
 HOTEL_CHANNELS.forEach(ch => {
     channelMessages.set(ch, savedMessages[ch] || []);
@@ -139,9 +150,19 @@ function scheduleRoomDelete(roomId) {
     room.deleteTimer = setTimeout(() => {
         const r = rooms.get(roomId);
         if (r && r.peers.length === 0) {
+            // SAVE ARCHIVE BEFORE DELETE
+            if (r.chatMessages && r.chatMessages.length > 0) {
+                voiceArchives.set(roomId, {
+                    roomId,
+                    name: r.name,
+                    closedAt: Date.now(),
+                    messages: r.chatMessages
+                });
+                saveVoiceArchives();
+            }
             rooms.delete(roomId);
             broadcastRooms();
-            console.log(`[Room] Auto-deleted empty room ${roomId}`);
+            console.log(`[Room] Auto-deleted empty room ${roomId} and archived its chat`);
         }
     }, 2 * 60 * 1000); // 2 minutes
 }
@@ -151,6 +172,34 @@ io.on('connection', (socket) => {
     console.log(`Connected: ${socket.id}`);
 
     // ── Auth ────────────────────────────────────────────────────────────────
+    socket.on('get-voice-archives', () => {
+        const list = Array.from(voiceArchives.values()).sort((a,b) => b.closedAt - a.closedAt);
+        socket.emit('voice-archives', list);
+    });
+
+    socket.on('room-chat-message', ({ roomId, text, imageData }) => {
+        const user = users.get(socket.id);
+        const room = rooms.get(roomId);
+        if (!user || !room) return;
+        const msg = {
+            id: Date.now(),
+            sender: user.username,
+            text: text || '',
+            imageData: imageData || null,
+            timestamp: Date.now()
+        };
+        if (!room.chatMessages) room.chatMessages = [];
+        room.chatMessages.push(msg);
+        io.to(roomId).emit('room-chat-message', msg);
+    });
+
+    socket.on('room-chat-history', ({ roomId }) => {
+        const room = rooms.get(roomId);
+        if (room) {
+            socket.emit('room-chat-history', { roomId, messages: room.chatMessages || [] });
+        }
+    });
+
     socket.on('join', (data) => {
         const { username, station } = data;
         // Enforce unique sessions

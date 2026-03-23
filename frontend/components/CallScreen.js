@@ -47,6 +47,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     const [micOn, setMicOn] = useState(true);
     const [camOn, setCamOn] = useState(true);
     const [deafenOn, setDeafenOn] = useState(false); // Discord-style deafen
+    const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
     const [handRaised, setHandRaised] = useState(false);
     const [screenSharing, setScreenSharing] = useState(false);
     const screenStreamRef = useRef(null);
@@ -326,12 +327,19 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     const toggleDeafen = () => {
         const next = !deafenOn;
         setDeafenOn(next);
-        // If un-deafening, restore mic if it was on
-        const nextMic = next ? false : true; 
-        setMicOn(nextMic);
-        socket.emit('media-state-change', { deafenOn: next, micOn: nextMic });
-        if (localStreamRef.current) {
-            localStreamRef.current.getAudioTracks().forEach(t => t.enabled = nextMic);
+        // User requested: "Se riattivo l'audio, riattiva anche il microfono"
+        if (!next) {
+            setMicOn(true);
+            if (localStreamRef.current) {
+                localStreamRef.current.getAudioTracks().forEach(t => t.enabled = true);
+            }
+            socket.emit('media-state-change', { deafenOn: false, micOn: true });
+        } else {
+            setMicOn(false);
+            if (localStreamRef.current) {
+                localStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
+            }
+            socket.emit('media-state-change', { deafenOn: true, micOn: false });
         }
     };
 
@@ -510,7 +518,13 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             pipRoot.style.width = '100%';
             pipRoot.style.backgroundColor = '#0C0B09';
             pip.document.body.appendChild(pipRoot);
+
+            // Append controls to Pip window
+            const controlsCont = document.createElement('div');
+            controlsCont.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:15px;background:rgba(0,0,0,0.8);padding:10px 20px;border-radius:30px;z-index:9999;';
+            pipRoot.appendChild(controlsCont);
             
+            // Render logic would go here or via portal
             pip.addEventListener('pagehide', () => setDocPipWindow(null));
             setDocPipWindow(pip);
         } catch (e) {
@@ -530,7 +544,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                     <Animated.View style={[styles.spinner, { transform: [{ rotate: spin }] }]}>
                         <View style={styles.spinnerArc} />
                     </Animated.View>
-                    <Text style={styles.loadingText}>Connessione alla stanza...</Text>
+                    <Text style={styles.loadingText}>{isPiP ? 'Avvio modalità PiP...' : 'Connessione alla stanza...'}</Text>
                 </View>
             </View>
         );
@@ -633,7 +647,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                         </View>
                                     )}
                                     <View style={styles.participantOverlay}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <View style={styles.participantNameRow}>
                                             <Text style={styles.participantName}>Tu</Text>
                                             {handRaised && <Text style={{ fontSize: 14 }}>✋</Text>}
                                         </View>
@@ -701,18 +715,14 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                                     </View>
                                                 )}
                                                 <View style={styles.participantOverlay}>
-                                                    <Text style={styles.participantName}>{remoteUsernames[sid] || 'Partecipante'}</Text>
+                                                    <View style={styles.participantNameRow}>
+                                                        <Text style={styles.participantName}>{remoteUsernames[sid] || 'Partecipante'}</Text>
+                                                        {rState.handRaised && <Text style={{ fontSize: 14 }}>✋</Text>}
+                                                    </View>
                                                     <View style={styles.participantIcons}>
                                                         {!rState.micOn && (
-                                                            <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
-                                                                <Icon name="mic-filled" size={10} color="#FFF" />
-                                                                <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
-                                                            </View>
-                                                        )}
-                                                        {rState.deafenOn && (
-                                                            <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
-                                                                <Icon name="speaker" size={10} color="#FFF" />
-                                                                <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
+                                                            <View style={styles.statusIconRed}>
+                                                                <Icon name="mic-off-filled" size={10} color="#FFF" />
                                                             </View>
                                                         )}
                                                     </View>
@@ -794,14 +804,11 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                         <TouchableOpacity style={[styles.ctrlBtn, showReactions && styles.ctrlBtnActive]} onPress={() => setShowReactions(!showReactions)}>
                             <Icon name="happy" size={20} color={showReactions ? '#C9A84C' : '#C8C4B8'} />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.ctrlBtn} onPress={toggleHandRaise}>
+                        <TouchableOpacity style={[styles.ctrlBtn, handRaised && styles.ctrlBtnActive]} onPress={toggleHandRaise}>
                             <Icon name={handRaised ? 'hand-raised' : 'hand'} size={20} color={handRaised ? '#C9A84C' : '#C8C4B8'} />
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.ctrlBtn, chatVisible && styles.ctrlBtnActive]} onPress={() => setChatVisible(!chatVisible)}>
                             <Icon name="message-square" size={20} color={chatVisible ? '#C9A84C' : '#C8C4B8'} />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.ctrlBtn, hideNoVideo && styles.ctrlBtnActive]} onPress={() => setHideNoVideo(!hideNoVideo)}>
-                            <Icon name="eye-off" size={20} color={hideNoVideo ? '#C9A84C' : '#C8C4B8'} />
                         </TouchableOpacity>
                         {Platform.OS === 'web' && 'documentPictureInPicture' in window && (
                             <TouchableOpacity style={[styles.ctrlBtn, docPipWindow && styles.ctrlBtnActive]} onPress={toggleDocPiP}>
@@ -824,6 +831,9 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                     <Text style={styles.reactionTxt}>{emoji}</Text>
                                 </TouchableOpacity>
                             ))}
+                            <TouchableOpacity style={styles.reactionBtn} onPress={() => { setShowReactions(false); setEmojiPickerVisible(true); }}>
+                                <Icon name="plus" size={16} color="#C9A84C" />
+                            </TouchableOpacity>
                         </ScrollView>
                     </View>
                 )}
@@ -869,6 +879,28 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                         </View>
                     </View>
                 )}
+
+                <Modal visible={emojiPickerVisible} transparent animationType="fade">
+                    <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setEmojiPickerVisible(false)}>
+                        <View style={styles.fullEmojiBox}>
+                            <Text style={styles.infoTitle}>SELEZIONA REAZIONE</Text>
+                            <ScrollView style={{ flex: 1 }}>
+                                {EMOJI_CATEGORIES.map(cat => (
+                                    <View key={cat.name} style={{ marginBottom: 16 }}>
+                                        <Text style={styles.emojiCategoryTitle}>{cat.name}</Text>
+                                        <View style={styles.fullEmojiGrid}>
+                                            {cat.emoji.map(emo => (
+                                                <TouchableOpacity key={emo} style={styles.fullEmojiItem} onPress={() => { sendReaction(emo); setEmojiPickerVisible(false); }}>
+                                                    <Text style={{ fontSize: 24 }}>{emo}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </View>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    </TouchableOpacity>
+                </Modal>
             </View>
         </View>
     );
@@ -942,9 +974,17 @@ const styles = StyleSheet.create({
     avatarTxtHuge: { color: '#C9A84C', fontSize: 64, fontWeight: '800' },
 
     participantOverlay: { position: 'absolute', bottom: 12, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4 },
+    participantNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     participantName: { color: '#E8E4D8', fontSize: 13, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
-    statusIconRed: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#ED4245', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.2)' },
+    statusIconRed: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#ED4245', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.3)' },
     participantIcons: { flexDirection: 'row', gap: 6 },
+    videoGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 12, padding: 12 },
+    tile: { backgroundColor: '#141210', borderRadius: 16, overflow: 'hidden', position: 'relative' },
+    tileMedium: { width: '48%', aspectRatio: 16/9 },
+    tileLarge: { width: '90%', aspectRatio: 16/9 },
+    tileFull: { width: '100%', aspectRatio: 16/9 },
+    tileFullscreen: { flex: 1, width: '100%', height: '100%' },
+    tilePiP: { position: 'absolute', bottom: 20, right: 20, width: 240, height: 135, zIndex: 100, borderRadius: 12, borderWidth: 2, borderColor: 'rgba(201,168,76,0.3)', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.5, shadowRadius: 15 },
     controls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16, paddingVertical: 24, backgroundColor: 'rgba(12,11,9,0.95)', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
     controlGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     ctrlPill: { flexDirection: 'row', alignItems: 'center', height: 46, borderRadius: 12, backgroundColor: '#2B2D31', overflow: 'hidden', borderWidth: 1, borderColor: '#3F4147' },
@@ -982,5 +1022,12 @@ const styles = StyleSheet.create({
     devicesWrapper: { position: 'relative' },
     deviceMenu: { position: 'absolute', bottom: 50, left: 0, backgroundColor: '#1C1A12', borderRadius: 8, padding: 8, minWidth: 200, borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', zIndex: 100 },
     deviceItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 6 },
-    deviceTxt: { color: '#E8E4D8', fontSize: 13, fontWeight: '600' }
+    deviceTxt: { color: '#E8E4D8', fontSize: 13, fontWeight: '600' },
+    
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
+    fullEmojiBox: { width: 320, height: '60%', backgroundColor: '#100E0C', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#C9A84C' },
+    infoTitle: { color: '#C9A84C', fontSize: 16, fontWeight: '900', letterSpacing: 1, marginBottom: 12 },
+    emojiCategoryTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' },
+    fullEmojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    fullEmojiItem: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 8 },
 });

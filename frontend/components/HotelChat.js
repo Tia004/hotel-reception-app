@@ -147,6 +147,28 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [draft, setDraft] = useState('');
     const [replyingTo, setReplyingTo] = useState(null);
 
+    // Auto-save draft whenever it changes
+    useEffect(() => {
+        if (!activeChannel && !currentRoomId) return;
+        const id = activeChannel ? activeChannel.id : currentRoomId;
+        setChannelDrafts(prev => ({
+            ...prev,
+            [id]: { text: draft, replyingTo }
+        }));
+    }, [draft, replyingTo, activeChannel?.id, currentRoomId]);
+
+    // Restore draft when switching channel or room
+    useEffect(() => {
+        const id = activeChannel ? activeChannel.id : currentRoomId;
+        if (id && channelDrafts[id]) {
+            setDraft(channelDrafts[id].text);
+            setReplyingTo(channelDrafts[id].replyingTo);
+        } else {
+            setDraft('');
+            setReplyingTo(null);
+        }
+    }, [activeChannel?.id, currentRoomId]);
+
     const [savedChats, setSavedChats] = useState([]);
     const [editingMsg, setEditingMsg] = useState(null);
 
@@ -1009,8 +1031,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         )}
                                     </View>
 
-                                    {/* Side Reaction Button for Other Messages (Right of Bubble) */}
-                                    {!isMine && hoveredMsg === m.id && (
+                                    {/* Side Reaction Button (Right for others, Left for me due to row-reverse) */}
+                                    {hoveredMsg === m.id && (
                                         <TouchableOpacity style={styles.reactionSideBtn} onPress={() => setFullPickerVisible(m.id)}>
                                             <Icon name="smile" size={16} color="#888275" />
                                             <Text style={styles.reactionSidePlus}>+</Text>
@@ -1161,8 +1183,9 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         {roomArchives.length > 0 ? roomArchives.map((arc, idx) => (
                                             <TouchableOpacity key={idx} style={styles.archiveRow} onPress={() => {
                                                 socket.emit('room-chat-history', { roomId: arc.roomId });
-                                                const onHist = ({ messages }) => {
-                                                    setViewingArchive({ roomId: arc.roomId, messages });
+                                                const onHist = (data) => {
+                                                    console.log('Archive data received:', data);
+                                                    setViewingArchive({ roomId: arc.roomId, messages: data.messages || [] });
                                                     socket.off('room-chat-history', onHist);
                                                 };
                                                 socket.on('room-chat-history', onHist);
