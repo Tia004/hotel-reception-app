@@ -730,9 +730,24 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                             </View>
                                         );
                                     })}
-                                    {screenSharing && Platform.OS === 'web' && (
-                                        <View style={[styles.tile, styles.tileFull]}>
-                                            <ScreenSharePlaceholder toggle={toggleScreenShare} />
+                                    {screenSharing && Platform.OS === 'web' && localStream && (
+                                        <View key="screen-share" style={[styles.tile, styles.tileMedium]}>
+                                            <RTCView
+                                                streamURL={screenStreamRef.current ? new MediaStream(screenStreamRef.current.getTracks()).toURL?.() || screenStreamRef.current
+                                                    : localStream}
+                                                style={styles.rtc}
+                                                objectFit="cover"
+                                                muted={true}
+                                            />
+                                            <View style={styles.participantOverlay}>
+                                                <Text style={styles.participantName}>🖥️ Il tuo schermo</Text>
+                                                <TouchableOpacity
+                                                    onPress={toggleScreenShare}
+                                                    style={{ backgroundColor: '#ED4245', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}
+                                                >
+                                                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>Stop</Text>
+                                                </TouchableOpacity>
+                                            </View>
                                         </View>
                                     )}
                                 </>
@@ -825,16 +840,29 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
 
                 {showReactions && (
                     <View style={styles.reactionsPopup}>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 4 }}>
+                        <View style={styles.reactionsRow}>
                             {EMOJI_REACTIONS.map(emoji => (
-                                <TouchableOpacity key={emoji} style={styles.reactionBtn} onPress={() => sendReaction(emoji)}>
+                                <TouchableOpacity
+                                    key={emoji}
+                                    style={styles.reactionPill}
+                                    onPress={() => sendReaction(emoji)}
+                                >
                                     <Text style={styles.reactionTxt}>{emoji}</Text>
                                 </TouchableOpacity>
                             ))}
-                            <TouchableOpacity style={styles.reactionBtn} onPress={() => { setShowReactions(false); setEmojiPickerVisible(true); }}>
-                                <Icon name="plus" size={16} color="#C9A84C" />
+                            <TouchableOpacity
+                                style={[styles.reactionPill, { borderStyle: 'dashed' }]}
+                                onPress={() => { setShowReactions(false); setEmojiPickerVisible(true); }}
+                            >
+                                <Text style={{ color: '#C9A84C', fontSize: 16, fontWeight: '700' }}>+</Text>
                             </TouchableOpacity>
-                        </ScrollView>
+                        </View>
+                        <TouchableOpacity
+                            style={{ position: 'absolute', top: 8, right: 8 }}
+                            onPress={() => setShowReactions(false)}
+                        >
+                            <Icon name="x" size={12} color="#554E40" />
+                        </TouchableOpacity>
                     </View>
                 )}
 
@@ -937,9 +965,11 @@ const styles = StyleSheet.create({
     root: { flex: 1, position: 'relative', backgroundColor: '#0C0B09' },
     floatingEmojiContainer: { ...StyleSheet.absoluteFillObject, zIndex: 999, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 100 },
     floatingEmoji: { fontSize: 48, position: 'absolute', bottom: 0 },
-    reactionsPopup: { position: 'absolute', bottom: 90, alignSelf: 'center', flexDirection: 'row', backgroundColor: '#2B2D31', padding: 12, borderRadius: 30, gap: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 10, zIndex: 1000 },
-    reactionBtn: { padding: 8, backgroundColor: '#1C1A16', borderRadius: 20 },
-    reactionTxt: { fontSize: 24 },
+    reactionsPopup: { position: 'absolute', bottom: 100, alignSelf: 'center', backgroundColor: '#23272A', borderRadius: 24, padding: 12, paddingRight: 36, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.6, shadowRadius: 16, elevation: 20, zIndex: 1000, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+    reactionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', maxWidth: 400 },
+    reactionPill: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#2B2D31', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+    reactionBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12 },
+    reactionTxt: { fontSize: 28 },
     loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 20 },
     loadingLogo: { width: 80, height: 80 },
     spinner: { width: 60, height: 60, borderRadius: 30, borderWidth: 3, borderColor: 'transparent', borderTopColor: '#C9A84C', borderRightColor: 'rgba(201,168,76,0.3)' },

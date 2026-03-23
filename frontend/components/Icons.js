@@ -48,11 +48,13 @@ const ICON_MAP = {
     'play': { pack: 'feather', name: 'play' },
     'pause': { pack: 'feather', name: 'pause' },
     // Hand / Reactions
-    'hand': { pack: 'ionicons', name: 'hand-right-outline' },
-    'hand-raised': { pack: 'ionicons', name: 'hand-right' },
+    'hand': { pack: 'ionicons', name: 'hand-left-outline' },
+    'hand-raised': { pack: 'ionicons', name: 'hand-left' },
     'smile': { pack: 'feather', name: 'smile' },
     'happy': { pack: 'ionicons', name: 'happy-outline' },
     'gift': { pack: 'feather', name: 'gift' },
+    // Archive
+    'archive': { pack: 'feather', name: 'archive' },
     // User
     'user': { pack: 'feather', name: 'user' },
     'users': { pack: 'feather', name: 'users' },

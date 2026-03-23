@@ -522,12 +522,12 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             }));
         });
 
-        socket.on('room-archives', ({ archives }) => {
-            setRoomArchives(archives);
+        socket.on('voice-archives', (list) => {
+            setRoomArchives(list);
         });
 
-        // Request archives on mount
-        socket.emit('get-room-archives');
+        // Request voice archives on mount
+        socket.emit('get-voice-archives');
 
         const checkPing = () => {
             const t = Date.now();
@@ -831,7 +831,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 <TouchableOpacity style={styles.avatarBtn} onPress={() => setProfileVisible(true)}>
                                     <View style={styles.avatar}>
                                         {user.profilePic ? <Image source={{ uri: user.profilePic }} style={StyleSheet.absoluteFill} /> : <Text style={styles.avatarTxt}>{user.username[0].toUpperCase()}</Text>}
-                                        <View style={[styles.statusDot, { backgroundColor: '#43B581' }]} />
+                                        <View style={[styles.statusDot, { backgroundColor: statusColor(onlineUsers.find(u => u.username === user.username)?.status || 'online') }]} />
                                     </View>
                                     <View style={{ flex: 1 }}>
                                         <Text style={styles.userName}>{user.username}</Text>
@@ -950,7 +950,15 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                             <Text style={[styles.hoverActionTxt, { color: '#E57373' }]}>Elimina</Text>
                                                         </TouchableOpacity>
                                                     )}
-                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setInfoModal(m); setEmojiPickerMsg(null); }}>
+                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setSavedChats(s => [...s, m]); setEmojiPickerMsg(null); }}>
+                                                        <Icon name="bookmark" size={14} color="#A8A090" />
+                                                        <Text style={styles.hoverActionTxt}>Salva</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { socket.emit('pin-message', { channelId: activeChannel.id, messageId: m.id }); setEmojiPickerMsg(null); }}>
+                                                        <Icon name="pin" size={14} color="#A8A090" />
+                                                        <Text style={styles.hoverActionTxt}>Fissa</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setEmojiPickerMsg(null); }}>
                                                         <Icon name="info" size={14} color="#A8A090" />
                                                         <Text style={styles.hoverActionTxt}>Info</Text>
                                                     </TouchableOpacity>
@@ -995,9 +1003,27 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                             {m.text ? <Text style={styles.msgText}>{parseMarkdown(m.text)}</Text> : null}
                                             {m.voiceData && <VoiceMessageBubble src={m.voiceData} duration={m.voiceDuration} isMine={isMine} />}
                                             {m.poll && <PollMessage msg={m} user={user} onVote={vote} />}
-                                            {m.imageData && <Image source={{ uri: m.imageData }} style={styles.msgImg} />}
+                                            {m.imageData && (
+                                                <TouchableOpacity activeOpacity={0.9} onPress={() => { setLbImages([m.imageData]); setLbIdx(0); setLbVisible(true); }}>
+                                                    <Image
+                                                        source={{ uri: m.imageData }}
+                                                        style={styles.msgImg}
+                                                        resizeMode="contain"
+                                                        onLoad={(e) => {
+                                                            // Dynamic height based on aspect ratio, capped at 400
+                                                            const { width: imgW, height: imgH } = e.nativeEvent.source || {};
+                                                            if (imgW && imgH) {
+                                                                const maxW = 300;
+                                                                const ratio = imgH / imgW;
+                                                                // Store dynamic height in message ref - not needed for web, CSS handles it
+                                                            }
+                                                        }}
+                                                    />
+                                                </TouchableOpacity>
+                                            )}
 
                                             <View style={styles.msgMeta}>
+                                                {m.pinned && <Icon name="pin" size={10} color="#C9A84C" />}
                                                 {m.edited && <Text style={styles.msgEdited}>(modificato)</Text>}
                                                 <Text style={styles.msgTime}>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
                                                 {isMine && (() => {
@@ -1165,14 +1191,28 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 </TouchableOpacity>
                                 {expanded.saved && (
                                     <View style={styles.savedList}>
-                                        <Text style={styles.emptyArchiveTxt}>Nessun messaggio salvato</Text>
+                                        {savedChats.length === 0 && <Text style={styles.emptyArchiveTxt}>Nessun messaggio salvato. Tieni premuto su un messaggio e premi "Salva".</Text>}
+                                        {savedChats.map((sc, idx) => (
+                                            <TouchableOpacity key={idx} style={styles.archiveRow} onPress={() => {
+                                                setActiveChannel(ALL_CHANNELS.find(ch => ch.id.includes(sc.channelId?.split('-')[0])) || activeChannel);
+                                            }}>
+                                                <View style={styles.archiveIcon}><Icon name="bookmark" size={12} color="#C9A84C" /></View>
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={styles.archiveTitle} numberOfLines={2}>{sc.text || '📷 Media'}</Text>
+                                                    <Text style={styles.archiveDate}>{sc.sender} • {new Date(sc.timestamp).toLocaleDateString()}</Text>
+                                                </View>
+                                                <TouchableOpacity onPress={() => setSavedChats(s => s.filter((_, i) => i !== idx))} style={{ padding: 4 }}>
+                                                    <Icon name="x" size={12} color="#554E40" />
+                                                </TouchableOpacity>
+                                            </TouchableOpacity>
+                                        ))}
                                     </View>
                                 )}
 
                                 {/* Temp Chat Archive Section */}
                                 <TouchableOpacity style={styles.navHotelRow} onPress={() => {
                                     setExpanded(p => ({ ...p, voice: !p.voice }));
-                                    if (!expanded.voice) socket.emit('get-room-archives');
+                                    if (!expanded.voice) socket.emit('get-voice-archives');
                                 }}>
                                     <Icon name="archive" size={15} color="#C9A84C" />
                                     <Text style={styles.hotelLbl}>ARCHIVIO CHAT VOCALI</Text>
@@ -1180,27 +1220,18 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 </TouchableOpacity>
                                 {expanded.voice && (
                                     <View style={styles.savedList}>
-                                        {roomArchives.length > 0 ? roomArchives.map((arc, idx) => (
-                                            <TouchableOpacity key={idx} style={styles.archiveRow} onPress={() => {
-                                                socket.emit('room-chat-history', { roomId: arc.roomId });
-                                                const onHist = (data) => {
-                                                    console.log('Archive data received:', data);
-                                                    setViewingArchive({ roomId: arc.roomId, messages: data.messages || [] });
-                                                    socket.off('room-chat-history', onHist);
-                                                };
-                                                socket.on('room-chat-history', onHist);
-                                            }}>
+                                        {roomArchives.length === 0 && <Text style={styles.emptyArchiveTxt}>Nessun archivio disponibile</Text>}
+                                        {roomArchives.map((arc, idx) => (
+                                            <TouchableOpacity key={idx} style={styles.archiveRow} onPress={() => setViewingArchive(arc)}>
                                                 <View style={styles.archiveIcon}>
                                                     <Icon name="message-square" size={12} color="#C9A84C" />
                                                 </View>
                                                 <View style={{ flex: 1 }}>
-                                                    <Text style={styles.archiveTitle}>Room #{arc.roomId}</Text>
-                                                    <Text style={styles.archiveDate}>{new Date(arc.mtime).toLocaleDateString()} {new Date(arc.mtime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                                    <Text style={styles.archiveTitle}>{arc.name || `Room #${arc.roomId}`}</Text>
+                                                    <Text style={styles.archiveDate}>{new Date(arc.closedAt).toLocaleDateString()} {new Date(arc.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
                                                 </View>
                                             </TouchableOpacity>
-                                        )) : (
-                                            <Text style={styles.emptyArchiveTxt}>Nessun archivio disponibile</Text>
-                                        )}
+                                        ))}
                                     </View>
                                 )}
 
@@ -1275,15 +1306,29 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             {/* MODALS */}
             <Modal visible={!!fullPickerVisible} transparent animationType="fade" onRequestClose={() => setFullPickerVisible(null)}>
                 <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setFullPickerVisible(null)}>
-                    <TouchableOpacity activeOpacity={1} style={[styles.fullEmojiBox, { height: '60%' }]}>
-                        <Text style={[styles.infoTitle, { marginBottom: 12 }]}>Seleziona Emoji</Text>
-                        <ScrollView style={{ flex: 1 }}>
+                    <TouchableOpacity activeOpacity={1} style={[styles.fullEmojiBox, { height: '65%', width: 340 }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                            <Icon name="smile" size={16} color="#C9A84C" />
+                            <Text style={[styles.infoTitle, { marginBottom: 0, marginLeft: 8 }]}>Reazioni</Text>
+                        </View>
+                        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
                             {EMOJI_CATEGORIES.map(cat => (
                                 <View key={cat.name} style={{ marginBottom: 16 }}>
-                                    <Text style={styles.emojiCategoryTitle}>{cat.name}</Text>
+                                    <Text style={styles.emojiCategoryTitle}>{cat.name.toUpperCase()}</Text>
                                     <View style={styles.fullEmojiGrid}>
                                         {cat.emoji.map(emo => (
-                                            <TouchableOpacity key={emo} style={styles.fullEmojiItem} onPress={() => { reactMessage(fullPickerVisible, emo); setFullPickerVisible(null); }}>
+                                            <TouchableOpacity
+                                                key={emo}
+                                                style={styles.fullEmojiItem}
+                                                onPress={() => {
+                                                    if (fullPickerVisible === 'INPUT') {
+                                                        setDraft(d => d + emo);
+                                                    } else {
+                                                        reactMessage(fullPickerVisible, emo);
+                                                    }
+                                                    setFullPickerVisible(null);
+                                                }}
+                                            >
                                                 <Text style={{ fontSize: 24 }}>{emo}</Text>
                                             </TouchableOpacity>
                                         ))}
@@ -1329,6 +1374,7 @@ const styles = StyleSheet.create({
     fullEmojiBox: { width: 320, maxHeight: 400, backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 16, padding: 16 },
     fullEmojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 20 },
     fullEmojiItem: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 8 },
+    emojiCategoryTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 8, marginTop: 4 },
 
     hoverEmojiBtn: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center', borderRadius: 6 },
     hoverActionList: { padding: 4 },
@@ -1414,7 +1460,7 @@ const styles = StyleSheet.create({
     msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 },
     msgEdited: { color: '#554E40', fontSize: 10, fontStyle: 'italic', marginRight: 4 },
     msgChevron: { position: 'absolute', top: 8, right: 8, zIndex: 10, width: 24, height: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12 },
-    msgImg: { width: 300, height: 200, borderRadius: 12, marginTop: 4, backgroundColor: '#000' },
+    msgImg: { width: 280, maxHeight: 400, borderRadius: 12, marginTop: 6, backgroundColor: 'transparent', alignSelf: 'center' },
 
     repliedBubble: { flexDirection: 'row', marginBottom: 6, borderRadius: 8, backgroundColor: 'rgba(201,168,76,0.06)', overflow: 'hidden' },
     repliedBubbleBar: { width: 3, backgroundColor: '#C9A84C' },
@@ -1445,6 +1491,10 @@ const styles = StyleSheet.create({
     rightHeaderTitle: { color: '#C9A84C', fontSize: 13, fontWeight: '800', letterSpacing: 1 },
     savedList: { paddingLeft: 12, paddingVertical: 10 },
     emptyArchiveTxt: { color: '#444', fontSize: 11, fontStyle: 'italic' },
+    archiveRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.05)' },
+    archiveIcon: { width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(201,168,76,0.08)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)' },
+    archiveTitle: { color: '#C8C4B8', fontSize: 12, fontWeight: '600', lineHeight: 18 },
+    archiveDate: { color: '#554E40', fontSize: 10, marginTop: 2 },
     userList: { paddingLeft: 10 },
     userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
     userAvatarSmall: { width: 24, height: 24, borderRadius: 6, backgroundColor: '#1A1812', justifyContent: 'center', alignItems: 'center', position: 'relative' },
