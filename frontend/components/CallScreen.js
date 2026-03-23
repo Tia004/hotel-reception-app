@@ -20,6 +20,27 @@ const IS_MOBILE = W < 768;
 
 const EMOJI_REACTIONS = ['👍', '👏', '😂', '❤️', '🎉', '🔥', '😮', '🤔'];
 
+const FloatingEmoji = ({ emoji, onComplete }) => {
+    const translateY = useRef(new Animated.Value(0)).current;
+    const opacity = useRef(new Animated.Value(1)).current;
+    const translateX = useRef(new Animated.Value((Math.random() - 0.5) * 60)).current;
+
+    useEffect(() => {
+        Animated.parallel([
+            Animated.timing(translateY, { toValue: -300, duration: 2500, useNativeDriver: true }),
+            Animated.timing(opacity, { toValue: 0, duration: 2500, useNativeDriver: true, delay: 1500 }),
+        ]).start(() => { if (onComplete) onComplete(); });
+    }, []);
+
+    return (
+        <Animated.Text style={[styles.floatingEmoji, { transform: [{ translateY }, { translateX }], opacity }]}>
+            {emoji}
+        </Animated.Text>
+    );
+};
+
+
+
 export default function CallScreen({ user, socket, roomId, onClose, isTempProp, onRoomState, isPiP = false, onExpand, onMinimize }) {
     const [localStream, setLocalStream] = useState(null);
     const [remoteStreams, setRemoteStreams] = useState({}); // socketId → MediaStream
@@ -383,27 +404,49 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     const switchMicDevice = async (deviceId) => {
         setSelectedMic(deviceId);
         setShowMicDevices(false);
-        const stream = await startLocalStream(deviceId, selectedCam || undefined);
-        if (stream) {
+        try {
+            const stream = await mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
             const newTrack = stream.getAudioTracks()[0];
-            for (const pc of pcsRef.current.values()) {
-                const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
-                if (audioSender && newTrack) audioSender.replaceTrack(newTrack);
+            if (newTrack) {
+                newTrack.enabled = micOn && !deafenOn;
+                const oldTrack = localStreamRef.current?.getAudioTracks()[0];
+                if (oldTrack) {
+                    oldTrack.stop();
+                    localStreamRef.current.removeTrack(oldTrack);
+                }
+                if (!localStreamRef.current) localStreamRef.current = new MediaStream();
+                localStreamRef.current.addTrack(newTrack);
+                setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+                for (const pc of pcsRef.current.values()) {
+                    const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio');
+                    if (audioSender) audioSender.replaceTrack(newTrack);
+                }
             }
-        }
+        } catch (e) { console.error('Failed to switch mic', e); }
     };
 
     const switchCamDevice = async (deviceId) => {
         setSelectedCam(deviceId);
         setShowCamDevices(false);
-        const stream = await startLocalStream(selectedMic || undefined, deviceId);
-        if (stream) {
+        try {
+            const stream = await mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } });
             const newTrack = stream.getVideoTracks()[0];
-            for (const pc of pcsRef.current.values()) {
-                const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
-                if (videoSender && newTrack) videoSender.replaceTrack(newTrack);
+            if (newTrack) {
+                newTrack.enabled = camOn;
+                const oldTrack = localStreamRef.current?.getVideoTracks()[0];
+                if (oldTrack) {
+                    oldTrack.stop();
+                    localStreamRef.current.removeTrack(oldTrack);
+                }
+                if (!localStreamRef.current) localStreamRef.current = new MediaStream();
+                localStreamRef.current.addTrack(newTrack);
+                setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+                for (const pc of pcsRef.current.values()) {
+                    const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+                    if (videoSender) videoSender.replaceTrack(newTrack);
+                }
             }
-        }
+        } catch (e) { console.error('Failed to switch cam', e); }
     };
 
     const hangUp = async () => {
@@ -532,9 +575,11 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         <View style={styles.root}>
             <LinearGradient colors={['#0C0B09', '#141210']} style={StyleSheet.absoluteFill} />
 
-            {floatingReactions.map(r => (
-                <Animated.Text key={r.id} style={styles.floatingEmoji}>{r.emoji}</Animated.Text>
-            ))}
+            <View pointerEvents="none" style={styles.floatingEmojiContainer}>
+                {floatingReactions.map(r => (
+                    <FloatingEmoji key={r.id} emoji={r.emoji} />
+                ))}
+            </View>
 
             <View style={styles.header}>
                 <View style={styles.roomBadge}>
@@ -568,7 +613,12 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
 
                             const localTile = (
                                 <View style={[styles.tile, is1v1 ? styles.tilePiP : (visibleEntries.length === 0 ? styles.tileLarge : styles.tileMedium)]}>
-                                    {camOn && localStream ? (
+                                    {screenSharing ? (
+                                        <View style={{ flex: 1, backgroundColor: '#141210', justifyContent: 'center', alignItems: 'center', borderRadius: 16 }}>
+                                            <Icon name="screen-share" size={28} color="#C9A84C" />
+                                            <Text style={{ color: '#E8E4D8', fontSize: 13, marginTop: 8, fontWeight: '600' }}>Schermo Condiviso</Text>
+                                        </View>
+                                    ) : camOn && localStream ? (
                                         <RTCView streamURL={localStream.toURL ? localStream.toURL() : localStream} style={styles.rtc} objectFit="cover" muted={true} mirror={true} />
                                     ) : (
                                         <View style={styles.avatarTile}>
@@ -580,8 +630,18 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                     <View style={styles.participantOverlay}>
                                         <Text style={styles.participantName}>Tu</Text>
                                         <View style={styles.participantIcons}>
-                                            {!micOn && <Icon name="mic-off-filled" size={12} color="#ED4245" />}
-                                            {deafenOn && <Icon name="speaker-off" size={12} color="#ED4245" />}
+                                            {!micOn && (
+                                                <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
+                                                    <Icon name="mic-filled" size={10} color="#FFF" />
+                                                    <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
+                                                </View>
+                                            )}
+                                            {deafenOn && (
+                                                <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
+                                                    <Icon name="speaker" size={10} color="#FFF" />
+                                                    <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
+                                                </View>
+                                            )}
                                         </View>
                                     </View>
                                 </View>
@@ -605,8 +665,18 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                             <View style={styles.participantOverlay}>
                                                 <Text style={styles.participantName}>{remoteUsernames[sid] || 'Partecipante'}</Text>
                                                 <View style={styles.participantIcons}>
-                                                    {!rState.micOn && <Icon name="mic-off-filled" size={12} color="#ED4245" />}
-                                                    {rState.deafenOn && <Icon name="speaker-off" size={12} color="#ED4245" />}
+                                                    {!rState.micOn && (
+                                                        <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
+                                                            <Icon name="mic-filled" size={10} color="#FFF" />
+                                                            <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
+                                                        </View>
+                                                    )}
+                                                    {rState.deafenOn && (
+                                                        <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
+                                                            <Icon name="speaker" size={10} color="#FFF" />
+                                                            <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
+                                                        </View>
+                                                    )}
                                                 </View>
                                             </View>
                                         </View>
@@ -636,8 +706,18 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                                 <View style={styles.participantOverlay}>
                                                     <Text style={styles.participantName}>{remoteUsernames[sid] || 'Partecipante'}</Text>
                                                     <View style={styles.participantIcons}>
-                                                        {!rState.micOn && <Icon name="mic-off-filled" size={12} color="#ED4245" />}
-                                                        {rState.deafenOn && <Icon name="speaker-off" size={12} color="#ED4245" />}
+                                                        {!rState.micOn && (
+                                                            <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
+                                                                <Icon name="mic-filled" size={10} color="#FFF" />
+                                                                <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
+                                                            </View>
+                                                        )}
+                                                        {rState.deafenOn && (
+                                                            <View style={{ position: 'relative', width: 14, height: 14, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ED4245', borderRadius: 7 }}>
+                                                                <Icon name="speaker" size={10} color="#FFF" />
+                                                                <View style={{ position: 'absolute', width: 16, height: 2, backgroundColor: '#1A1812', transform: [{ rotate: '45deg' }] }} />
+                                                            </View>
+                                                        )}
                                                     </View>
                                                 </View>
                                             </View>
@@ -658,7 +738,11 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                             <View style={styles.devicesWrapper}>
                                 <View style={[styles.ctrlPill, !micOn && styles.ctrlPillOff]}>
                                     <TouchableOpacity style={styles.ctrlPillMain} onPress={toggleMic}>
-                                        <Icon name={micOn ? 'mic-filled' : 'mic-off-filled'} size={20} color={micOn ? '#C8C4B8' : '#ED4245'} />
+                                        <View style={{ position: 'relative', justifyContent: 'center', alignItems: 'center' }}>
+                                            <Icon name="mic-filled" size={20} color={micOn ? '#C8C4B8' : '#ED4245'} />
+                                            {!micOn && <View style={{ position: 'absolute', width: 24, height: 3, backgroundColor: '#141210', transform: [{ rotate: '45deg' }] }} />}
+                                            {!micOn && <View style={{ position: 'absolute', width: 22, height: 1.5, backgroundColor: '#ED4245', transform: [{ rotate: '45deg' }] }} />}
+                                        </View>
                                     </TouchableOpacity>
                                     <View style={styles.ctrlDivider} />
                                     <TouchableOpacity style={styles.ctrlPillArrow} onPress={() => { setShowMicDevices(!showMicDevices); setShowCamDevices(false); }}>
@@ -683,7 +767,11 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                             <View style={styles.devicesWrapper}>
                                 <View style={[styles.ctrlPill, !camOn && styles.ctrlPillOff]}>
                                     <TouchableOpacity style={styles.ctrlPillMain} onPress={toggleCam}>
-                                        <Icon name={camOn ? 'video-filled' : 'video-off-filled'} size={20} color={camOn ? '#C8C4B8' : '#ED4245'} />
+                                        <View style={{ position: 'relative', justifyContent: 'center', alignItems: 'center' }}>
+                                            <Icon name="video-filled" size={20} color={camOn ? '#C8C4B8' : '#ED4245'} />
+                                            {!camOn && <View style={{ position: 'absolute', width: 24, height: 3, backgroundColor: '#141210', transform: [{ rotate: '45deg' }] }} />}
+                                            {!camOn && <View style={{ position: 'absolute', width: 22, height: 1.5, backgroundColor: '#ED4245', transform: [{ rotate: '45deg' }] }} />}
+                                        </View>
                                     </TouchableOpacity>
                                     <View style={styles.ctrlDivider} />
                                     <TouchableOpacity style={styles.ctrlPillArrow} onPress={() => { setShowCamDevices(!showCamDevices); setShowMicDevices(false); }}>
@@ -730,6 +818,22 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                     </TouchableOpacity>
                 </View>
                 </View>
+
+                {showReactions && (
+                    <View style={styles.reactionsPopup}>
+                        {['👍', '❤️', '😂', '🔥', '👏', '🎉'].map(emoji => (
+                            <TouchableOpacity key={emoji} style={styles.reactionBtn} onPress={() => {
+                                socket.emit('emoji-reaction', { roomId, emoji });
+                                const id = Date.now() + Math.random();
+                                setFloatingReactions(prev => [...prev, { id, emoji }]);
+                                setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2500);
+                                setShowReactions(false);
+                            }}>
+                                <Text style={styles.reactionTxt}>{emoji}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                )}
 
                 {chatVisible && (
                     <View style={styles.chatPanel}>
@@ -806,6 +910,11 @@ const ScreenSharePlaceholder = ({ toggle }) => (
 
 const styles = StyleSheet.create({
     root: { flex: 1, position: 'relative', backgroundColor: '#0C0B09' },
+    floatingEmojiContainer: { ...StyleSheet.absoluteFillObject, zIndex: 999, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 100 },
+    floatingEmoji: { fontSize: 48, position: 'absolute', bottom: 0 },
+    reactionsPopup: { position: 'absolute', bottom: 90, alignSelf: 'center', flexDirection: 'row', backgroundColor: '#2B2D31', padding: 12, borderRadius: 30, gap: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 10, zIndex: 1000 },
+    reactionBtn: { padding: 8, backgroundColor: '#1C1A16', borderRadius: 20 },
+    reactionTxt: { fontSize: 24 },
     loadingCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 20 },
     loadingLogo: { width: 80, height: 80 },
     spinner: { width: 60, height: 60, borderRadius: 30, borderWidth: 3, borderColor: 'transparent', borderTopColor: '#C9A84C', borderRightColor: 'rgba(201,168,76,0.3)' },
@@ -853,7 +962,7 @@ const styles = StyleSheet.create({
     ctrlBtnActive: { backgroundColor: 'rgba(201,168,76,0.1)', borderColor: '#C9A84C' },
     ctrlBtnOff: { backgroundColor: '#ED4245', borderColor: '#ED4245' },
     hangupBtn: { width: 64, height: 46, borderRadius: 12, backgroundColor: '#ED4245', justifyContent: 'center', alignItems: 'center', shadowColor: '#ED4245', shadowOpacity: 0.4, shadowRadius: 10 },
-    screenSharePatina: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(12,11,9,0.9)', justifyContent: 'center', alignItems: 'center' },
+    screenSharePatina: { flex: 1, width: '100%', height: '100%', backgroundColor: '#141210', justifyContent: 'center', alignItems: 'center', borderRadius: 16 },
     screenShareCenterBox: { alignItems: 'center', gap: 12 },
     screenShareIconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(201,168,76,0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#C9A84C' },
     screenShareMainTxt: { color: '#fff', fontSize: 18, fontWeight: '800' },

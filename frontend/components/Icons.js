@@ -18,6 +18,8 @@ const ICON_MAP = {
     'video': { pack: 'feather', name: 'video' },
     'video-off': { pack: 'feather', name: 'video-off' },
     'camera': { pack: 'feather', name: 'camera' },
+    'speaker': { pack: 'feather', name: 'volume-2' },
+    'speaker-off': { pack: 'feather', name: 'volume-x' },
     // Monitor / Share
     'monitor': { pack: 'feather', name: 'monitor' },
     'share-screen': { pack: 'ionicons', name: 'desktop-outline' },
@@ -72,6 +74,8 @@ const ICON_MAP = {
     'info': { pack: 'feather', name: 'info' },
     'alert-triangle': { pack: 'feather', name: 'alert-triangle' },
     'file-text': { pack: 'feather', name: 'file-text' },
+    'eye-off': { pack: 'feather', name: 'eye-off' },
+    'external-link': { pack: 'feather', name: 'external-link' },
     // Edit / Actions (MUST match exact Feather names used in components)
     'edit': { pack: 'feather', name: 'edit-2' },
     'edit-2': { pack: 'feather', name: 'edit-2' },

@@ -200,21 +200,24 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [lbImages, setLbImages] = useState([]);
     const [lbIdx, setLbIdx] = useState(0);
 
-    const [leftCollapsed, setLeftCollapsed] = useState(false);
-    const [rightCollapsed, setRightCollapsed] = useState(false);
+    const leftCollapsed = useRef(false); // local ref to track since state is async? Or just keep state
+    const [leftCollapsedState, setLeftCollapsed] = useState(false);
+    const [rightCollapsedState, setRightCollapsed] = useState(false);
+    
+    // We animate margin from 0 to negative width to slide without squishing text
     const leftAnim = useRef(new Animated.Value(0)).current; 
     const rightAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        Animated.spring(leftAnim, { toValue: leftCollapsed ? -260 : 0, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
-    }, [leftCollapsed]);
+        Animated.spring(leftAnim, { toValue: leftCollapsedState ? -260 : 0, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
+    }, [leftCollapsedState]);
 
     useEffect(() => {
-        Animated.spring(rightAnim, { toValue: rightCollapsed ? -280 : 0, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
-    }, [rightCollapsed]);
+        Animated.spring(rightAnim, { toValue: rightCollapsedState ? -280 : 0, useNativeDriver: false, damping: 20, stiffness: 120 }).start();
+    }, [rightCollapsedState]);
 
-    const leftRotate = leftCollapsed ? '180deg' : '0deg';
-    const rightRotate = rightCollapsed ? '180deg' : '0deg';
+    const leftRotate = leftCollapsedState ? '180deg' : '0deg';
+    const rightRotate = rightCollapsedState ? '180deg' : '0deg';
 
     const [hoveredMsg, setHoveredMsg] = useState(null);
     const [emojiPickerMsg, setEmojiPickerMsg] = useState(null); // Used for Action Menu
@@ -680,14 +683,14 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
             {/* ── LEFT SIDEBAR ────────────────────────────────────────── */}
             {(!IS_MOBILE || sidebarVisible) && (
-                <View style={{ position: 'relative', height: '100%' }}>
+                <View style={{ position: 'relative', height: '100%', flexDirection: 'row' }}>
                     <Animated.View style={[
                         styles.column, 
                         styles.sidebar, 
-                        !IS_MOBILE && { marginLeft: leftAnim },
+                        !IS_MOBILE && { width: 260, marginLeft: leftAnim },
                         IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 100, width: 260 }
                     ]}>
-                        <View style={{ width: 260, height: '100%' }}>
+                        <View style={{ width: 260, height: '100%', position: 'absolute', right: 0, top: 0 }}>
                             <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <Text style={styles.brandName}>HOTEL CHAT v3.0</Text>
@@ -741,7 +744,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 })}
 
                                 <View style={[styles.navHotelRow, { marginTop: 20 }]}>
-                                    <Icon name="mic" size={14} color="#6E6960" />
+                                    <Icon name="speaker" size={14} color="#6E6960" />
                                     <Text style={styles.hotelLbl}>STANZE VOCALI FISSE</Text>
                                 </View>
 
@@ -758,7 +761,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                             style={[styles.chRow, isActive && styles.chRowActive]}
                                             onPress={() => onJoinRoom(rid)}
                                         >
-                                            <Icon name="mic" size={16} color={isActive ? '#C9A84C' : '#554E40'} />
+                                            <Icon name="speaker" size={16} color={isActive ? '#C9A84C' : '#554E40'} />
                                             <View style={{ flex: 1, marginLeft: 10 }}>
                                                 <Text style={[styles.chName, isActive && { color: '#C9A84C' }]}>{name.toUpperCase()}</Text>
                                                 {room && room.peerCount > 0 && (
@@ -797,15 +800,15 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                         </View>
                     </Animated.View>
 
-                    {/* Unified Rhombus Tab (Left) - Now sibling of Animated.View but positioned absolutely */}
+                    {/* Unified Rhombus Tab (Left) - Always visible because its parent isn't absolute overflow hidden! */}
                     {!IS_MOBILE && (
-                        <Animated.View style={[
+                        <View style={[
                             styles.externalTab, 
                             styles.leftExternalTab, 
-                            { left: '100%', marginLeft: -1 } 
+                            { left: '100%', position: 'absolute', marginLeft: leftAnim } 
                         ]}>
                             <TouchableOpacity 
-                                onPress={() => setLeftCollapsed(!leftCollapsed)}
+                                onPress={() => setLeftCollapsed(!leftCollapsedState)}
                                 activeOpacity={0.8}
                                 style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
                             >
@@ -813,7 +816,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                     <Icon name="chevron-left" size={16} color="#C9A84C" />
                                 </View>
                             </TouchableOpacity>
-                        </Animated.View>
+                        </View>
                     )}
                 </View>
             )}
@@ -849,10 +852,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
                             return (
                                 <View key={m.id} style={[styles.msgRow, isMine && styles.msgRowMine]}>
-                                    <TouchableOpacity
+                                    <View
                                         style={styles.bubbleWrap}
-                                        activeOpacity={1}
-                                        onLongPress={() => setEmojiPickerMsg(m.id)}
                                         {...(Platform.OS === 'web' ? {
                                             onMouseEnter: () => setHoveredMsg(m.id),
                                             onMouseLeave: () => setHoveredMsg(null),
@@ -863,6 +864,15 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                             onDoubleClick: () => setReplyingTo(m)
                                         } : {})}
                                     >
+                                        {/* Hover Chevron */}
+                                        {hoveredMsg === m.id && (
+                                            <TouchableOpacity 
+                                                style={[styles.msgChevron, isMine ? { right: 8 } : { right: 8 }]} 
+                                                onPress={(e) => { e.stopPropagation(); setEmojiPickerMsg(emojiPickerMsg === m.id ? null : m.id); setReactionPickerMsg(null); }}
+                                            >
+                                                <Icon name="chevron-down" size={16} color="rgba(255,255,255,0.5)" />
+                                            </TouchableOpacity>
+                                        )}
                                         {/* Inline Context Menu — WhatsApp/Discord style */}
                                         {emojiPickerMsg === m.id && (
                                             <View style={[styles.msgActionMenu, isMine ? styles.msgActionMenuRight : styles.msgActionMenuLeft]}>
@@ -890,6 +900,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                     <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setInfoModal(m); setEmojiPickerMsg(null); }}>
                                                         <Icon name="info" size={14} color="#A8A090" />
                                                         <Text style={styles.hoverActionTxt}>Info</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setReactionPickerMsg(reactionPickerMsg === m.id ? null : m.id); setEmojiPickerMsg(null); }}>
+                                                        <Icon name="smile" size={14} color="#A8A090" />
+                                                        <Text style={styles.hoverActionTxt}>Reagisci</Text>
                                                     </TouchableOpacity>
                                                 </View>
                                             </View>
@@ -979,7 +993,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                 ))}
                                             </View>
                                         )}
-                                    </TouchableOpacity>
+                                    </View>
                                 </View>
                             );
                         })}
@@ -1080,13 +1094,14 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
             {!hideChatColumn && !IS_MOBILE && (
-                <View style={{ position: 'relative', height: '100%' }}>
+                <View style={{ position: 'relative', height: '100%', flexDirection: 'row' }}>
                     <Animated.View style={[
                         styles.column, 
                         styles.rightPanel, 
-                        { width: rightAnim, overflow: 'hidden' }
+                        !IS_MOBILE && { width: 280, marginRight: rightAnim },
+                        IS_MOBILE && { position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 100, width: 280 }
                     ]}>
-                        <View style={{ width: 280, height: '100%', padding: 16 }}>
+                        <View style={{ width: 280, height: '100%', padding: 16, position: 'absolute', left: 0, top: 0 }}>
                             <View style={styles.rightHeader}>
                                 <Text style={styles.rightHeaderTitle}>HUB GESTIONALE</Text>
                             </View>
@@ -1179,15 +1194,15 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                         </View>
                     </Animated.View>
 
-                    {/* Unified Rhombus Tab (Right) - Sibling and outside overflow */}
+                    {/* Unified Rhombus Tab (Right) - Sibling and moving with rightAnim */}
                     {!IS_MOBILE && (
-                        <Animated.View style={[
+                        <View style={[
                             styles.externalTab, 
                             styles.rightExternalTab, 
-                            { right: '100%', marginRight: -1 }
+                            { right: '100%', position: 'absolute', marginRight: rightAnim }
                         ]}>
                             <TouchableOpacity 
-                                onPress={() => setRightCollapsed(!rightCollapsed)}
+                                onPress={() => setRightCollapsed(!rightCollapsedState)}
                                 activeOpacity={0.8}
                                 style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
                             >
@@ -1195,7 +1210,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                     <Icon name="chevron-right" size={16} color="#C9A84C" />
                                 </View>
                             </TouchableOpacity>
-                        </Animated.View>
+                        </View>
                     )}
                 </View>
             )}
@@ -1316,13 +1331,14 @@ const styles = StyleSheet.create({
     msgRowMine: { justifyContent: 'flex-end' },
     bubbleWrap: { maxWidth: '85%', position: 'relative' },
     bubble: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
-    bubbleOther: { backgroundColor: '#1A1812', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)', borderTopLeftRadius: 4 },
-    bubbleMine: { backgroundColor: '#1E2B22', borderWidth: 1, borderColor: '#2D4A38', borderTopRightRadius: 4 }, // WhatsApp deep green shade
+    bubbleOther: { backgroundColor: '#141210', borderWidth: 1, borderColor: 'rgba(201,168,76,0.08)', borderTopLeftRadius: 4 },
+    bubbleMine: { backgroundColor: '#1C1A14', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)', borderTopRightRadius: 4 },
     msgSender: { color: '#6E6960', fontSize: 13, fontWeight: '800' },
     msgText: { color: '#E8E4D8', fontSize: 16, lineHeight: 24 }, // Slightly bigger for readability
     msgTime: { color: '#888275', fontSize: 11, fontWeight: '600' },
     msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6 },
     msgEdited: { color: '#554E40', fontSize: 10, fontStyle: 'italic', marginRight: 4 },
+    msgChevron: { position: 'absolute', top: 8, right: 8, zIndex: 10, width: 24, height: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12 },
     msgImg: { width: 280, height: 180, borderRadius: 12, marginTop: 8 },
 
     repliedBubble: { flexDirection: 'row', marginBottom: 6, borderRadius: 8, backgroundColor: 'rgba(201,168,76,0.06)', overflow: 'hidden' },
