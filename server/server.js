@@ -69,6 +69,7 @@ const defaultUsers = {
     'reception1': { username: 'reception1', station: 'Reception Principale', status: 'invisible', bio: '', profilePic: null },
     'reception2': { username: 'reception2', station: 'Reception Secondaria', status: 'invisible', bio: '', profilePic: null },
     'mobile_lobby': { username: 'mobile_lobby', station: 'Telefono Hall', status: 'invisible', bio: '', profilePic: null },
+    'stefano': { username: 'stefano', station: 'Stefano Golisano', status: 'invisible', bio: '', profilePic: null },
 };
 const savedUsers = loadJSON(USERS_FILE, defaultUsers);
 const allKnownUsers = new Map(Object.entries(savedUsers));

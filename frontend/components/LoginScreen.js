@@ -9,7 +9,8 @@ const USERS = {
     'admin': { password: 'password123', role: 'Amministratore' },
     'reception1': { password: 'password123', role: 'Reception Principale' },
     'reception2': { password: 'password123', role: 'Reception Secondaria' },
-    'mobile_lobby': { password: 'password123', role: 'Telefono Hall' }
+    'mobile_lobby': { password: 'password123', role: 'Telefono Hall' },
+    'stefano': { password: 'gsahotelsisthebest', role: 'Stefano Golisano' }
 };
 
 export default function LoginScreen({ onLogin }) {
