@@ -23,6 +23,7 @@ export default function App() {
   const [availableRooms, setAvailableRooms] = useState([]);
   const [currentRoom, setCurrentRoom] = useState(null);
   const [isTemp, setIsTemp] = useState(false);
+  const [initialPeers, setInitialPeers] = useState([]);
   const [callPiP, setCallPiP] = useState(false);
   // On mobile: flip between "call view" and "chat view"
   const [mobileView, setMobileView] = useState('chat'); // 'chat' | 'call'
@@ -83,16 +84,18 @@ export default function App() {
       setSocketReady(true);
     });
 
-    s.on('room-created', ({ roomId, isTemp }) => {
+    s.on('room-created', ({ roomId, isTemp, peers }) => {
       setCurrentRoom(roomId);
       setIsTemp(isTemp);
+      setInitialPeers(peers || []);
       setCallPiP(false);
       // On mobile, immediately switch to call view when room created
       if (IS_MOBILE) setMobileView('call');
     });
-    s.on('room-joined', ({ roomId, isTemp }) => {
+    s.on('room-joined', ({ roomId, isTemp, peers }) => {
       setCurrentRoom(roomId);
       setIsTemp(isTemp);
+      setInitialPeers(peers || []);
       setCallPiP(false);
       if (IS_MOBILE) setMobileView('call');
     });
@@ -288,6 +291,7 @@ export default function App() {
                 onLogout={handleLogout}
                 onRoomsUpdate={setAvailableRooms}
                 roomId={currentRoom}
+                initialPeers={initialPeers}
                 onClose={() => { setCurrentRoom(null); setMobileView('chat'); }}
                 isTempProp={isTemp}
                 onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
@@ -339,8 +343,8 @@ export default function App() {
                 onLogout={handleLogout}
                 onRoomsUpdate={setAvailableRooms}
                 roomId={currentRoom}
+                initialPeers={initialPeers}
                 onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
-                isTempProp={isTemp}
                 onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
                 onMinimize={() => setCallPiP(true)}
               />
@@ -358,6 +362,7 @@ export default function App() {
                 onLogout={handleLogout}
                 onRoomsUpdate={setAvailableRooms}
                 roomId={currentRoom}
+                initialPeers={initialPeers}
                 onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
                 isTempProp={isTemp}
                 onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}

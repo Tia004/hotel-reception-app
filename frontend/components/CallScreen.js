@@ -41,7 +41,7 @@ const FloatingEmoji = ({ emoji, onComplete }) => {
 
 
 
-export default function CallScreen({ user, socket, roomId, onClose, isTempProp, onRoomState, isPiP = false, onExpand, onMinimize }) {
+export default function CallScreen({ user, socket, roomId, onClose, isTempProp, onRoomState, isPiP = false, onExpand, onMinimize, initialPeers = [] }) {
     // Definizione locale dei dati emoji per evitare ReferenceError
     const GSA_EMOJI_DATA = [
         {
@@ -129,6 +129,24 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         const timer = setTimeout(() => setLoading(false), 400);
         return () => clearTimeout(timer);
     }, []);
+    
+    // ── Stream Synchronization ────────────────────────────────────────────
+    useEffect(() => {
+        const stream = localStream;
+        if (!stream) return;
+        
+        console.log('Local stream updated, syncing with all peers...', stream.getTracks().length);
+        pcsRef.current.forEach((pc, targetId) => {
+            const senders = pc.getSenders();
+            stream.getTracks().forEach(track => {
+                const alreadyAdded = senders.some(s => s.track === track);
+                if (!alreadyAdded) {
+                    console.log(`Adding track [${track.kind}] to peer:`, targetId);
+                    pc.addTrack(track, stream);
+                }
+            });
+        });
+    }, [localStream]);
 
 
     // ── Enumerate Devices ────────────────────────────────────────────────
@@ -153,7 +171,6 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     useEffect(() => {
         if (!socket || !roomId) return;
         startLocalStream();
-
         const onUserJoined = async ({ socketId, username }) => {
             console.log('User joined room:', username);
             setRemoteUsernames(prev => ({ ...prev, [socketId]: username }));
@@ -163,8 +180,24 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 console.log('Adding local tracks for new user:', socketId);
                 stream.getTracks().forEach(t => pc.addTrack(t, stream));
             }
-            // Let onnegotiationneeded handle the offer
         };
+
+        const initPeers = async () => {
+            if (!initialPeers || initialPeers.length === 0) return;
+            console.log('Initializing connections with existing peers:', initialPeers);
+            initialPeers.forEach(peerId => {
+                if (peerId !== socket.id && !pcsRef.current.has(peerId)) {
+                    console.log('Initiating connection to existing peer:', peerId);
+                    const pc = createPC(peerId);
+                    const stream = localStreamRef.current;
+                    if (stream) {
+                        console.log('Adding local tracks for existing peer:', peerId);
+                        stream.getTracks().forEach(t => pc.addTrack(t, stream));
+                    }
+                }
+            });
+        };
+        initPeers();
 
         const onOffer = async ({ sender, offer }) => {
             console.log('Received offer from:', sender);
