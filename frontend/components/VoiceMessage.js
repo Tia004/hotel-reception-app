@@ -28,7 +28,7 @@ const playBeep = () => {
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 // Maximum bars visible in the waveform strip
-const MAX_BARS = 50;
+const MAX_BARS = 150;
 
 /**
  * VoiceRecorderButton

@@ -223,6 +223,26 @@ io.on('connection', (socket) => {
 
         broadcastRooms();
         broadcastUsers();
+
+        // Retroactively mark messages as delivered for this user
+        // (covers case where messages were sent before this user logged in)
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        for (const [chId, msgs] of channelMessages.entries()) {
+            const updates = [];
+            for (const msg of msgs) {
+                if (msg.sender === username) continue; // skip own messages
+                if (!msg.deliveredTo) msg.deliveredTo = [];
+                const alreadyDelivered = msg.deliveredTo.some(d => (typeof d === 'string' ? d : d.user) === username);
+                if (!alreadyDelivered) {
+                    const receipt = { user: username, time: timeStr };
+                    msg.deliveredTo.push(receipt);
+                    updates.push({ messageId: msg.id, receipt });
+                }
+            }
+            if (updates.length > 0) {
+                io.to(`channel:${chId}`).emit('read-receipt-update', { channelId: chId, reader: username, receipts: updates, type: 'delivered' });
+            }
+        }
     });
 
     // ── Room Management ──────────────────────────────────────────────────────

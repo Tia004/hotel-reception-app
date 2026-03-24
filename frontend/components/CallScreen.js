@@ -89,9 +89,10 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         Animated.loop(
             Animated.timing(spinAnim, { toValue: 1, duration: 1200, useNativeDriver: true })
         ).start();
-        const timer = setTimeout(() => setLoading(false), 1500);
+        const timer = setTimeout(() => setLoading(false), 400);
         return () => clearTimeout(timer);
     }, []);
+
 
     // ── Enumerate Devices ────────────────────────────────────────────────
     useEffect(() => {
@@ -577,17 +578,17 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 </View>
                 <View style={styles.pipControls}>
                     <TouchableOpacity style={[styles.pipCtrl, !micOn && { backgroundColor: '#ED4245' }]} onPress={toggleMic}>
-                        <Icon name={micOn ? 'mic-filled' : 'mic-off-filled'} size={14} color="#fff" />
+                        <Icon name={micOn ? 'mic' : 'mic-off'} size={20} color="#fff" />
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.pipCtrl, !camOn && { backgroundColor: '#ED4245' }]} onPress={toggleCam}>
-                        <Icon name={camOn ? 'video-filled' : 'video-off-filled'} size={14} color="#fff" />
+                        <Icon name={camOn ? 'video' : 'video-off'} size={20} color="#fff" />
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.pipCtrl, { backgroundColor: '#ED4245' }]} onPress={hangUp}>
-                        <Icon name="phone" size={14} color="#fff" />
+                        <Icon name="phone" size={20} color="#fff" />
                     </TouchableOpacity>
                     {onExpand && (
                         <TouchableOpacity style={styles.pipCtrl} onPress={onExpand}>
-                            <Icon name="maximize-2" size={14} color="#C9A84C" />
+                            <Icon name="maximize-2" size={20} color="#C9A84C" />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -647,8 +648,18 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                         </View>
                                     )}
                                     <View style={styles.participantOverlay}>
+                                        {/* Name Overlay */}
+                            <View style={{ position: 'absolute', bottom: 10, left: 10, zIndex: 5 }}>
+                                <Text style={{
+                                    color: '#FFF',
+                                    fontSize: 13,
+                                    fontWeight: '700',
+                                    textShadowColor: 'rgba(0,0,0,0.8)',
+                                    textShadowOffset: { width: 1, height: 1 },
+                                    textShadowRadius: 3
+                                }}>{user.username}</Text>
+                            </View>
                                         <View style={styles.participantNameRow}>
-                                            <Text style={styles.participantName}>Tu</Text>
                                             {handRaised && <Text style={{ fontSize: 14 }}>✋</Text>}
                                         </View>
                                         <View style={styles.participantIcons}>
