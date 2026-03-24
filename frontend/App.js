@@ -7,6 +7,7 @@ import HotelChat from './components/HotelChat';
 import io from 'socket.io-client';
 import { Icon } from './components/Icons';
 import SplashScreen from './components/SplashScreen';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'http://192.168.1.46:3000';
 const SESSION_KEY = 'gsa_session';
@@ -239,12 +240,76 @@ export default function App() {
   // ────────────────────────────────────────────────────────────────────────────
   if (IS_MOBILE) {
     return (
+      <ErrorBoundary>
+        <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
+          <StatusBar style="light" />
+
+          {/* Chat view */}
+          {(!inCall || mobileView === 'chat') && (
+            <View style={StyleSheet.absoluteFillObject}>
+              <HotelChat
+                socket={socketRef.current}
+                user={user}
+                sidebarVisible={sidebarVisible}
+                onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
+                availableRooms={availableRooms}
+                onJoinRoom={(roomId) => {
+                  socketRef.current?.emit('join-room', { roomId });
+                  setCurrentRoom(roomId);
+                  setIsTemp(false);
+                  setCallPiP(false);
+                  if (IS_MOBILE) setMobileView('call');
+                }}
+                onLogout={handleLogout}
+                inCall={inCall}
+                hideChatColumn={false}
+                onChannelClick={null}
+                currentRoomId={currentRoom}
+              />
+              {/* Floating "return to call" button when in a call */}
+              {inCall && mobileView === 'chat' && (
+                <TouchableOpacity
+                  style={styles.mobileReturnToCall}
+                  onPress={() => setMobileView('call')}
+                >
+                  <Icon name="video-filled" size={14} color="#111" />
+                  <Text style={styles.mobileReturnTxt}>Torna alla chiamata</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Full-screen call view on mobile */}
+          {inCall && mobileView === 'call' && (
+            <View style={StyleSheet.absoluteFillObject}>
+              <CallScreen
+                user={user}
+                socket={socketRef.current}
+                onLogout={handleLogout}
+                onRoomsUpdate={setAvailableRooms}
+                roomId={currentRoom}
+                onClose={() => { setCurrentRoom(null); setMobileView('chat'); }}
+                isTempProp={isTemp}
+                onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
+                onMinimize={() => setMobileView('chat')} // "minimize" = go to chat on mobile
+              />
+            </View>
+          )}
+        </Animated.View>
+      </ErrorBoundary>
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // DESKTOP layout — side-by-side
+  // ────────────────────────────────────────────────────────────────────────────
+  return (
+    <ErrorBoundary>
       <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
         <StatusBar style="light" />
 
-        {/* Chat view */}
-        {(!inCall || mobileView === 'chat') && (
-          <View style={StyleSheet.absoluteFillObject}>
+        <View style={styles.content}>
+          <View style={showCallFull ? styles.chatPaneShrunk : styles.chatPane}>
             <HotelChat
               socket={socketRef.current}
               user={user}
@@ -260,113 +325,50 @@ export default function App() {
               }}
               onLogout={handleLogout}
               inCall={inCall}
-              hideChatColumn={false}
-              onChannelClick={null}
+              hideChatColumn={showCallFull}
+              onChannelClick={handleChannelClick}
               currentRoomId={currentRoom}
             />
-            {/* Floating "return to call" button when in a call */}
-            {inCall && mobileView === 'chat' && (
-              <TouchableOpacity
-                style={styles.mobileReturnToCall}
-                onPress={() => setMobileView('call')}
-              >
-                <Icon name="video-filled" size={14} color="#111" />
-                <Text style={styles.mobileReturnTxt}>Torna alla chiamata</Text>
-              </TouchableOpacity>
-            )}
           </View>
-        )}
 
-        {/* Full-screen call view on mobile */}
-        {inCall && mobileView === 'call' && (
-          <View style={StyleSheet.absoluteFillObject}>
-            <CallScreen
-              user={user}
-              socket={socketRef.current}
-              onLogout={handleLogout}
-              onRoomsUpdate={setAvailableRooms}
-              roomId={currentRoom}
-              onClose={() => { setCurrentRoom(null); setMobileView('chat'); }}
-              isTempProp={isTemp}
-              onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
-              onMinimize={() => setMobileView('chat')} // "minimize" = go to chat on mobile
-            />
-          </View>
-        )}
-      </Animated.View>
-    );
-  }
+          {inCall && !callPiP && (
+            <View style={styles.callPane}>
+              <CallScreen
+                user={user}
+                socket={socketRef.current}
+                onLogout={handleLogout}
+                onRoomsUpdate={setAvailableRooms}
+                roomId={currentRoom}
+                onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
+                isTempProp={isTemp}
+                onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
+                onMinimize={() => setCallPiP(true)}
+              />
+            </View>
+          )}
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // DESKTOP layout — side-by-side
-  // ────────────────────────────────────────────────────────────────────────────
-  return (
-    <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
-      <StatusBar style="light" />
-
-      <View style={styles.content}>
-        {/* HotelChat — full width when no call or PiP, shrunk when call is full */}
-        <View style={showCallFull ? styles.chatPaneShrunk : styles.chatPane}>
-          <HotelChat
-            socket={socketRef.current}
-            user={user}
-            sidebarVisible={sidebarVisible}
-            onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
-            availableRooms={availableRooms}
-            onJoinRoom={(roomId) => {
-              socketRef.current?.emit('join-room', { roomId });
-              setCurrentRoom(roomId);
-              setIsTemp(false);
-              setCallPiP(false);
-              if (IS_MOBILE) setMobileView('call');
-            }}
-            onLogout={handleLogout}
-            inCall={inCall}
-            hideChatColumn={showCallFull}
-            onChannelClick={handleChannelClick}
-            currentRoomId={currentRoom}
-          />
+          {inCall && callPiP && (
+            <View 
+              style={pipContainerStyle}
+              {...(Platform.OS === 'web' ? { onMouseDown: onDragStart } : {})}
+            >
+              <CallScreen
+                user={user}
+                socket={socketRef.current}
+                onLogout={handleLogout}
+                onRoomsUpdate={setAvailableRooms}
+                roomId={currentRoom}
+                onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
+                isTempProp={isTemp}
+                onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
+                isPiP={true}
+                onExpand={() => setCallPiP(false)}
+              />
+            </View>
+          )}
         </View>
-
-        {/* Call Screen — full pane when not PiP */}
-        {inCall && !callPiP && (
-          <View style={styles.callPane}>
-            <CallScreen
-              user={user}
-              socket={socketRef.current}
-              onLogout={handleLogout}
-              onRoomsUpdate={setAvailableRooms}
-              roomId={currentRoom}
-              onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
-              isTempProp={isTemp}
-              onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
-              onMinimize={() => setCallPiP(true)}
-            />
-          </View>
-        )}
-
-        {/* Call Screen — PiP floating window */}
-        {inCall && callPiP && (
-          <View 
-            style={pipContainerStyle}
-            {...(Platform.OS === 'web' ? { onMouseDown: onDragStart } : {})}
-          >
-            <CallScreen
-              user={user}
-              socket={socketRef.current}
-              onLogout={handleLogout}
-              onRoomsUpdate={setAvailableRooms}
-              roomId={currentRoom}
-              onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
-              isTempProp={isTemp}
-              onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
-              isPiP={true}
-              onExpand={() => setCallPiP(false)}
-            />
-          </View>
-        )}
-      </View>
-    </Animated.View>
+      </Animated.View>
+    </ErrorBoundary>
   );
 }
 

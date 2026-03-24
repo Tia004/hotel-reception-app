@@ -49,8 +49,8 @@ const ALL_CHANNELS = HOTELS.flatMap(h => h.channels = [
     { id: `${h.id}-annunci`, name: 'annunci' }
 ]);
 
-const getRecentEmoji = () => { try { return JSON.parse(localStorage.getItem('gsa_recent_emoji') || '[]'); } catch { return []; } };
-const saveRecentEmoji = (l) => { try { localStorage.setItem('gsa_recent_emoji', JSON.stringify(l)); } catch { } };
+const getRecentEmoji = () => { try { if (typeof localStorage === 'undefined') return []; return JSON.parse(localStorage.getItem('gsa_recent_emoji') || '[]'); } catch { return []; } };
+const saveRecentEmoji = (l) => { try { if (typeof localStorage !== 'undefined') localStorage.setItem('gsa_recent_emoji', JSON.stringify(l)); } catch { } };
 
 // ─── Markdown Parser (full support) ────────────────────────────────────────
 const parseMarkdown = (text) => {
@@ -324,7 +324,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                         <Text style={styles.infoTitle}>INOLTRA MESSAGGIO</Text>
                         <Text style={[styles.infoLabel, { marginBottom: 16 }]}>Seleziona un canale di destinazione:</Text>
                         <ScrollView style={{ maxHeight: 300 }}>
-                            {ALL_CHANNELS.filter(ch => ch.id !== activeChannel?.id).map(ch => (
+                            {(ALL_CHANNELS || []).filter(ch => ch.id !== activeChannel?.id).map(ch => (
                                 <TouchableOpacity key={ch.id} style={styles.forwardItem} onPress={() => forwardMessage(ch)}>
                                     <View style={[styles.hotelDot, { backgroundColor: HOTELS.find(h => ch.id.startsWith(h.id))?.color }]} />
                                     <View style={{ flex: 1 }}>
@@ -412,7 +412,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 12 }} />
                                 <Text style={[styles.infoLabel, { color: '#6E6960', marginBottom: 8 }]}>CONSEGNATO A:</Text>
                                 <ScrollView style={{ maxHeight: 100 }}>
-                                    {infoModal.deliveredTo.map((d, i) => (
+                                    {(infoModal?.deliveredTo || []).map((d, i) => (
                                         <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
                                             <Text style={{ color: '#A8A090', fontSize: 13 }}>• {d.user}</Text>
                                             <Text style={{ color: '#3A3630', fontSize: 11 }}>{d.time}</Text>
@@ -427,7 +427,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 12 }} />
                                 <Text style={[styles.infoLabel, { color: '#C9A84C', marginBottom: 8 }]}>LETTO DA:</Text>
                                 <ScrollView style={{ maxHeight: 150 }}>
-                                    {infoModal.readBy.map((r, i) => (
+                                    {(infoModal?.readBy || []).map((r, i) => (
                                         <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
                                             <Text style={{ color: '#E8E4D8', fontSize: 13, fontWeight: '600' }}>• {r.user}</Text>
                                             <Text style={{ color: '#C9A84C', fontSize: 11 }}>{r.time}</Text>
@@ -1228,7 +1228,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                 {m.edited && <Text style={styles.msgEdited}>(modificato)</Text>}
                                                 <Text style={styles.msgTime}>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
                                                 {isMine && (() => {
-                                                    const totalOthers = onlineUsers.filter(u => u.status === 'online' && u.username !== user.username).length;
+                                                    const totalOthers = (Array.isArray(onlineUsers) ? onlineUsers : []).filter(u => u.status === 'online' && u.username !== user.username).length;
                                                     const readCount = (m.readBy || []).length;
                                                     const delivered = (m.deliveredTo || []).length > 0;
                                                     if (readCount > 0 && readCount >= totalOthers && totalOthers > 0) {
@@ -1248,8 +1248,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         {/* Reactions */}
                                         {m.reactions && Object.keys(m.reactions).length > 0 && (
                                             <View style={styles.reactionsWrap}>
-                                                {Object.entries(m.reactions).map(([emoji, usersArr]) => (
-                                                    <TouchableOpacity key={emoji} style={[styles.reactionBadge, usersArr.includes(user.username) && styles.reactionBadgeMy]} onPress={() => reactMessage(m.id, emoji)}>
+                                                {Object.entries(m.reactions || {}).map(([emoji, usersArr]) => (
+                                                    <TouchableOpacity key={emoji} style={[styles.reactionBadge, (Array.isArray(usersArr) && usersArr.includes(user.username)) && styles.reactionBadgeMy]} onPress={() => reactMessage(m.id, emoji)}>
                                                         <Text style={styles.reactionEmoji}>{emoji}</Text>
                                                         <Text style={[styles.reactionCount, usersArr.includes(user.username) && { color: '#C9A84C' }]}>{usersArr.length}</Text>
                                                     </TouchableOpacity>
@@ -1479,29 +1479,29 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 {/* Team Section */}
                                 <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>
                                     <Icon name="users" size={15} color="#C9A84C" />
-                                    <Text style={styles.hotelLbl}>TEAM — {onlineUsers.length}</Text>
+                                    <Text style={styles.hotelLbl}>TEAM — {(Array.isArray(onlineUsers) ? onlineUsers : []).length}</Text>
                                     <Icon name={expanded.users ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
                                 </TouchableOpacity>
 
                                 {expanded.users && (
                                     <View style={styles.userList}>
-                                        {[...onlineUsers].sort((a, b) => {
+                                        {(Array.isArray(onlineUsers) ? [...onlineUsers] : []).sort((a, b) => {
                                             const statusOrder = { online: 0, idle: 1, dnd: 2, invisible: 3 };
-                                            const aS = statusOrder[a.status] ?? 99;
-                                            const bS = statusOrder[b.status] ?? 99;
+                                            const aS = statusOrder[a?.status] ?? 99;
+                                            const bS = statusOrder[b?.status] ?? 99;
                                             if (aS !== bS) return aS - bS;
-                                            return (a.username || '').localeCompare(b.username || '');
+                                            return (a?.username || '').localeCompare(b?.username || '');
                                         }).map((u, i) => (
                                             <TouchableOpacity key={i} style={styles.userRow} onPress={() => { setInfoModal(null); }}>
                                                 <View style={styles.userAvatarSmall}>
-                                                    {u.profilePic
+                                                    {u?.profilePic
                                                         ? <Image source={{ uri: u.profilePic }} style={{ width: 24, height: 24, borderRadius: 6 }} />
-                                                        : <Text style={styles.userAvatarTxtSmall}>{u.username?.[0].toUpperCase()}</Text>}
-                                                    <View style={[styles.onlineDotSmall, { backgroundColor: statusColor(u.status) }]} />
+                                                        : <Text style={styles.userAvatarTxtSmall}>{u?.username?.[0].toUpperCase()}</Text>}
+                                                    <View style={[styles.onlineDotSmall, { backgroundColor: statusColor(u?.status) }]} />
                                                 </View>
                                                 <View style={{ flex: 1 }}>
-                                                    <Text style={[styles.userRowName, u.status === 'invisible' && { color: '#444' }]}>{u.username}</Text>
-                                                    <Text style={styles.userRowStation}>{u.station}</Text>
+                                                    <Text style={[styles.userRowName, u?.status === 'invisible' && { color: '#444' }]}>{u?.username}</Text>
+                                                    <Text style={styles.userRowStation}>{u?.station}</Text>
                                                 </View>
                                             </TouchableOpacity>
                                         ))}
@@ -1809,7 +1809,7 @@ const styles = StyleSheet.create({
     reactionEmoji: { fontSize: 12 },
     reactionCount: { color: '#6E6960', fontSize: 11, fontWeight: '700' },
 
-    activeActionBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: 'rgba(201,168,76,0.1)', borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' } : {}) },
+    activeActionBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: 'rgba(201,168,76,0.1)', borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)' },
     activeActionTxt: { flex: 1, color: '#C8C4B8', fontSize: 13, fontStyle: 'italic' },
 
     inputArea: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, padding: 12, backgroundColor: 'rgba(20, 18, 14, 0.6)', borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.1)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } : {}) },
