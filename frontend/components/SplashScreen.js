@@ -80,7 +80,7 @@ export default function SplashScreen({ onDone }) {
 
             {/* Brand text */}
             <Animated.View style={[styles.brandBlock, { opacity: fadeAnim }]}>
-                <Text style={styles.brandTitle}>GSA HOTELS</Text>
+                <Text style={styles.brandTitle}>Chat v3.0.2</Text>
             </Animated.View>
 
             {/* Loading dots */}
