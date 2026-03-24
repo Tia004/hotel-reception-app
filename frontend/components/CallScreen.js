@@ -107,6 +107,8 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     // Reactions
     const [showReactions, setShowReactions] = useState(false);
     const [floatingReactions, setFloatingReactions] = useState([]);
+    const [connectionStates, setConnectionStates] = useState({}); // socketId → RTCPeerConnectionState
+    const [connectionErrors, setConnectionErrors] = useState({}); // socketId → string error
     const [remoteUsernames, setRemoteUsernames] = useState({}); // socketId → username
 
     // Loading
@@ -187,8 +189,22 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         const onOffer = async ({ sender, offer }) => {
             console.log('Received offer from:', sender);
             const pc = createPC(sender);
+            
+            const isPolite = socket.id > sender;
+            const collision = (pc.signalingState !== 'stable');
+            
+            if (collision && !isPolite) {
+                console.log('Glare detected: we are the impolite peer, ignoring incoming offer from:', sender);
+                return;
+            }
+
             ensureTracks(pc, localStreamRef.current);
             try {
+                if (collision && isPolite) {
+                    console.log('Glare detected: we are the polite peer, rolling back to accept offer from:', sender);
+                    await pc.setLocalDescription({ type: 'rollback' });
+                }
+                
                 await pc.setRemoteDescription(new RTCSessionDescription(offer));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
@@ -203,7 +219,8 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 }
             } catch (err) {
-                console.error('Error handling offer:', err);
+                console.error('Error handling offer from:', sender, err);
+                setConnectionErrors(prev => ({ ...prev, [sender]: err.message || 'Errore offerta' }));
             }
         };
 
@@ -427,9 +444,13 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         };
         pc.onconnectionstatechange = () => {
             console.log(`Connection State [${targetId}]:`, pc.connectionState);
+            setConnectionStates(prev => ({ ...prev, [targetId]: pc.connectionState }));
             if (pc.connectionState === 'failed') {
                 console.warn(`Connection failed with [${targetId}], attempting restart...`);
-                // Optional: trigger restartIce here if needed
+                setConnectionErrors(prev => ({ ...prev, [targetId]: 'Connessione Fallita' }));
+            }
+            if (pc.connectionState === 'connected') {
+                setConnectionErrors(prev => { const n = { ...prev }; delete n[targetId]; return n; });
             }
         };
         pc.ontrack = (e) => {
@@ -700,6 +721,37 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         }
     };
 
+    const renderConnectionStatus = (sid) => {
+        const cState = connectionStates[sid];
+        const cError = connectionErrors[sid];
+        
+        let label = 'Inizializzazione...';
+        let color = styles.statusConnecting;
+        let txtColor = '#C9A84C';
+        
+        if (cState === 'connected') { label = 'Connesso'; color = styles.statusConnected; txtColor = '#43B581'; }
+        else if (cState === 'connecting') { label = 'Connessione...'; color = styles.statusConnecting; txtColor = '#C9A84C'; }
+        else if (cState === 'failed') { label = 'Errore'; color = styles.statusFailed; txtColor = '#ED4245'; }
+        else if (cState === 'closed') { label = 'Chiuso'; color = styles.statusFailed; txtColor = '#ED4245'; }
+        
+        if (cError) { label = 'Errore'; color = styles.statusFailed; txtColor = '#ED4245'; }
+
+        return (
+            <View style={{ position: 'absolute', top: 12, right: 12, alignItems: 'flex-end', zIndex: 100 }}>
+                <View style={[styles.statusBadge, color]}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: txtColor }} />
+                    <Text style={[styles.statusText, { color: txtColor }]}>{label}</Text>
+                    {(cState === 'failed' || cError) && (
+                        <TouchableOpacity style={styles.reconnectBtn} onPress={() => createPC(sid)}>
+                            <Text style={styles.reconnectTxt}>RIPROVA</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+                {cError && <Text style={styles.statusErrorTxt}>{cError}</Text>}
+            </View>
+        );
+    };
+
     const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
     const remoteEntries = Object.entries(remoteStreams);
 
@@ -864,6 +916,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                 return (
                                     <View style={styles.discord1v1Root}>
                                         <View key={sid} style={[styles.tile, styles.tileFullscreen]}>
+                                            {renderConnectionStatus(sid)}
                                             {rState.camOn ? (
                                                 <RTCView 
                                                     streamURL={Platform.OS === 'web' ? stream : (stream.toURL ? stream.toURL() : stream)} 
@@ -906,6 +959,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                         const rState = remoteStates[sid] || { micOn: true, camOn: true, deafenOn: false };
                                         return (
                                             <View key={sid} style={[styles.tile, styles.tileMedium]}>
+                                            {renderConnectionStatus(sid)}
                                             {rState.camOn ? (
                                                 <RTCView 
                                                     streamURL={Platform.OS === 'web' ? stream : (stream.toURL ? stream.toURL() : stream)} 
@@ -1271,4 +1325,32 @@ const styles = StyleSheet.create({
     emojiCategoryTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' },
     fullEmojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     fullEmojiItem: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 8 },
+
+    // Connection Status
+    statusBadge: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        zIndex: 20,
+        borderWidth: 1,
+    },
+    statusConnected: { backgroundColor: 'rgba(67,181,129,0.15)', borderColor: 'rgba(67,181,129,0.4)' },
+    statusConnecting: { backgroundColor: 'rgba(201,168,76,0.15)', borderColor: 'rgba(201,168,76,0.4)' },
+    statusFailed: { backgroundColor: 'rgba(237,66,69,0.15)', borderColor: 'rgba(237,66,69,0.4)' },
+    statusText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+    statusErrorTxt: { color: '#ED4245', fontSize: 9, fontWeight: '600', marginTop: 2, textAlign: 'right' },
+    reconnectBtn: {
+        backgroundColor: '#ED4245',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        marginLeft: 6
+    },
+    reconnectTxt: { color: '#fff', fontSize: 10, fontWeight: '900' },
 });
