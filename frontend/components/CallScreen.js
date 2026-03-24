@@ -667,7 +667,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             <LinearGradient colors={['#1A1917', '#141210']} style={StyleSheet.absoluteFill} />
             
             {loading && (
-                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(12,11,9, 0.8)', zIndex: 999, justifyContent: 'center', alignItems: 'center', gap: 20 }]}>
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(12,11,9, 0.5)', zIndex: 999, justifyContent: 'center', alignItems: 'center', gap: 20 }]}>
                     <Image source={require('../assets/logo.png')} style={styles.loadingLogo} resizeMode="contain" />
                     <Animated.View style={[styles.spinner, { transform: [{ rotate: spin }] }]}>
                         <View style={styles.spinnerArc} />
