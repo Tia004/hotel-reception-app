@@ -262,7 +262,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const rightRotate = rightCollapsedState ? '180deg' : '0deg';
 
     const [hoveredMsg, setHoveredMsg] = useState(null);
-    const [emojiPickerMsg, setEmojiPickerMsg] = useState(null); // Used for Action Menu
+    const [msgActionMenu, setMsgActionMenu] = useState(null); // The chevron-down menu
+    const [emojiPickerMsg, setEmojiPickerMsg] = useState(null); // Quick reactions (+)
     const [reactionPickerMsg, setReactionPickerMsg] = useState(null); // Used for Emojis
     const [fullPickerVisible, setFullPickerVisible] = useState(null); // Full Unicode picker
     const [forwardTarget, setForwardTarget] = useState(null);
@@ -298,6 +299,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         setEditingMsg(null);
         setDraft('');
         setEmojiPickerMsg(null);
+        setMsgActionMenu(null);
     }, [activeChannel]);
 
     // Handle draft persistence when channel changes
@@ -340,6 +342,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         if (Platform.OS !== 'web') return;
         const onClk = (e) => {
             setEmojiPickerMsg(null);
+            setMsgActionMenu(null);
             setReactionPickerMsg(null);
             setPlusVisible(false);
         };
@@ -1076,11 +1079,11 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         }
                                     }}
                                 >
-                                    {/* Side Reaction Button — always visible on left for mine (due to row-reverse), right for others */}
-                                    {(
+                                    {/* Side Reaction Button — only visible on hover */}
+                                    {hoveredMsg === m.id && !isSelectMode && (
                                         <TouchableOpacity
-                                            style={[styles.reactionSideBtn, hoveredMsg !== m.id && { opacity: 0.3 }]}
-                                            onPress={(e) => { if (e && e.stopPropagation) e.stopPropagation(); setFullPickerVisible(m.id); }}
+                                            style={styles.reactionSideBtn}
+                                            onPress={(e) => { if (e && e.stopPropagation) e.stopPropagation(); setEmojiPickerMsg(m.id); }}
                                         >
                                             <Icon name="smile" size={16} color="#888275" />
                                             <Text style={styles.reactionSidePlus}>+</Text>
@@ -1091,7 +1094,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         style={styles.bubbleWrap}
                                         {...(Platform.OS === 'web' ? {
                                             onMouseEnter: () => setHoveredMsg(m.id),
-                                            onMouseLeave: () => { if (emojiPickerMsg !== m.id) setHoveredMsg(null); },
+                                            onMouseLeave: () => { if (emojiPickerMsg !== m.id && msgActionMenu !== m.id) setHoveredMsg(null); },
                                             onContextMenu: (e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
