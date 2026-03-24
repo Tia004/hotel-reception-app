@@ -616,21 +616,6 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
     const remoteEntries = Object.entries(remoteStreams);
 
-    if (loading) {
-        return (
-            <View style={styles.root}>
-                <LinearGradient colors={['#0C0B09', '#141210']} style={StyleSheet.absoluteFill} />
-                <View style={styles.loadingCenter}>
-                    <Image source={require('../assets/logo.png')} style={styles.loadingLogo} resizeMode="contain" />
-                    <Animated.View style={[styles.spinner, { transform: [{ rotate: spin }] }]}>
-                        <View style={styles.spinnerArc} />
-                    </Animated.View>
-                    <Text style={styles.loadingText}>{isPiP ? 'Avvio modalità PiP...' : 'Connessione alla stanza...'}</Text>
-                </View>
-            </View>
-        );
-    }
-
     if (isPiP) {
         return (
             <View style={styles.pipRoot}>
@@ -678,8 +663,18 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     }
 
     const callContent = (
-        <View style={styles.root}>
-            <LinearGradient colors={['#0C0B09', '#141210']} style={StyleSheet.absoluteFill} />
+        <View style={[styles.root, { zIndex: 1 }]}>
+            <LinearGradient colors={['#1A1917', '#141210']} style={StyleSheet.absoluteFill} />
+            
+            {loading && (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(12,11,9, 0.8)', zIndex: 999, justifyContent: 'center', alignItems: 'center', gap: 20 }]}>
+                    <Image source={require('../assets/logo.png')} style={styles.loadingLogo} resizeMode="contain" />
+                    <Animated.View style={[styles.spinner, { transform: [{ rotate: spin }] }]}>
+                        <View style={styles.spinnerArc} />
+                    </Animated.View>
+                    <Text style={styles.loadingText}>{isPiP ? 'Avvio modalità PiP...' : 'Connessione alla stanza...'}</Text>
+                </View>
+            )}
 
             <View pointerEvents="none" style={styles.floatingEmojiContainer}>
                 {floatingReactions.map(r => (
@@ -718,7 +713,10 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             <View style={styles.mainContent}>
                 <View style={styles.videoArea}>
                     <ScrollView 
-                        contentContainerStyle={[styles.videoGrid, (remoteEntries.length === 1 && !screenSharing && (!hideNoVideo || remoteStates[remoteEntries[0][0]]?.camOn)) ? { padding: 0, flex: 1 } : {}]} 
+                        contentContainerStyle={[
+                            styles.videoGrid, 
+                            (remoteEntries.length <= 1 && !screenSharing) ? { flexGrow: 1 } : {}
+                        ]} 
                         scrollEnabled={!IS_MOBILE}
                     >
                         {(() => {
@@ -1084,7 +1082,7 @@ const ScreenSharePlaceholder = ({ toggle }) => (
 );
 
 const styles = StyleSheet.create({
-    root: { flex: 1, position: 'relative', backgroundColor: '#0C0B09' },
+    root: { flex: 1, position: 'relative', backgroundColor: '#1A1917' },
     floatingEmojiContainer: { ...StyleSheet.absoluteFillObject, zIndex: 999, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 100 },
     floatingEmoji: { fontSize: 48, position: 'absolute', bottom: 0 },
     reactionsPopup: { position: 'absolute', bottom: 100, alignSelf: 'center', backgroundColor: '#23272A', borderRadius: 24, padding: 12, paddingRight: 36, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.6, shadowRadius: 16, elevation: 20, zIndex: 1000, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },

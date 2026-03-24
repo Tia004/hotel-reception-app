@@ -386,6 +386,8 @@ const styles = StyleSheet.create({
     flex: 1,
     borderLeftWidth: 1,
     borderLeftColor: 'rgba(201,168,76,0.06)',
+    zIndex: 5,
+    backgroundColor: '#1A1917',
   },
 
   // PiP floating container (desktop) logic moved to component
