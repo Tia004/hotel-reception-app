@@ -137,14 +137,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         
         console.log('Local stream updated, syncing with all peers...', stream.getTracks().length);
         pcsRef.current.forEach((pc, targetId) => {
-            const senders = pc.getSenders();
-            stream.getTracks().forEach(track => {
-                const alreadyAdded = senders.some(s => s.track === track);
-                if (!alreadyAdded) {
-                    console.log(`Adding track [${track.kind}] to peer:`, targetId);
-                    pc.addTrack(track, stream);
-                }
-            });
+            ensureTracks(pc, stream);
         });
     }, [localStream]);
 
@@ -175,11 +168,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             console.log('User joined room:', username);
             setRemoteUsernames(prev => ({ ...prev, [socketId]: username }));
             const pc = createPC(socketId);
-            const stream = localStreamRef.current;
-            if (stream) {
-                console.log('Adding local tracks for new user:', socketId);
-                stream.getTracks().forEach(t => pc.addTrack(t, stream));
-            }
+            ensureTracks(pc, localStreamRef.current);
         };
 
         const initPeers = async () => {
@@ -189,11 +178,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 if (peerId !== socket.id && !pcsRef.current.has(peerId)) {
                     console.log('Initiating connection to existing peer:', peerId);
                     const pc = createPC(peerId);
-                    const stream = localStreamRef.current;
-                    if (stream) {
-                        console.log('Adding local tracks for existing peer:', peerId);
-                        stream.getTracks().forEach(t => pc.addTrack(t, stream));
-                    }
+                    ensureTracks(pc, localStreamRef.current);
                 }
             });
         };
@@ -202,11 +187,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         const onOffer = async ({ sender, offer }) => {
             console.log('Received offer from:', sender);
             const pc = createPC(sender);
-            const stream = localStreamRef.current;
-            if (stream) {
-                console.log('Adding local tracks for offer response to:', sender);
-                stream.getTracks().forEach(t => pc.addTrack(t, stream));
-            }
+            ensureTracks(pc, localStreamRef.current);
             try {
                 await pc.setRemoteDescription(new RTCSessionDescription(offer));
                 const answer = await pc.createAnswer();
@@ -414,10 +395,30 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         setLocalStream(null);
     };
 
+    const ensureTracks = (pc, stream) => {
+        if (!pc || !stream) return;
+        const senders = pc.getSenders();
+        stream.getTracks().forEach(track => {
+            const alreadyAdded = senders.some(s => s.track === track);
+            if (!alreadyAdded) {
+                console.log(`Adding track [${track.kind}] to PC`);
+                pc.addTrack(track, stream);
+            }
+        });
+    };
+
     const createPC = (targetId) => {
         if (pcsRef.current.has(targetId)) {
-            pcsRef.current.get(targetId).close();
+            const existing = pcsRef.current.get(targetId);
+            if (existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
+                console.log(`Reusing existing PC for [${targetId}]`);
+                return existing;
+            }
+            existing.close();
+            pcsRef.current.delete(targetId);
         }
+        
+        console.log(`Creating new RTCPeerConnection for [${targetId}]`);
         const pc = new RTCPeerConnection(ICE_CONFIG);
         pcsRef.current.set(targetId, pc);
 
@@ -426,11 +427,22 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         };
         pc.onconnectionstatechange = () => {
             console.log(`Connection State [${targetId}]:`, pc.connectionState);
+            if (pc.connectionState === 'failed') {
+                console.warn(`Connection failed with [${targetId}], attempting restart...`);
+                // Optional: trigger restartIce here if needed
+            }
         };
         pc.ontrack = (e) => {
-            console.log(`Received remote track [${targetId}]:`, e.track.kind);
-            if (e.streams[0]) {
-                setRemoteStreams(prev => ({ ...prev, [targetId]: e.streams[0] }));
+            console.log(`Received remote track [${targetId}]:`, e.track.kind, e.streams.length);
+            if (e.streams && e.streams[0]) {
+                const stream = e.streams[0];
+                console.log(`Setting remote stream for [${targetId}], tracks:`, stream.getTracks().length);
+                setRemoteStreams(prev => {
+                    if (prev[targetId] === stream) return prev;
+                    return { ...prev, [targetId]: stream };
+                });
+            } else {
+                console.warn(`Ontrack fired for [${targetId}] but no stream was found.`);
             }
         };
         pc.onicecandidate = (e) => {
@@ -440,12 +452,19 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             }
         };
         pc.onnegotiationneeded = async () => {
+            console.log(`Negotiation needed for [${targetId}]`);
             try {
+                // To avoid glare (perfect collision), use a small delay if our ID is higher
+                if (socket.id > targetId) {
+                    console.log(`Glare avoidance: delaying offer to [${targetId}]`);
+                    await new Promise(r => setTimeout(r, Math.random() * 500));
+                }
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
+                console.log(`Sending offer to [${targetId}]`);
                 socket.emit('offer', { target: targetId, offer, sender: socket.id });
             } catch (err) {
-                console.error(err);
+                console.error(`Error in onnegotiationneeded for [${targetId}]:`, err);
             }
         };
         return pc;
