@@ -122,30 +122,57 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             setRemoteUsernames(prev => ({ ...prev, [socketId]: username }));
             const pc = createPC(socketId);
             const stream = localStreamRef.current;
-            if (stream) stream.getTracks().forEach(t => pc.addTrack(t, stream));
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            socket.emit('offer', { target: socketId, offer, sender: socket.id });
+            if (stream) {
+                console.log('Adding local tracks for new user:', socketId);
+                stream.getTracks().forEach(t => pc.addTrack(t, stream));
+            }
+            // Let onnegotiationneeded handle the offer
         };
 
         const onOffer = async ({ sender, offer }) => {
+            console.log('Received offer from:', sender);
             const pc = createPC(sender);
             const stream = localStreamRef.current;
-            if (stream) stream.getTracks().forEach(t => pc.addTrack(t, stream));
-            await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            socket.emit('answer', { target: sender, answer });
+            if (stream) {
+                console.log('Adding local tracks for offer response to:', sender);
+                stream.getTracks().forEach(t => pc.addTrack(t, stream));
+            }
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                console.log('Sending answer to:', sender);
+                socket.emit('answer', { target: sender, answer });
+            } catch (err) {
+                console.error('Error handling offer:', err);
+            }
         };
 
         const onAnswer = async ({ sender, answer }) => {
+            console.log('Received answer from:', sender);
             const pc = pcsRef.current.get(sender);
-            if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            if (pc) {
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                    console.log('Set remote description (answer) for:', sender);
+                } catch (err) {
+                    console.error('Error setting remote answer:', err);
+                }
+            } else {
+                console.warn('No peer connection found for answer from:', sender);
+            }
         };
 
         const onIce = async ({ sender, candidate }) => {
+            console.log('Received ICE candidate from:', sender);
             const pc = pcsRef.current.get(sender);
-            if (pc) await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            if (pc) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (err) {
+                    console.error('Error adding ICE candidate:', err);
+                }
+            }
         };
 
         const onUserLeft = ({ socketId }) => {
@@ -283,13 +310,23 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         const pc = new RTCPeerConnection(ICE_CONFIG);
         pcsRef.current.set(targetId, pc);
 
+        pc.oniceconnectionstatechange = () => {
+            console.log(`ICE Connection State [${targetId}]:`, pc.iceConnectionState);
+        };
+        pc.onconnectionstatechange = () => {
+            console.log(`Connection State [${targetId}]:`, pc.connectionState);
+        };
         pc.ontrack = (e) => {
+            console.log(`Received remote track [${targetId}]:`, e.track.kind);
             if (e.streams[0]) {
                 setRemoteStreams(prev => ({ ...prev, [targetId]: e.streams[0] }));
             }
         };
         pc.onicecandidate = (e) => {
-            if (e.candidate) socket.emit('ice-candidate', { target: targetId, candidate: e.candidate });
+            if (e.candidate) {
+                console.log(`Sending ICE candidate to [${targetId}]`);
+                socket.emit('ice-candidate', { target: targetId, candidate: e.candidate });
+            }
         };
         pc.onnegotiationneeded = async () => {
             try {
@@ -639,7 +676,13 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                             <Text style={{ color: '#E8E4D8', fontSize: 13, marginTop: 8, fontWeight: '600' }}>Schermo Condiviso</Text>
                                         </View>
                                     ) : camOn && localStream ? (
-                                        <RTCView streamURL={localStream.toURL ? localStream.toURL() : localStream} style={styles.rtc} objectFit="cover" muted={true} mirror={true} />
+                                        <RTCView 
+                                            streamURL={Platform.OS === 'web' ? localStream : (localStream.toURL ? localStream.toURL() : localStream)} 
+                                            style={styles.rtc} 
+                                            objectFit="cover" 
+                                            muted={true} 
+                                            mirror={true} 
+                                        />
                                     ) : (
                                         <View style={styles.avatarTile}>
                                             <View style={is1v1 ? styles.avatarCircleSmall : styles.avatarCircleLarge}>
@@ -680,7 +723,12 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                     <View style={styles.discord1v1Root}>
                                         <View key={sid} style={[styles.tile, styles.tileFullscreen]}>
                                             {rState.camOn ? (
-                                                <RTCView streamURL={stream.toURL ? stream.toURL() : stream} style={styles.rtc} objectFit="cover" muted={deafenOn} />
+                                                <RTCView 
+                                                    streamURL={Platform.OS === 'web' ? stream : (stream.toURL ? stream.toURL() : stream)} 
+                                                    style={styles.rtc} 
+                                                    objectFit="cover" 
+                                                    muted={deafenOn} 
+                                                />
                                             ) : (
                                                 <View style={styles.avatarTile}>
                                                     <View style={styles.avatarCircleHuge}>
@@ -716,15 +764,20 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                         const rState = remoteStates[sid] || { micOn: true, camOn: true, deafenOn: false };
                                         return (
                                             <View key={sid} style={[styles.tile, styles.tileMedium]}>
-                                                {rState.camOn ? (
-                                                    <RTCView streamURL={stream.toURL ? stream.toURL() : stream} style={styles.rtc} objectFit="cover" muted={deafenOn} />
-                                                ) : (
-                                                    <View style={styles.avatarTile}>
-                                                        <View style={styles.avatarCircleLarge}>
-                                                            <Text style={styles.avatarTxtLarge}>{remoteUsernames[sid]?.[0]?.toUpperCase() || '?'}</Text>
-                                                        </View>
+                                            {rState.camOn ? (
+                                                <RTCView 
+                                                    streamURL={Platform.OS === 'web' ? stream : (stream.toURL ? stream.toURL() : stream)} 
+                                                    style={styles.rtc} 
+                                                    objectFit="cover" 
+                                                    muted={deafenOn} 
+                                                />
+                                            ) : (
+                                                <View style={styles.avatarTile}>
+                                                    <View style={styles.avatarCircleLarge}>
+                                                        <Text style={styles.avatarTxtLarge}>{remoteUsernames[sid]?.[0]?.toUpperCase() || '?'}</Text>
                                                     </View>
-                                                )}
+                                                </View>
+                                            )}
                                                 <View style={styles.participantOverlay}>
                                                     <View style={styles.participantNameRow}>
                                                         <Text style={styles.participantName}>{remoteUsernames[sid] || 'Partecipante'}</Text>
@@ -744,8 +797,9 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                                     {screenSharing && Platform.OS === 'web' && localStream && (
                                         <View key="screen-share" style={[styles.tile, styles.tileMedium]}>
                                             <RTCView
-                                                streamURL={screenStreamRef.current ? new MediaStream(screenStreamRef.current.getTracks()).toURL?.() || screenStreamRef.current
-                                                    : localStream}
+                                                streamURL={Platform.OS === 'web' 
+                                                    ? (screenStreamRef.current ? new MediaStream(screenStreamRef.current.getTracks()) : localStream)
+                                                    : (screenStreamRef.current ? (new MediaStream(screenStreamRef.current.getTracks()).toURL?.() || screenStreamRef.current) : localStream)}
                                                 style={styles.rtc}
                                                 objectFit="cover"
                                                 muted={true}
