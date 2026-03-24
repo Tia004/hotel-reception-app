@@ -58,6 +58,8 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     const [chatMessages, setChatMessages] = useState([]);
     const [chatDraft, setChatDraft] = useState('');
     const chatScrollRef = useRef(null);
+    const [mediaError, setMediaError] = useState(null);
+    const iceQueuesRef = useRef(new Map()); // targetId -> [RTCIceCandidate]
 
     // Device selectors
     const [devices, setDevices] = useState({ audio: [], video: [], speaker: [] });
@@ -143,6 +145,14 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 await pc.setLocalDescription(answer);
                 console.log('Sending answer to:', sender);
                 socket.emit('answer', { target: sender, answer });
+                
+                // Process queued ICE candidates
+                const queue = iceQueuesRef.current.get(sender) || [];
+                while (queue.length > 0) {
+                    const candidate = queue.shift();
+                    console.log('Processing queued ICE candidate for:', sender);
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                }
             } catch (err) {
                 console.error('Error handling offer:', err);
             }
@@ -155,6 +165,14 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 try {
                     await pc.setRemoteDescription(new RTCSessionDescription(answer));
                     console.log('Set remote description (answer) for:', sender);
+
+                    // Process queued ICE candidates
+                    const queue = iceQueuesRef.current.get(sender) || [];
+                    while (queue.length > 0) {
+                        const candidate = queue.shift();
+                        console.log('Processing queued ICE candidate for:', sender);
+                        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                    }
                 } catch (err) {
                     console.error('Error setting remote answer:', err);
                 }
@@ -166,12 +184,16 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         const onIce = async ({ sender, candidate }) => {
             console.log('Received ICE candidate from:', sender);
             const pc = pcsRef.current.get(sender);
-            if (pc) {
+            if (pc && pc.remoteDescription && pc.remoteDescription.type) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 } catch (err) {
                     console.error('Error adding ICE candidate:', err);
                 }
+            } else {
+                console.log('Remote description not set yet. Queuing ICE candidate for:', sender);
+                if (!iceQueuesRef.current.has(sender)) iceQueuesRef.current.set(sender, []);
+                iceQueuesRef.current.get(sender).push(candidate);
             }
         };
 
@@ -275,25 +297,46 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     }, [remoteStreams, isPiP]);
 
     const startLocalStream = async (audioDeviceId, videoDeviceId) => {
+        console.log('Soliciting media permissions (WebRTC)...', { audioDeviceId, videoDeviceId });
+        if (Platform.OS === 'web' && !window.isSecureContext) {
+            setMediaError('WebRTC richiede HTTPS o localhost. L\'accesso alla fotocamera è bloccato su connessioni non sicure (HTTP).');
+            console.error('WebRTC requires a secure context (HTTPS or localhost). Current URL is not secure.');
+        }
+
         try {
+            setMediaError(null);
             const constraints = {
                 audio: audioDeviceId ? { deviceId: { ideal: audioDeviceId } } : true,
                 video: videoDeviceId ? { deviceId: { ideal: videoDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } : { width: { ideal: 1280 }, height: { ideal: 720 } },
             };
+            if (!mediaDevices) throw new Error('mediaDevices non disponibile (controlla HTTPS/indirizzo)');
             const stream = await mediaDevices.getUserMedia(constraints);
+            console.log('Local stream captured successfully (audio+video)');
             localStreamRef.current = stream;
             setLocalStream(stream);
-            socket.emit('media-state-change', { micOn, camOn, deafenOn });
+            setCamOn(true);
+            socket.emit('media-state-change', { micOn, camOn: true, deafenOn });
             return stream;
         } catch (e) { 
-            console.error('Local stream failed', e);
+            console.warn('Initial media capture failed, attempting audio-only fallback...', e);
             try {
                 const fallback = await mediaDevices.getUserMedia({ audio: true, video: false });
+                console.log('Audio-only fallback successful');
                 localStreamRef.current = fallback;
                 setLocalStream(fallback);
                 setCamOn(false);
+                socket.emit('media-state-change', { micOn, camOn: false, deafenOn });
+                if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+                    setMediaError('Accesso alla fotocamera negato. Controlla i permessi del browser.');
+                }
                 return fallback;
-            } catch (e2) {}
+            } catch (err2) {
+                console.error('CRITICAL: Media capture failed completely:', err2);
+                setLocalStream(null);
+                setCamOn(false);
+                setMicOn(false);
+                setMediaError('Impossibile accedere a microfono/fotocamera. Verifica i permessi.');
+            }
         }
     };
 
@@ -658,6 +701,19 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                     </TouchableOpacity>
                 )}
             </View>
+
+            {mediaError && (
+                <View style={styles.errorBanner}>
+                    <Icon name="alert-circle" size={16} color="#FFF" />
+                    <Text style={styles.errorText}>{mediaError}</Text>
+                    <TouchableOpacity onPress={() => startLocalStream()} style={styles.errorRetryBtn}>
+                        <Text style={styles.errorRetryTxt}>Riprova</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setMediaError(null)} style={{ marginLeft: 8 }}>
+                        <Icon name="x" size={16} color="rgba(255,255,255,0.6)" />
+                    </TouchableOpacity>
+                </View>
+            )}
 
             <View style={styles.mainContent}>
                 <View style={styles.videoArea}>
@@ -1059,6 +1115,10 @@ const styles = StyleSheet.create({
     localPipOverlay: { position: 'absolute', bottom: 20, right: 20, width: 160, height: 220, zIndex: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.8, shadowRadius: 12, elevation: 10 },
     tilePiP: { flex: 1, borderRadius: 12, overflow: 'hidden' },
     rtc: { flex: 1 },
+    errorBanner: { position: 'absolute', top: 60, left: 20, right: 20, backgroundColor: '#ED4245', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', zIndex: 1000, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10 },
+    errorText: { color: '#FFF', fontSize: 13, fontWeight: '600', flex: 1, marginLeft: 10 },
+    errorRetryBtn: { backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginLeft: 10 },
+    errorRetryTxt: { color: '#FFF', fontSize: 12, fontWeight: '700' },
     avatarTile: { flex: 1, backgroundColor: '#141210', justifyContent: 'center', alignItems: 'center' },
     avatarCircleSmall: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#1C1A16', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(201,168,76,0.2)' },
     avatarCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#1C1A16', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(201,168,76,0.2)' },
