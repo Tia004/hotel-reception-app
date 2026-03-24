@@ -181,6 +181,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [isRecording, setIsRecording] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
     const [plusVisible, setPlusVisible] = useState(false);
+    const [gifSearchVisible, setGifSearchVisible] = useState(false);
+    const [gifSearch, setGifSearch] = useState('');
+    const [gifResults, setGifResults] = useState([]);
+    const [pinnedExpanded, setPinnedExpanded] = useState(false);
     
     // Server Keep-Alive
     useEffect(() => {
@@ -275,18 +279,33 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         }));
     }, [draft, replyingTo, activeChannel?.id]);
 
+    // Forward message function
+    const forwardMessage = (targetChannel) => {
+        if (!forwardTarget || !socket) return;
+        if (targetChannel.id === activeChannel?.id) {
+            setForwardTarget(null);
+            return; // Cannot forward to same channel
+        }
+        socket.emit('channel-message', {
+            channelId: targetChannel.id,
+            text: `↪️ Inoltrato da ${forwardTarget.sender}:\n${forwardTarget.text || ''}`,
+            imageData: forwardTarget.imageData || null,
+            gifUrl: forwardTarget.gifUrl || null,
+            replyTo: null
+        });
+        setForwardTarget(null);
+    };
+
+    // Click outside to close menus
     useEffect(() => {
         if (Platform.OS !== 'web') return;
-        const onCtx = (e) => { e.preventDefault(); setContextMenu({ x: e.pageX, y: e.pageY }); };
-        const onClk = () => { 
-            setContextMenu(null); 
+        const onClk = (e) => { 
             setEmojiPickerMsg(null); 
             setReactionPickerMsg(null); 
             setPlusVisible(false);
         };
-        document.addEventListener('contextmenu', onCtx);
         document.addEventListener('click', onClk);
-        return () => { document.removeEventListener('contextmenu', onCtx); document.removeEventListener('click', onClk); };
+        return () => { document.removeEventListener('click', onClk); };
     }, []);
 
     // ── Render Modals ───────────────────────────────────────────────────
@@ -295,21 +314,22 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             {/* Forward Modal */}
             <Modal visible={!!forwardTarget} transparent animationType="fade">
                 <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setForwardTarget(null)}>
-                    <View style={styles.infoModalBox}>
+                    <TouchableOpacity activeOpacity={1} style={styles.infoModalBox}>
                         <Text style={styles.infoTitle}>INOLTRA MESSAGGIO</Text>
                         <Text style={[styles.infoLabel, { marginBottom: 16 }]}>Seleziona un canale di destinazione:</Text>
                         <ScrollView style={{ maxHeight: 300 }}>
-                            {ALL_CHANNELS.map(ch => (
+                            {ALL_CHANNELS.filter(ch => ch.id !== activeChannel?.id).map(ch => (
                                 <TouchableOpacity key={ch.id} style={styles.forwardItem} onPress={() => forwardMessage(ch)}>
                                     <View style={[styles.hotelDot, { backgroundColor: HOTELS.find(h => ch.id.startsWith(h.id))?.color }]} />
                                     <View style={{ flex: 1 }}>
                                         <Text style={styles.forwardItemTxt}>{ch.name}</Text>
-                                        <Text style={{ color: '#444', fontSize: 11 }}>{HOTELS.find(h => ch.id.startsWith(h.id))?.name}</Text>
+                                        <Text style={{ color: '#554E40', fontSize: 11 }}>{HOTELS.find(h => ch.id.startsWith(h.id))?.name}</Text>
                                     </View>
+                                    <Icon name="corner-up-right" size={12} color="#554E40" />
                                 </TouchableOpacity>
                             ))}
                         </ScrollView>
-                    </View>
+                    </TouchableOpacity>
                 </TouchableOpacity>
             </Modal>
 
@@ -319,17 +339,22 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
             {/* Poll Creator */}
             <Modal visible={pollVisible} transparent animationType="slide">
-                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setPollVisible(false)}>
-                    <View style={styles.infoModalBox} onStartShouldSetResponder={() => true}>
-                        <Text style={styles.infoTitle}>CREA SONDAGGIO</Text>
+                <View style={styles.modalOverlay}>
+                    <TouchableOpacity activeOpacity={1} style={[styles.infoModalBox, { width: 360 }]} onStartShouldSetResponder={() => true}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <Text style={styles.infoTitle}>CREA SONDAGGIO</Text>
+                            <TouchableOpacity onPress={() => setPollVisible(false)}><Icon name="x" size={18} color="#554E40" /></TouchableOpacity>
+                        </View>
                         <TextInput
-                            style={styles.input} placeholder="Domanda..."
+                            style={[styles.input, { marginBottom: 12 }]} placeholder="Domanda del sondaggio..."
                             placeholderTextColor="#554E40"
+                            value={pollDraft.question}
                             onChangeText={t => setPollDraft(p => ({ ...p, question: t }))}
                         />
-                        <View style={{ gap: 8, marginVertical: 12 }}>
+                        <View style={{ gap: 8, marginBottom: 12 }}>
                             {pollDraft.options.map((opt, i) => (
                                 <TextInput key={i} style={[styles.input, { height: 40 }]} placeholder={`Opzione ${i + 1}`} placeholderTextColor="#3A3630"
+                                    value={opt}
                                     onChangeText={t => {
                                         const next = [...pollDraft.options];
                                         next[i] = t;
@@ -342,17 +367,18 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             <Icon name="plus" size={14} color="#C9A84C" /><Text style={styles.hoverActionTxt}>Aggiungi Opzione</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.hoverActionItem, { marginTop: 10 }]} onPress={() => setPollDraft(p => ({ ...p, isMultiple: !p.isMultiple }))}>
-                            <Icon name={pollDraft.isMultiple ? "check-square" : "square"} size={14} color="#C9A84C" />
-                            <Text style={styles.hoverActionTxt}>Risposta Multipla</Text>
+                            <Icon name={pollDraft.isMultiple ? "check" : "square"} size={14} color="#C9A84C" />
+                            <Text style={styles.hoverActionTxt}>{pollDraft.isMultiple ? '✓ Risposta Multipla' : 'Risposta Singola'}</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.pdfBtn, { marginTop: 20, alignSelf: 'stretch', justifyContent: 'center', height: 44 }]} onPress={() => {
-                            if (pollDraft.question && pollDraft.options.filter(o => o.trim()).length >= 2) {
-                                send('', null, null, { ...pollDraft, options: pollDraft.options.filter(o => o.trim()) });
+                        <TouchableOpacity style={[styles.createBtn, { marginTop: 20 }]} onPress={() => {
+                            if (pollDraft.question.trim() && pollDraft.options.filter(o => o.trim()).length >= 2) {
+                                send('', null, null, { question: pollDraft.question, options: pollDraft.options.filter(o => o.trim()), isMultiple: pollDraft.isMultiple });
                                 setPollVisible(false);
+                                setPollDraft({ question: '', options: ['', ''], isMultiple: false });
                             }
-                        }}><Text style={styles.pdfBtnTxt}>INVIA SONDAGGIO</Text></TouchableOpacity>
-                    </View>
-                </TouchableOpacity>
+                        }}><Text style={styles.createBtnTxt}>INVIA SONDAGGIO</Text></TouchableOpacity>
+                    </TouchableOpacity>
+                </View>
             </Modal>
 
             {/* Message Info Modal */}
@@ -571,19 +597,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     }, [messages[activeChannel?.id], activeChannel]);
 
-    useEffect(() => {
-        if (Platform.OS !== 'web') return;
-        const onCtx = (e) => { e.preventDefault(); setContextMenu({ x: e.pageX, y: e.pageY }); };
-        const onClk = () => { 
-            setContextMenu(null); 
-            setEmojiPickerMsg(null); 
-            setReactionPickerMsg(null); 
-            setPlusVisible(false);
-        };
-        document.addEventListener('contextmenu', onCtx);
-        document.addEventListener('click', onClk);
-        return () => { document.removeEventListener('contextmenu', onCtx); document.removeEventListener('click', onClk); };
-    }, []);
+    // Note: click-outside and right-click handling is done above in the first useEffect
 
     const send = (text = '', imageData = null, gifUrl = null, poll = null, voiceData = null, voiceDuration = 0) => {
         if (!socket || !activeChannel) return;
@@ -669,22 +683,53 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
         <View style={styles.root}>
             <DynamicBackground />
             
-            {infoModal && (
+            {infoModal && (() => {
+                const readBy = (infoModal.readBy || []);
+                const deliveredTo = (infoModal.deliveredTo || []);
+                const readNames = readBy.map(r => typeof r === 'string' ? r : r.user);
+                const deliveredNames = deliveredTo.map(d => typeof d === 'string' ? d : d.user);
+                const allOthers = onlineUsers.filter(u => u.username !== infoModal.sender);
+                const notReceived = allOthers.filter(u => !readNames.includes(u.username) && !deliveredNames.includes(u.username));
+                return (
                 <Modal visible transparent animationType="fade" onRequestClose={() => setInfoModal(null)}>
                     <TouchableOpacity style={styles.modalOverlay} onPress={() => setInfoModal(null)}>
-                        <TouchableOpacity activeOpacity={1} style={styles.infoModalBox}>
-                            <Text style={styles.infoTitle}>Dettagli Messaggio</Text>
-                            <Text style={styles.infoLabel}>Inviato da: <Text style={{ color: '#C8C4B8' }}>{infoModal.sender}</Text></Text>
-                            <Text style={styles.infoLabel}>Ore: <Text style={{ color: '#C8C4B8' }}>{new Date(infoModal.timestamp).toLocaleString()}</Text></Text>
-                            <Text style={styles.infoLabel}>Visto da: <Text style={{ color: '#C8C4B8' }}>Tutti ({onlineUsers.length})</Text></Text>
+                        <TouchableOpacity activeOpacity={1} style={[styles.infoModalBox, { width: 340 }]}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <Text style={styles.infoTitle}>DETTAGLI MESSAGGIO</Text>
+                                <TouchableOpacity onPress={() => setInfoModal(null)}><Icon name="x" size={16} color="#554E40" /></TouchableOpacity>
+                            </View>
+                            <Text style={styles.infoLabel}>Inviato da: <Text style={{ color: '#C9A84C', fontWeight: '800' }}>{infoModal.sender}</Text></Text>
+                            <Text style={styles.infoLabel}>Ora: <Text style={{ color: '#C8C4B8' }}>{new Date(infoModal.timestamp).toLocaleString('it-IT')}</Text></Text>
+                            {infoModal.text && <Text style={[styles.infoLabel, { marginTop: 6 }]}>Testo: <Text style={{ color: '#C8C4B8' }}>{infoModal.text.substring(0, 80)}{infoModal.text.length > 80 ? '...' : ''}</Text></Text>}
+                            <Text style={[styles.infoLabel, { marginTop: 6, fontSize: 10 }]}>ID: {infoModal.id}</Text>
 
-                            <TouchableOpacity style={[styles.createBtn, { marginTop: 20 }]} onPress={() => setInfoModal(null)}>
-                                <Text style={styles.createBtnTxt}>Chiudi</Text>
+                            {/* Read by */}
+                            <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.15)', marginVertical: 12 }} />
+                            <Text style={{ color: '#C9A84C', fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 6 }}>✓✓ LETTO DA ({readNames.length})</Text>
+                            {readNames.length > 0 ? readNames.map((name, i) => (
+                                <Text key={i} style={{ color: '#C8C4B8', fontSize: 12, marginLeft: 8, marginBottom: 2 }}>• {name}</Text>
+                            )) : <Text style={{ color: '#444', fontSize: 11, fontStyle: 'italic', marginLeft: 8 }}>Nessuno</Text>}
+
+                            {/* Delivered */}
+                            <Text style={{ color: '#6E6960', fontSize: 11, fontWeight: '800', letterSpacing: 1, marginTop: 10, marginBottom: 6 }}>✓✓ CONSEGNATO A ({deliveredNames.length})</Text>
+                            {deliveredNames.length > 0 ? deliveredNames.map((name, i) => (
+                                <Text key={i} style={{ color: '#A8A090', fontSize: 12, marginLeft: 8, marginBottom: 2 }}>• {name}</Text>
+                            )) : <Text style={{ color: '#444', fontSize: 11, fontStyle: 'italic', marginLeft: 8 }}>Nessuno</Text>}
+
+                            {/* Not received */}
+                            <Text style={{ color: '#554E40', fontSize: 11, fontWeight: '800', letterSpacing: 1, marginTop: 10, marginBottom: 6 }}>✗ NON RICEVUTO ({notReceived.length})</Text>
+                            {notReceived.length > 0 ? notReceived.map((u, i) => (
+                                <Text key={i} style={{ color: '#554E40', fontSize: 12, marginLeft: 8, marginBottom: 2 }}>• {u.username}</Text>
+                            )) : <Text style={{ color: '#444', fontSize: 11, fontStyle: 'italic', marginLeft: 8 }}>Tutti hanno ricevuto</Text>}
+
+                            <TouchableOpacity style={[styles.createBtn, { marginTop: 16 }]} onPress={() => setInfoModal(null)}>
+                                <Text style={styles.createBtnTxt}>CHIUDI</Text>
                             </TouchableOpacity>
                         </TouchableOpacity>
                     </TouchableOpacity>
                 </Modal>
-            )}
+                );
+            })()}
 
             {!!alertMsg && (
                 <Modal visible transparent animationType="fade" onRequestClose={() => setAlertMsg('')}>
@@ -728,20 +773,20 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
             {/* ── LEFT SIDEBAR ────────────────────────────────────────── */}
             {(!IS_MOBILE || sidebarVisible) && (
-                <View style={{ position: 'relative', height: '100%', flexDirection: 'row' }}>
+                <View style={{ position: 'relative', height: '100%', flexDirection: 'row', zIndex: IS_MOBILE ? 200 : 10 }}>
                     <Animated.View style={[
                         styles.column, 
                         styles.sidebar, 
                         !IS_MOBILE && { width: 260, marginLeft: leftAnim },
-                        IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 100, width: 260 }
+                        IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 200, width: 260, backgroundColor: '#141210' }
                     ]}>
                         <View style={{ width: 260, height: '100%', position: 'absolute', right: 0, top: 0 }}>
                             <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <Text style={styles.brandName}>HOTEL CHAT v3.0</Text>
-                                    <TouchableOpacity style={styles.gearBtn} onPress={() => setSettingsVisible(true)}>
-                                        <Icon name="settings" size={16} color="#554E40" />
-                                    </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <View style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: '#C9A84C', justifyContent: 'center', alignItems: 'center' }}>
+                                        <Icon name="message-square" size={14} color="#111" />
+                                    </View>
+                                    <Text style={styles.brandName}>CHAT v3.0.2</Text>
                                 </View>
                             </LinearGradient>
 
@@ -829,8 +874,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
                             <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.05)' }}>
                                 <TouchableOpacity style={styles.avatarBtn} onPress={() => setProfileVisible(true)}>
-                                    <View style={styles.avatar}>
-                                        {user.profilePic ? <Image source={{ uri: user.profilePic }} style={StyleSheet.absoluteFill} /> : <Text style={styles.avatarTxt}>{user.username[0].toUpperCase()}</Text>}
+                                    <View style={[styles.avatar, { borderRadius: 12, borderWidth: 2, borderColor: '#C9A84C', overflow: 'hidden' }]}>
+                                        {user.profilePic ? <Image source={{ uri: user.profilePic }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : <Text style={styles.avatarTxt}>{user.username[0].toUpperCase()}</Text>}
                                         <View style={[styles.statusDot, { backgroundColor: statusColor(onlineUsers.find(u => u.username === user.username)?.status || 'online') }]} />
                                     </View>
                                     <View style={{ flex: 1 }}>
@@ -880,6 +925,50 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     <StatusBadge ping={ping} status={pingStatus} />
                 </View>
 
+                {/* Pinned Messages Banner (Telegram-style) */}
+                {(() => {
+                    const channelPins = (pinned[activeChannel?.id] || []);
+                    const pinnedMsgs = (messages[activeChannel?.id] || []).filter(m => channelPins.includes(m.id));
+                    if (pinnedMsgs.length === 0) return null;
+                    return (
+                        <TouchableOpacity 
+                            style={styles.pinnedBanner} 
+                            onPress={() => setPinnedExpanded(!pinnedExpanded)}
+                            activeOpacity={0.8}
+                        >
+                            <Icon name="pin" size={14} color="#C9A84C" />
+                            <Text style={styles.pinnedBannerTxt} numberOfLines={1}>
+                                {pinnedMsgs.length} messaggio/i fissato/i
+                            </Text>
+                            <Icon name={pinnedExpanded ? 'chevron-down' : 'chevron-right'} size={14} color="#554E40" />
+                        </TouchableOpacity>
+                    );
+                })()}
+                {pinnedExpanded && (() => {
+                    const channelPins = (pinned[activeChannel?.id] || []);
+                    const pinnedMsgs = (messages[activeChannel?.id] || []).filter(m => channelPins.includes(m.id));
+                    if (pinnedMsgs.length === 0) return null;
+                    return (
+                        <View style={styles.pinnedList}>
+                            {pinnedMsgs.map(pm => (
+                                <TouchableOpacity key={pm.id} style={styles.pinnedItem} onPress={() => {
+                                    setPinnedExpanded(false);
+                                    const el = document.getElementById?.(`msg-${pm.id}`);
+                                    if (el) {
+                                        el.style.transition = 'background-color 0.4s ease-out';
+                                        el.style.backgroundColor = 'rgba(201,168,76,0.3)';
+                                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                        setTimeout(() => { el.style.backgroundColor = 'transparent'; }, 2000);
+                                    }
+                                }}>
+                                    <Text style={styles.pinnedItemSender}>{pm.sender}</Text>
+                                    <Text style={styles.pinnedItemText} numberOfLines={1}>{pm.text || '📷 Media'}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    );
+                })()}
+
                 <LinearGradient colors={['rgba(12, 11, 9, 0.6)', 'rgba(20, 18, 14, 0.7)']} style={{ flex: 1 }}>
                     <ScrollView ref={scrollRef} style={styles.messagesScroll} contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}>
                         {(messages[activeChannel.id] || []).length === 0 && (
@@ -896,10 +985,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             const repliedMsg = m.replyTo ? (messages[activeChannel.id] || []).find(rm => rm.id === m.replyTo) : null;
 
                             return (
-                                <View key={m.id} style={[styles.msgRow, isMine && styles.msgRowMine]}>
-                                    {/* Side Reaction Button for My Messages (Left of Bubble) */}
+                                <View key={m.id} nativeID={`msg-${m.id}`} style={[styles.msgRow, isMine && styles.msgRowMine]}>
+                                    {/* Side Reaction Button — appears on left for mine (due to row-reverse), right for others */}
                                     {isMine && hoveredMsg === m.id && (
-                                        <TouchableOpacity style={styles.reactionSideBtn} onPress={() => setFullPickerVisible(m.id)}>
+                                        <TouchableOpacity style={styles.reactionSideBtn} onPress={(e) => { e.stopPropagation(); setFullPickerVisible(m.id); }}>
                                             <Icon name="smile" size={16} color="#888275" />
                                             <Text style={styles.reactionSidePlus}>+</Text>
                                         </TouchableOpacity>
@@ -909,21 +998,22 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         style={styles.bubbleWrap}
                                         {...(Platform.OS === 'web' ? {
                                             onMouseEnter: () => setHoveredMsg(m.id),
-                                            onMouseLeave: () => setHoveredMsg(null),
+                                            onMouseLeave: () => { if (emojiPickerMsg !== m.id) setHoveredMsg(null); },
                                             onContextMenu: (e) => {
                                                 e.preventDefault();
+                                                e.stopPropagation();
                                                 setEmojiPickerMsg(m.id);
                                             },
                                             onDoubleClick: () => setReplyingTo(m)
                                         } : {})}
                                     >
-                                        {/* Hover Chevron */}
+                                        {/* Hover Chevron — bigger click target */}
                                         {hoveredMsg === m.id && (
                                             <TouchableOpacity 
-                                                style={[styles.msgChevron, isMine ? { right: 8 } : { right: 8 }]} 
+                                                style={[styles.msgChevron, isMine ? { right: 4 } : { right: 4 }]} 
                                                 onPress={(e) => { e.stopPropagation(); setEmojiPickerMsg(emojiPickerMsg === m.id ? null : m.id); setReactionPickerMsg(null); }}
                                             >
-                                                <Icon name="chevron-down" size={16} color="rgba(255,255,255,0.5)" />
+                                                <Icon name="chevron-down" size={14} color="rgba(255,255,255,0.6)" />
                                             </TouchableOpacity>
                                         )}
                                         {/* Inline Context Menu — WhatsApp/Discord style */}
@@ -958,7 +1048,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                         <Icon name="pin" size={14} color="#A8A090" />
                                                         <Text style={styles.hoverActionTxt}>Fissa</Text>
                                                     </TouchableOpacity>
-                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setEmojiPickerMsg(null); }}>
+                                                    <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setInfoModal(m); setEmojiPickerMsg(null); }}>
                                                         <Icon name="info" size={14} color="#A8A090" />
                                                         <Text style={styles.hoverActionTxt}>Info</Text>
                                                     </TouchableOpacity>
@@ -987,39 +1077,39 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         )}
 
                                         <View id={`msg-${m.id}`} style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
-                                            {hoveredMsg === m.id && (
-                                                <View style={styles.msgHoverActions}>
-                                                    <TouchableOpacity style={styles.msgCaretBtn} onPress={(e) => { e.stopPropagation(); setReactionPickerMsg(m.id); }}>
-                                                        <Icon name="smile" size={18} color="#A8A090" />
-                                                    </TouchableOpacity>
-                                                    <TouchableOpacity style={styles.msgCaretBtn} onPress={(e) => { e.stopPropagation(); setEmojiPickerMsg(m.id); }}>
-                                                        <Icon name="chevron-down" size={20} color="#A8A090" />
-                                                    </TouchableOpacity>
-                                                </View>
-                                            )}
                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                                                 <Text style={[styles.msgSender, isMine && { color: '#C9A84C' }]}>{m.sender}</Text>
                                             </View>
-                                            {m.text ? <Text style={styles.msgText}>{parseMarkdown(m.text)}</Text> : null}
+                                            {m.text && !m.text.startsWith('📄') ? <Text style={styles.msgText}>{parseMarkdown(m.text)}</Text> : null}
                                             {m.voiceData && <VoiceMessageBubble src={m.voiceData} duration={m.voiceDuration} isMine={isMine} />}
                                             {m.poll && <PollMessage msg={m} user={user} onVote={vote} />}
                                             {m.imageData && (
-                                                <TouchableOpacity activeOpacity={0.9} onPress={() => { setLbImages([m.imageData]); setLbIdx(0); setLbVisible(true); }}>
-                                                    <Image
-                                                        source={{ uri: m.imageData }}
-                                                        style={styles.msgImg}
-                                                        resizeMode="contain"
-                                                        onLoad={(e) => {
-                                                            // Dynamic height based on aspect ratio, capped at 400
-                                                            const { width: imgW, height: imgH } = e.nativeEvent.source || {};
-                                                            if (imgW && imgH) {
-                                                                const maxW = 300;
-                                                                const ratio = imgH / imgW;
-                                                                // Store dynamic height in message ref - not needed for web, CSS handles it
-                                                            }
-                                                        }}
-                                                    />
-                                                </TouchableOpacity>
+                                                m.text?.startsWith('📄') ? (
+                                                    /* File attachment display */
+                                                    <View style={styles.fileAttachment}>
+                                                        <View style={styles.fileIconBox}>
+                                                            <Icon name="file-text" size={24} color="#C9A84C" />
+                                                        </View>
+                                                        <Text style={styles.fileNameTxt} numberOfLines={1}>{m.text.replace('📄 ', '')}</Text>
+                                                        <TouchableOpacity onPress={() => {
+                                                            const a = document.createElement('a');
+                                                            a.href = m.imageData;
+                                                            a.download = m.text.replace('📄 ', '');
+                                                            a.click();
+                                                        }} style={styles.fileDownloadBtn}>
+                                                            <Icon name="download" size={16} color="#C9A84C" />
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                ) : (
+                                                    /* Image/video display */
+                                                    <TouchableOpacity activeOpacity={0.9} onPress={() => setSelectedImage(m.imageData)}>
+                                                        <Image
+                                                            source={{ uri: m.imageData }}
+                                                            style={styles.msgImg}
+                                                            resizeMode="cover"
+                                                        />
+                                                    </TouchableOpacity>
+                                                )
                                             )}
 
                                             <View style={styles.msgMeta}>
@@ -1057,9 +1147,9 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         )}
                                     </View>
 
-                                    {/* Side Reaction Button (Right for others, Left for me due to row-reverse) */}
-                                    {hoveredMsg === m.id && (
-                                        <TouchableOpacity style={styles.reactionSideBtn} onPress={() => setFullPickerVisible(m.id)}>
+                                    {/* Side Reaction Button for others (right side) */}
+                                    {!isMine && hoveredMsg === m.id && (
+                                        <TouchableOpacity style={styles.reactionSideBtn} onPress={(e) => { e.stopPropagation(); setFullPickerVisible(m.id); }}>
                                             <Icon name="smile" size={16} color="#888275" />
                                             <Text style={styles.reactionSidePlus}>+</Text>
                                         </TouchableOpacity>
@@ -1110,7 +1200,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         </TouchableOpacity>
                                         <TouchableOpacity style={styles.plusItem} onPress={() => {
                                             setPlusVisible(false);
-                                            const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv';
+                                            const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '*';
                                             inp.onchange = (e) => {
                                                 const file = e.target.files[0]; if (!file) return;
                                                 const reader = new FileReader(); reader.onload = () => {
@@ -1121,7 +1211,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         }}>
                                             <Icon name="file-text" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>Documento</Text>
                                         </TouchableOpacity>
-                                        <TouchableOpacity style={styles.plusItem} onPress={() => { setPlusVisible(false); }}>
+                                        <TouchableOpacity style={styles.plusItem} onPress={() => { setPlusVisible(false); setGifSearchVisible(true); }}>
                                             <Icon name="gift" size={16} color="#C9A84C" /><Text style={styles.plusItemTxt}>GIF</Text>
                                         </TouchableOpacity>
                                     </View>
@@ -1169,13 +1259,13 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             }
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
-            {!hideChatColumn && !IS_MOBILE && (
+            {!hideChatColumn && (
                 <View style={{ position: 'relative', height: '100%', flexDirection: 'row' }}>
                     <Animated.View style={[
                         styles.column, 
                         styles.rightPanel, 
                         !IS_MOBILE && { width: 280, marginRight: rightAnim },
-                        IS_MOBILE && { position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 100, width: 280 }
+                        IS_MOBILE && { position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 100, width: 280, backgroundColor: '#141210' }
                     ]}>
                         <View style={{ width: 280, height: '100%', padding: 16, position: 'absolute', left: 0, top: 0 }}>
                             <View style={styles.rightHeader}>
@@ -1194,7 +1284,18 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         {savedChats.length === 0 && <Text style={styles.emptyArchiveTxt}>Nessun messaggio salvato. Tieni premuto su un messaggio e premi "Salva".</Text>}
                                         {savedChats.map((sc, idx) => (
                                             <TouchableOpacity key={idx} style={styles.archiveRow} onPress={() => {
-                                                setActiveChannel(ALL_CHANNELS.find(ch => ch.id.includes(sc.channelId?.split('-')[0])) || activeChannel);
+                                                // Navigate to the message's channel and scroll to it
+                                                const targetChannel = ALL_CHANNELS.find(ch => ch.id === sc.channelId) || activeChannel;
+                                                setActiveChannel(targetChannel);
+                                                setTimeout(() => {
+                                                    const el = document.getElementById?.(`msg-${sc.id}`);
+                                                    if (el) {
+                                                        el.style.transition = 'background-color 0.4s ease-out';
+                                                        el.style.backgroundColor = 'rgba(201,168,76,0.3)';
+                                                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                        setTimeout(() => { el.style.backgroundColor = 'transparent'; }, 2000);
+                                                    }
+                                                }, 300);
                                             }}>
                                                 <View style={styles.archiveIcon}><Icon name="bookmark" size={12} color="#C9A84C" /></View>
                                                 <View style={{ flex: 1 }}>
@@ -1303,6 +1404,77 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                 </View>
             )}
 
+            {/* GIF Search Modal */}
+            <Modal visible={gifSearchVisible} transparent animationType="fade" onRequestClose={() => setGifSearchVisible(false)}>
+                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setGifSearchVisible(false)}>
+                    <TouchableOpacity activeOpacity={1} style={[styles.fullEmojiBox, { height: '65%', width: 380 }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Icon name="gift" size={16} color="#C9A84C" />
+                                <Text style={[styles.infoTitle, { marginBottom: 0 }]}>Cerca GIF</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setGifSearchVisible(false)}>
+                                <Icon name="x" size={16} color="#554E40" />
+                            </TouchableOpacity>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#11100D', borderRadius: 10, paddingHorizontal: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' }}>
+                            <Icon name="search" size={14} color="#554E40" />
+                            <TextInput 
+                                style={{ flex: 1, color: '#E8E4D8', fontSize: 14, paddingVertical: 10, paddingHorizontal: 8 }}
+                                placeholder="Cerca una GIF..."
+                                placeholderTextColor="#554E40"
+                                value={gifSearch}
+                                onChangeText={(text) => {
+                                    setGifSearch(text);
+                                    if (text.trim().length > 1) {
+                                        fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(text)}&key=AIzaSyC3oBnD0YtOW6W-hYp4yE3qR9WscZ1VyV4&limit=20&media_filter=tinygif`)
+                                            .then(r => r.json())
+                                            .then(data => setGifResults(data.results || []))
+                                            .catch(() => setGifResults([]));
+                                    } else if (text.trim().length === 0) {
+                                        fetch(`https://tenor.googleapis.com/v2/featured?key=AIzaSyC3oBnD0YtOW6W-hYp4yE3qR9WscZ1VyV4&limit=20&media_filter=tinygif`)
+                                            .then(r => r.json())
+                                            .then(data => setGifResults(data.results || []))
+                                            .catch(() => setGifResults([]));
+                                    }
+                                }}
+                                {...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {})}
+                            />
+                        </View>
+                        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                                {gifResults.map((gif, gi) => {
+                                    const url = gif.media_formats?.tinygif?.url || gif.media_formats?.gif?.url;
+                                    if (!url) return null;
+                                    return (
+                                        <TouchableOpacity key={gi} style={{ width: '48%', height: 120, borderRadius: 10, overflow: 'hidden', backgroundColor: '#1A1812' }}
+                                            onPress={() => {
+                                                socket.emit('channel-message', { channelId: activeChannel.id, text: '', imageData: url, replyTo: replyingTo?.id });
+                                                setReplyingTo(null);
+                                                setGifSearchVisible(false);
+                                                setGifSearch('');
+                                                setGifResults([]);
+                                            }}
+                                        >
+                                            <Image source={{ uri: url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                                {gifResults.length === 0 && (
+                                    <View style={{ width: '100%', paddingVertical: 40, alignItems: 'center' }}>
+                                        <Icon name="search" size={32} color="#333" />
+                                        <Text style={{ color: '#554E40', fontSize: 13, marginTop: 12 }}>
+                                            {gifSearch ? 'Nessun risultato' : 'Digita per cercare GIF'}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+                        </ScrollView>
+                        <Text style={{ color: '#444', fontSize: 9, textAlign: 'right', marginTop: 6 }}>Powered by Tenor</Text>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
+
             {/* MODALS */}
             <Modal visible={!!fullPickerVisible} transparent animationType="fade" onRequestClose={() => setFullPickerVisible(null)}>
                 <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setFullPickerVisible(null)}>
@@ -1357,7 +1529,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
 const styles = StyleSheet.create({
     root: { flex: 1, flexDirection: 'row', backgroundColor: 'transparent', ...NO_SELECT, position: 'relative' },
-    column: { height: '100%', borderRightWidth: 1, borderRightColor: 'rgba(201,168,76,0.06)' },
+    column: { height: '100%' },
 
     // Message context menu & reactions
     msgHoverActions: { position: 'absolute', top: 4, right: 4, flexDirection: 'row', gap: 4, backgroundColor: 'rgba(20,18,16,0.8)', borderRadius: 12, padding: 2, zIndex: 10 },
@@ -1386,6 +1558,14 @@ const styles = StyleSheet.create({
     infoTitle: { color: '#C9A84C', fontSize: 16, fontWeight: '900', letterSpacing: 1, marginBottom: 12 },
     infoLabel: { color: '#A8A090', fontSize: 14, fontWeight: '600' },
 
+    // Pinned Messages Banner
+    pinnedBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: 'rgba(201,168,76,0.06)', borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.08)' },
+    pinnedBannerTxt: { flex: 1, color: '#C9A84C', fontSize: 12, fontWeight: '700' },
+    pinnedList: { backgroundColor: 'rgba(28,26,18,0.95)', borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.1)', maxHeight: 200, overflow: 'scroll' },
+    pinnedItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.04)' },
+    pinnedItemSender: { color: '#C9A84C', fontSize: 11, fontWeight: '800', width: 80 },
+    pinnedItemText: { flex: 1, color: '#C8C4B8', fontSize: 12 },
+
     // Pull tabs (linguette)
     leftTrapezoid: { position: 'absolute', top: '50%', left: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopRightRadius: 8, borderBottomRightRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderRightWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
     rightTrapezoid: { position: 'absolute', top: '50%', right: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopLeftRadius: 8, borderBottomLeftRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderLeftWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
@@ -1403,8 +1583,8 @@ const styles = StyleSheet.create({
         zIndex: 999,
         ...(Platform.OS === 'web' ? { backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)' } : {})
     },
-    leftExternalTab: { position: 'absolute', top: '45%', borderTopRightRadius: 14, borderBottomRightRadius: 14, borderLeftWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: 4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: 'rgba(20, 18, 16, 0.7)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } : {}) },
-    rightExternalTab: { position: 'absolute', top: '45%', borderTopLeftRadius: 14, borderBottomLeftRadius: 14, borderRightWidth: 0, zIndex: 1000, width: 36, height: 72, shadowColor: '#000', shadowOffset: { width: -4, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, backgroundColor: 'rgba(20, 18, 16, 0.7)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.2)', ...(Platform.OS === 'web' ? { backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } : {}) },
+    leftExternalTab: { position: 'absolute', top: '45%', borderTopRightRadius: 14, borderBottomRightRadius: 14, borderLeftWidth: 0, zIndex: 1000, width: 28, height: 60, backgroundColor: '#141210', borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)', borderLeftWidth: 0 },
+    rightExternalTab: { position: 'absolute', top: '45%', borderTopLeftRadius: 14, borderBottomLeftRadius: 14, borderRightWidth: 0, zIndex: 1000, width: 28, height: 60, backgroundColor: '#141210', borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)', borderRightWidth: 0 },
     collapseTabInternal: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
 
     // Sidebar
@@ -1459,8 +1639,12 @@ const styles = StyleSheet.create({
     msgTime: { color: '#6E6960', fontSize: 10, fontWeight: '600' },
     msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 },
     msgEdited: { color: '#554E40', fontSize: 10, fontStyle: 'italic', marginRight: 4 },
-    msgChevron: { position: 'absolute', top: 8, right: 8, zIndex: 10, width: 24, height: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12 },
-    msgImg: { width: 280, maxHeight: 400, borderRadius: 12, marginTop: 6, backgroundColor: 'transparent', alignSelf: 'center' },
+    msgChevron: { position: 'absolute', top: 4, right: 4, zIndex: 10, width: 32, height: 32, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 16 },
+    msgImg: { width: 280, minHeight: 120, maxHeight: 400, borderRadius: 12, marginTop: 6, backgroundColor: '#1A1812' },
+    fileAttachment: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#11100D', borderRadius: 12, padding: 12, marginTop: 6, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
+    fileIconBox: { width: 44, height: 44, borderRadius: 10, backgroundColor: 'rgba(201,168,76,0.1)', justifyContent: 'center', alignItems: 'center' },
+    fileNameTxt: { flex: 1, color: '#C8C4B8', fontSize: 13, fontWeight: '600' },
+    fileDownloadBtn: { width: 36, height: 36, borderRadius: 8, backgroundColor: 'rgba(201,168,76,0.1)', justifyContent: 'center', alignItems: 'center' },
 
     repliedBubble: { flexDirection: 'row', marginBottom: 6, borderRadius: 8, backgroundColor: 'rgba(201,168,76,0.06)', overflow: 'hidden' },
     repliedBubbleBar: { width: 3, backgroundColor: '#C9A84C' },
