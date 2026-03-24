@@ -635,5 +635,17 @@ io.on('connection', (socket) => {
     });
 });
 
+// ─── Static Files & SPA Routing ───────────────────────────────────────────
+const DIST_PATH = path.join(__dirname, '..', 'frontend', 'dist');
+if (fs.existsSync(DIST_PATH)) {
+    console.log(`Serving static files from: ${DIST_PATH}`);
+    app.use(express.static(DIST_PATH));
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(DIST_PATH, 'index.html'));
+    });
+} else {
+    console.warn(`Static dist folder not found at: ${DIST_PATH}. Frontend will not be served.`);
+}
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

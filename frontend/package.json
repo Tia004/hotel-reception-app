@@ -7,7 +7,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web --host lan --port 8081",
-    "tunnel": "expo start --tunnel"
+    "tunnel": "expo start --tunnel",
+    "build": "npx expo export --platform web"
   },
   "dependencies": {
     "@expo/metro-runtime": "~55.0.6",
