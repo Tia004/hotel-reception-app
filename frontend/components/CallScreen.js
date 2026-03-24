@@ -595,13 +595,14 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 <View style={styles.pipVideoArea}>
                     {remoteEntries.length > 0 ? (
                         <RTCView
-                            streamURL={remoteEntries[0][1].toURL ? remoteEntries[0][1].toURL() : remoteEntries[0][1]}
+                            streamURL={Platform.OS === 'web' ? remoteEntries[0][1] : (remoteEntries[0][1].toURL ? remoteEntries[0][1].toURL() : remoteEntries[0][1])}
                             style={styles.rtc}
                             objectFit="cover"
+                            muted={deafenOn}
                         />
                     ) : camOn && localStream ? (
                         <RTCView
-                            streamURL={localStream.toURL ? localStream.toURL() : localStream}
+                            streamURL={Platform.OS === 'web' ? localStream : (localStream.toURL ? localStream.toURL() : localStream)}
                             style={styles.rtc}
                             objectFit="cover"
                             muted={true}

@@ -33,12 +33,26 @@ export const RTCView = Platform.OS === 'web'
             const video = videoRef.current;
             if (!video) return;
 
-            if (streamURL instanceof MediaStream) {
-                video.srcObject = streamURL;
+            const isStream = streamURL && (
+                (typeof MediaStream !== 'undefined' && streamURL instanceof MediaStream) || 
+                (typeof streamURL === 'object' && typeof streamURL.getTracks === 'function')
+            );
+
+            if (isStream) {
+                if (video.srcObject !== streamURL) {
+                    video.srcObject = streamURL;
+                    video.play().catch(err => {
+                        console.warn('RTCView: Autoplay play() failed (likely needs user interaction):', err);
+                    });
+                }
             } else if (typeof streamURL === 'string' && streamURL) {
-                video.src = streamURL;
+                if (video.src !== streamURL) {
+                    video.src = streamURL;
+                    video.play().catch(err => {});
+                }
             } else {
                 video.srcObject = null;
+                video.src = '';
             }
         }, [streamURL]);
 
@@ -49,10 +63,11 @@ export const RTCView = Platform.OS === 'web'
                 playsInline
                 muted={muted}
                 style={{
+                    backgroundColor: '#000',
                     ...style,
                     objectFit,
                     transform: mirror ? 'scaleX(-1)' : 'none',
-                    display: 'block',      // prevent inline-block baseline gap
+                    display: 'block',
                     width: '100%',
                     height: '100%',
                 }}
