@@ -45,6 +45,8 @@ export default class ErrorBoundary extends React.Component {
 
             <Text style={styles.errorDetail}>
               {this.state.error?.toString()}
+              {"\n\n"}
+              {this.state.error?.stack?.split('\n').slice(0, 5).join('\n')}
             </Text>
           </View>
         </View>

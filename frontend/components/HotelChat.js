@@ -1248,12 +1248,15 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         {/* Reactions */}
                                         {m.reactions && Object.keys(m.reactions).length > 0 && (
                                             <View style={styles.reactionsWrap}>
-                                                {Object.entries(m.reactions || {}).map(([emoji, usersArr]) => (
-                                                    <TouchableOpacity key={emoji} style={[styles.reactionBadge, (Array.isArray(usersArr) && usersArr.includes(user.username)) && styles.reactionBadgeMy]} onPress={() => reactMessage(m.id, emoji)}>
-                                                        <Text style={styles.reactionEmoji}>{emoji}</Text>
-                                                        <Text style={[styles.reactionCount, usersArr.includes(user.username) && { color: '#C9A84C' }]}>{usersArr.length}</Text>
-                                                    </TouchableOpacity>
-                                                ))}
+                                                {Object.entries(m.reactions || {}).map(([emoji, usersArr]) => {
+                                                    const isMyReaction = Array.isArray(usersArr) && usersArr.includes(user.username);
+                                                    return (
+                                                        <TouchableOpacity key={emoji} style={[styles.reactionBadge, isMyReaction && styles.reactionBadgeMy]} onPress={() => reactMessage(m.id, emoji)}>
+                                                            <Text style={styles.reactionEmoji}>{emoji}</Text>
+                                                            <Text style={[styles.reactionCount, isMyReaction && { color: '#C9A84C' }]}>{(Array.isArray(usersArr) ? usersArr : []).length}</Text>
+                                                        </TouchableOpacity>
+                                                    );
+                                                })}
                                             </View>
                                         )}
                                     </View>
