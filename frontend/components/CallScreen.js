@@ -118,6 +118,9 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     // Peer connections map
     const pcsRef = useRef(new Map()); // socketId → RTCPeerConnection
     const localStreamRef = useRef(null);
+    const makingOfferRef = useRef(false);
+    const isSettingRemoteDescriptionRef = useRef(false);
+    const ignoreOfferRef = useRef(false);
     const pipVideoRef = useRef(null); // hidden video element for Browser PiP
     
     // Document PiP
@@ -174,7 +177,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         };
 
         const initPeers = async () => {
-            if (!initialPeers || initialPeers.length === 0) return;
+            if (!initialPeers || initialPeers.length === 0 || !localStreamRef.current) return;
             console.log('Initializing connections with existing peers:', initialPeers);
             initialPeers.forEach(peerId => {
                 if (peerId !== socket.id && !pcsRef.current.has(peerId)) {
@@ -184,28 +187,38 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 }
             });
         };
-        initPeers();
+        // Wait a bit for localStream to be fully captured if it's currently capturing
+        const timer = setTimeout(() => {
+            initPeers();
+        }, 1000);
 
         const onOffer = async ({ sender, offer }) => {
             console.log('Received offer from:', sender);
             const pc = createPC(sender);
             
             const isPolite = socket.id > sender;
-            const collision = (pc.signalingState !== 'stable');
+            const offerCollision = (offer.type === "offer") && (makingOfferRef.current || pc.signalingState !== "stable");
             
-            if (collision && !isPolite) {
+            ignoreOfferRef.current = !isPolite && offerCollision;
+            if (ignoreOfferRef.current) {
                 console.log('Glare detected: we are the impolite peer, ignoring incoming offer from:', sender);
                 return;
             }
 
-            ensureTracks(pc, localStreamRef.current);
             try {
-                if (collision && isPolite) {
+                isSettingRemoteDescriptionRef.current = true;
+                if (offerCollision) {
                     console.log('Glare detected: we are the polite peer, rolling back to accept offer from:', sender);
-                    await pc.setLocalDescription({ type: 'rollback' });
+                    await Promise.all([
+                        pc.setLocalDescription({ type: 'rollback' }),
+                        pc.setRemoteDescription(new RTCSessionDescription(offer))
+                    ]);
+                } else {
+                    await pc.setRemoteDescription(new RTCSessionDescription(offer));
                 }
+                isSettingRemoteDescriptionRef.current = false;
                 
-                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                ensureTracks(pc, localStreamRef.current);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 console.log('Sending answer to:', sender);
@@ -220,6 +233,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 }
             } catch (err) {
                 console.error('Error handling offer from:', sender, err);
+                isSettingRemoteDescriptionRef.current = false;
                 setConnectionErrors(prev => ({ ...prev, [sender]: err.message || 'Errore offerta' }));
             }
         };
@@ -229,8 +243,10 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             const pc = pcsRef.current.get(sender);
             if (pc) {
                 try {
+                    isSettingRemoteDescriptionRef.current = true;
                     await pc.setRemoteDescription(new RTCSessionDescription(answer));
                     console.log('Set remote description (answer) for:', sender);
+                    isSettingRemoteDescriptionRef.current = false;
 
                     // Process queued ICE candidates
                     const queue = iceQueuesRef.current.get(sender) || [];
@@ -241,6 +257,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                     }
                 } catch (err) {
                     console.error('Error setting remote answer:', err);
+                    isSettingRemoteDescriptionRef.current = false;
                 }
             } else {
                 console.warn('No peer connection found for answer from:', sender);
@@ -250,14 +267,14 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         const onIce = async ({ sender, candidate }) => {
             console.log('Received ICE candidate from:', sender);
             const pc = pcsRef.current.get(sender);
-            if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+            if (pc && pc.remoteDescription && pc.remoteDescription.type && !isSettingRemoteDescriptionRef.current) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 } catch (err) {
                     console.error('Error adding ICE candidate:', err);
                 }
             } else {
-                console.log('Remote description not set yet. Queuing ICE candidate for:', sender);
+                console.log('Remote description not set yet or being set. Queuing ICE candidate for:', sender);
                 if (!iceQueuesRef.current.has(sender)) iceQueuesRef.current.set(sender, []);
                 iceQueuesRef.current.get(sender).push(candidate);
             }
@@ -475,17 +492,19 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         pc.onnegotiationneeded = async () => {
             console.log(`Negotiation needed for [${targetId}]`);
             try {
-                // To avoid glare (perfect collision), use a small delay if our ID is higher
-                if (socket.id > targetId) {
-                    console.log(`Glare avoidance: delaying offer to [${targetId}]`);
-                    await new Promise(r => setTimeout(r, Math.random() * 500));
-                }
+                makingOfferRef.current = true;
                 const offer = await pc.createOffer();
+                if (pc.signalingState !== 'stable') {
+                    console.log('Negotiation skipped: PC not stable');
+                    return;
+                }
                 await pc.setLocalDescription(offer);
                 console.log(`Sending offer to [${targetId}]`);
                 socket.emit('offer', { target: targetId, offer, sender: socket.id });
             } catch (err) {
                 console.error(`Error in onnegotiationneeded for [${targetId}]:`, err);
+            } finally {
+                makingOfferRef.current = false;
             }
         };
         return pc;
