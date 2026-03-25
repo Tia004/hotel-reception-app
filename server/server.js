@@ -315,6 +315,9 @@ io.on('connection', (socket) => {
     socket.on('offer', (d) => io.to(d.target).emit('offer', { ...d, sender: socket.id }));
     socket.on('answer', (d) => io.to(d.target).emit('answer', { ...d, sender: socket.id }));
     socket.on('ice-candidate', (d) => io.to(d.target).emit('ice-candidate', { ...d, sender: socket.id }));
+    socket.on('peer-heartbeat', ({ roomId }) => {
+        if (roomId) socket.to(roomId).emit('peer-heartbeat', { sender: socket.id });
+    });
 
     // Debug 1v1
     socket.on('debug-offer', (d) => io.to(d.target).emit('debug-offer', { ...d, sender: socket.id }));

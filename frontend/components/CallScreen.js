@@ -175,6 +175,21 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         const onUserJoined = ({ socketId, username }) => {
             console.log('User joined room:', username, socketId);
             setRemoteUsernames(prev => ({ ...prev, [socketId]: username }));
+            
+            // PROACTIVE: If we are already in and have a stream, initiate to the newcomer immediately
+            if (socketId !== socket.id && !pcsRef.current.has(socketId) && localStreamRef.current) {
+                console.log('Proactively initiating connection to new joiner:', socketId);
+                const pc = createPC(socketId);
+                ensureTracks(pc, localStreamRef.current);
+            }
+        };
+
+        const onPeerHeartbeat = ({ sender }) => {
+            if (sender !== socket.id && !pcsRef.current.has(sender) && localStreamRef.current) {
+                console.log('Discovered peer via heartbeat, initiating:', sender);
+                const pc = createPC(sender);
+                ensureTracks(pc, localStreamRef.current);
+            }
         };
 
         const onOffer = async ({ sender, offer }) => {
@@ -277,6 +292,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         };
 
         socket.on('user-joined-room', onUserJoined);
+        socket.on('peer-heartbeat', onPeerHeartbeat);
         socket.on('offer', onOffer);
         socket.on('answer', onAnswer);
         socket.on('ice-candidate', onIce);
@@ -292,8 +308,17 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
 
         startLocalStream();
 
+        // Heartbeat Pulse (Every 3s)
+        const heartbeatInterval = setInterval(() => {
+            if (socket.connected) {
+                socket.emit('peer-heartbeat', { roomId });
+            }
+        }, 3000);
+
         return () => {
+            clearInterval(heartbeatInterval);
             socket.off('user-joined-room', onUserJoined);
+            socket.off('peer-heartbeat', onPeerHeartbeat);
             socket.off('offer', onOffer);
             socket.off('answer', onAnswer);
             socket.off('ice-candidate', onIce);
