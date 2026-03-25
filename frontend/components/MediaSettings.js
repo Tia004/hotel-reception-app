@@ -1,5 +1,5 @@
 /**
- * MediaSettings.js — v2.5.0
+ * MediaSettings.js — v4.1.4
  * Settings modal for user profile and media devices.
  * - Perfectly synced with UserProfileCard via gsa_user_profile localStorage.
  * - Profile: name, bio, profile picture.

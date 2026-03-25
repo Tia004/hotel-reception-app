@@ -1,5 +1,5 @@
 /**
- * Icons.js — v2.8.0
+ * Icons.js — v4.1.4
  * Uses @expo/vector-icons (Ionicons + Feather) for quality, uniform icons.
  * Ionicons is bundled with Expo SDK - no extra install needed.
  */

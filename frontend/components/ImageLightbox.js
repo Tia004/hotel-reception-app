@@ -1,5 +1,5 @@
 /**
- * ImageLightbox.js — v2.4.0
+ * ImageLightbox.js — v4.1.4
  * Full-screen image viewer with zoom (+/-), arrow navigation, click-outside to close.
  */
 import React, { useState, useEffect } from 'react';

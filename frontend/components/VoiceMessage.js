@@ -1,5 +1,5 @@
 /**
- * VoiceMessage.js — v2.7.2
+ * VoiceMessage.js — v4.1.4
  * Full-width waveform, mic/mic-off icons for recording,
  * onRecordingChange callback to hide text input,
  * pause = preview, resume = append to recording.

@@ -1,5 +1,5 @@
 /**
- * HotelChat.js — v2.5.0
+ * HotelChat.js — v4.1.4
  * Major overhaul:
  * - 3-column layout (Sidebar | Chat | Occupancy)
  * - [+ Crea Stanza] lobby button in sidebar
@@ -221,6 +221,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [gifSearchVisible, setGifSearchVisible] = useState(false);
     const [gifSearch, setGifSearch] = useState('');
     const [gifResults, setGifResults] = useState([]);
+
+
+
+    const APP_VERSION = "4.1.4";
     const [pinnedExpanded, setPinnedExpanded] = useState(false);
 
     // Server Keep-Alive
@@ -237,10 +241,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [ping, setPing] = useState(null);
     const [pingStatus, setPingStatus] = useState('...');
 
-    // Lightbox
-    const [lbVisible, setLbVisible] = useState(false);
-    const [lbImages, setLbImages] = useState([]);
-    const [lbIdx, setLbIdx] = useState(0);
+
 
     const leftCollapsed = useRef(false); // local ref to track since state is async? Or just keep state
     const [leftCollapsedState, setLeftCollapsed] = useState(IS_MOBILE);
@@ -534,13 +535,21 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     </View>
                 </TouchableOpacity>
             </Modal>
-            {selectedImage && (
-                <ImageLightbox
-                    visible={!!selectedImage}
-                    imageUri={selectedImage}
-                    onClose={() => setSelectedImage(null)}
-                />
-            )}
+            {selectedImage && (() => {
+                const channelMsgs = messages[activeChannel.id] || [];
+                const allImages = channelMsgs
+                    .filter(m => m.imageData && !m.text?.startsWith('📄'))
+                    .map(m => m.imageData);
+                const currentIndex = allImages.indexOf(selectedImage);
+                return (
+                    <ImageLightbox
+                        visible={!!selectedImage}
+                        images={allImages}
+                        initialIndex={currentIndex >= 0 ? currentIndex : 0}
+                        onClose={() => setSelectedImage(null)}
+                    />
+                );
+            })()}
         </>
     );
 
@@ -892,7 +901,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <Image source={require('../assets/logo.png')} style={{ width: 26, height: 26, resizeMode: 'contain' }} />
-                                    <Text style={styles.brandName}>CHAT v3.0.2</Text>
+                                    <Text style={styles.brandName}>CHAT v4.1.4</Text>
                                 </View>
                             </LinearGradient>
 
@@ -1091,19 +1100,24 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         }
                                     }}
                                 >
-                                    {/* Side Reaction Button — only visible on hover */}
+                                    {/* Lateral Reaction Trigger (WhatsApp Style) */}
                                     {hoveredMsg === m.id && !isSelectMode && (
                                         <TouchableOpacity
-                                            style={styles.reactionSideBtn}
-                                            onPress={(e) => { if (e && e.stopPropagation) e.stopPropagation(); setEmojiPickerMsg(m.id); }}
+                                            style={[
+                                                styles.reactionSideBtn,
+                                                isMine ? { left: -36 } : { right: -36 }
+                                            ]}
+                                            onPress={() => onReactionClick(m)}
                                         >
-                                            <Icon name="smile" size={16} color="#888275" />
-                                            <Text style={styles.reactionSidePlus}>+</Text>
+                                            <Icon name="emoji" size={20} color="#6E6960" />
                                         </TouchableOpacity>
                                     )}
 
                                     <View
-                                        style={styles.bubbleWrap}
+                                        style={[
+                                            styles.bubbleWrap,
+                                            isMine ? styles.bubbleWrapMine : styles.bubbleWrapOther
+                                        ]}
                                         {...(Platform.OS === 'web' ? {
                                             onMouseEnter: () => setHoveredMsg(m.id),
                                             onMouseLeave: () => { if (emojiPickerMsg !== m.id && msgActionMenu !== m.id) setHoveredMsg(null); },
@@ -1115,97 +1129,43 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                             onDoubleClick: () => setReplyingTo(m)
                                         } : {})}
                                     >
-                                        {/* HOVER MENUS — Unified Reactions & Actions */}
+                                        {/* Caret / Dropdown Arrow (INSIDE BUBBLE) */}
                                         {hoveredMsg === m.id && !isSelectMode && (
+                                            <TouchableOpacity 
+                                                style={styles.bubbleCaret}
+                                                onPress={(e) => {
+                                                    e.stopPropagation();
+                                                    onMsgAction(m, e);
+                                                }}
+                                            >
+                                                <Icon name="chevron-down" size={18} color="rgba(200,200,200,0.6)" />
+                                            </TouchableOpacity>
+                                        )}
+                                        {/* Hover Actions Panel - (Removed hoverEmojiBtn, kept for logic if needed elsewhere but mostly superseded by lateral) */}
+                                        {false && hoveredMsg === m.id && !isSelectMode && (
                                             <View style={[
                                                 styles.msgHoverActions,
                                                 isMine ? { left: -44, flexDirection: 'row-reverse' } : { right: -44, flexDirection: 'row' }
                                             ]}>
                                                 <TouchableOpacity
-                                                    style={styles.hoverEmojiBtn}
-                                                    onPress={(e) => { e.stopPropagation(); setEmojiPickerMsg(m.id); setMsgActionMenu(null); }}
-                                                >
-                                                    <Icon name="smile" size={16} color="#C9A84C" />
-                                                    <Text style={{ fontSize: 10, color: '#C9A84C', position: 'absolute', top: 2, right: 2 }}>+</Text>
-                                                </TouchableOpacity>
-
-                                                <TouchableOpacity
                                                     style={styles.msgCaretBtn}
-                                                    onPress={(e) => { e.stopPropagation(); setMsgActionMenu(m.id); setEmojiPickerMsg(null); }}
+                                                    onPress={(e) => onMsgAction(m, e)}
                                                 >
-                                                    <Icon name="chevron-down" size={14} color="#A8A090" />
+                                                    <Icon name="chevron-down" size={14} color="#C9A84C" />
                                                 </TouchableOpacity>
-
-                                                {/* ACTION MENU */}
-                                                {msgActionMenu === m.id && (
-                                                    <View style={[styles.msgActionMenu, isMine ? styles.msgActionMenuLeft : styles.msgActionMenuRight]}>
-                                                        {!m.poll && (
-                                                            <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setEditingMsg(m); setDraft(m.text || ''); setMsgActionMenu(null); }}>
-                                                                <Icon name="edit-2" size={14} color="#A8A090" />
-                                                                <Text style={styles.hoverActionTxt}>Modifica</Text>
-                                                            </TouchableOpacity>
-                                                        )}
-                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setReplyingTo(m); setMsgActionMenu(null); }}>
-                                                            <Icon name="message-square" size={14} color="#A8A090" />
-                                                            <Text style={styles.hoverActionTxt}>Rispondi</Text>
-                                                        </TouchableOpacity>
-                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setForwardingMsg(m); setForwardModalVisible(true); setMsgActionMenu(null); }}>
-                                                            <Icon name="corner-up-right" size={14} color="#A8A090" />
-                                                            <Text style={styles.hoverActionTxt}>Inoltra</Text>
-                                                        </TouchableOpacity>
-                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => {
-                                                            if (Platform.OS === 'web') {
-                                                                navigator.clipboard.writeText(m.text || '').then(() => setAlertMsg('Copiato negli appunti!'));
-                                                            }
-                                                            setMsgActionMenu(null);
-                                                        }}>
-                                                            <Icon name="copy" size={14} color="#A8A090" />
-                                                            <Text style={styles.hoverActionTxt}>Copia</Text>
-                                                        </TouchableOpacity>
-                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setIsSelectMode(true); setSelectedMsgIds([m.id]); setMsgActionMenu(null); }}>
-                                                            <Icon name="check-square" size={14} color="#A8A090" />
-                                                            <Text style={styles.hoverActionTxt}>Seleziona</Text>
-                                                        </TouchableOpacity>
-                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => {
-                                                            setSavedChats(s => s.some(sc => sc.id === m.id) ? s : [...s, { ...m, channelId: activeChannel.id }]);
-                                                            setMsgActionMenu(null);
-                                                        }}>
-                                                            <Icon name="bookmark" size={14} color="#A8A090" />
-                                                            <Text style={styles.hoverActionTxt}>Salva</Text>
-                                                        </TouchableOpacity>
-                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => {
-                                                            socket.emit(m.pinned ? 'unpin-message' : 'pin-message', { channelId: activeChannel.id, messageId: m.id });
-                                                            setMsgActionMenu(null);
-                                                        }}>
-                                                            <Icon name="pin" size={14} color="#A8A090" />
-                                                            <Text style={styles.hoverActionTxt}>{m.pinned ? 'Rimuovi Pin' : 'Fissa'}</Text>
-                                                        </TouchableOpacity>
-                                                        <TouchableOpacity style={styles.hoverActionItem} onPress={() => { setInfoModal(m); setMsgActionMenu(null); }}>
-                                                            <Icon name="info" size={14} color="#A8A090" />
-                                                            <Text style={styles.hoverActionTxt}>Info</Text>
-                                                        </TouchableOpacity>
-                                                        {isMine && (
-                                                            <TouchableOpacity style={[styles.hoverActionItem, { borderTopWidth: 1, borderTopColor: 'rgba(237,66,69,0.2)' }]} onPress={() => { setDeleteTarget(m.id); setMsgActionMenu(null); }}>
-                                                                <Icon name="trash-2" size={14} color="#E57373" />
-                                                                <Text style={[styles.hoverActionTxt, { color: '#E57373' }]}>Elimina</Text>
-                                                            </TouchableOpacity>
-                                                        )}
-                                                    </View>
-                                                )}
-
-                                                {/* EMOJI PICKER (Quick Reactions) */}
-                                                {emojiPickerMsg === m.id && (
-                                                    <View style={[styles.msgEmojiPicker, isMine ? styles.msgEmojiPickerLeft : styles.msgEmojiPickerRight]}>
-                                                        {['❤️', '👍', '🔥', '👏', '😂', '😮'].map(emo => (
-                                                            <TouchableOpacity key={emo} onPress={() => { reactMessage(m.id, emo); setEmojiPickerMsg(null); }} style={{ padding: 6 }}>
-                                                                <Text style={{ fontSize: 18 }}>{emo}</Text>
-                                                            </TouchableOpacity>
-                                                        ))}
-                                                        <TouchableOpacity onPress={() => { setFullPickerVisible(m.id); setEmojiPickerMsg(null); }} style={{ padding: 6 }}>
-                                                            <Icon name="plus" size={16} color="#C9A84C" />
-                                                        </TouchableOpacity>
-                                                    </View>
-                                                )}
+                                            </View>
+                                        )}
+                                        {/* EMOJI PICKER (Quick Reactions) */}
+                                        {emojiPickerMsg === m.id && (
+                                            <View style={[styles.msgEmojiPicker, isMine ? styles.msgEmojiPickerLeft : styles.msgEmojiPickerRight]}>
+                                                {['❤️', '👍', '🔥', '👏', '😂', '😮'].map(emo => (
+                                                    <TouchableOpacity key={emo} onPress={() => { reactMessage(m.id, emo); setEmojiPickerMsg(null); }} style={{ padding: 6 }}>
+                                                        <Text style={{ fontSize: 18 }}>{emo}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                                <TouchableOpacity onPress={() => { setFullPickerVisible(m.id); setEmojiPickerMsg(null); }} style={{ padding: 6 }}>
+                                                    <Icon name="plus" size={16} color="#C9A84C" />
+                                                </TouchableOpacity>
                                             </View>
                                         )}
                                         {/* END HOVER MENUS */}
@@ -1320,7 +1280,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     {/* Replying / Editing banner */}
                     {(replyingTo || editingMsg) && (
                         <View style={styles.activeActionBanner}>
-                            <Icon name={editingMsg ? "edit-2" : "message-square"} size={14} color="#C9A84C" />
+                            <Icon name="edit-2" size={14} color="#C9A84C" />
                             <Text style={styles.activeActionTxt} numberOfLines={1}>
                                 {editingMsg ? `Modifica messaggio` : `Risposta a ${replyingTo.sender}: ${replyingTo.text || 'Multimediale'}`}
                             </Text>
@@ -1624,15 +1584,16 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 value={gifSearch}
                                 onChangeText={(text) => {
                                     setGifSearch(text);
+                                    const apiKey = 'sQEgLD42pGfjWZfZ4uosoCrO6ngpVUwp';
                                     if (text.trim().length > 1) {
-                                        fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(text)}&key=AIzaSyC3oBnD0YtOW6W-hYp4yE3qR9WscZ1VyV4&limit=20&media_filter=tinygif`)
+                                        fetch(`https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(text)}&limit=20&rating=g`)
                                             .then(r => r.json())
-                                            .then(data => setGifResults(data.results || []))
+                                            .then(data => setGifResults(data.data || []))
                                             .catch(() => setGifResults([]));
                                     } else if (text.trim().length === 0) {
-                                        fetch(`https://tenor.googleapis.com/v2/featured?key=AIzaSyC3oBnD0YtOW6W-hYp4yE3qR9WscZ1VyV4&limit=20&media_filter=tinygif`)
+                                        fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${apiKey}&limit=20&rating=g`)
                                             .then(r => r.json())
-                                            .then(data => setGifResults(data.results || []))
+                                            .then(data => setGifResults(data.data || []))
                                             .catch(() => setGifResults([]));
                                     }
                                 }}
@@ -1642,7 +1603,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
                             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                                 {gifResults.map((gif, gi) => {
-                                    const url = gif.media_formats?.tinygif?.url || gif.media_formats?.gif?.url;
+                                    const url = gif.images?.fixed_height?.url || gif.images?.original?.url;
                                     if (!url) return null;
                                     return (
                                         <TouchableOpacity key={gi} style={{ width: '48%', height: 120, borderRadius: 10, overflow: 'hidden', backgroundColor: '#1A1812' }}
@@ -1668,7 +1629,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 )}
                             </View>
                         </ScrollView>
-                        <Text style={{ color: '#444', fontSize: 9, textAlign: 'right', marginTop: 6 }}>Powered by Tenor</Text>
+                        <Text style={{ color: '#444', fontSize: 9, textAlign: 'right', marginTop: 6 }}>Powered by GIPHY</Text>
                     </TouchableOpacity>
                 </TouchableOpacity>
             </Modal>

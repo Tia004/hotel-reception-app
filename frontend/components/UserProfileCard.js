@@ -1,5 +1,5 @@
 /**
- * UserProfileCard.js — v2.5.0
+ * UserProfileCard.js — v4.1.4
  * Popover for user profile:
  * - Edit username, bio, profile picture (synced with settings).
  * - Discord-style status selector: current status row with arrow -> submenu to the right.
