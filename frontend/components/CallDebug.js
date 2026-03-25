@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ScrollView, TextInput } from 'react-native';
 import { RTCView, RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices } from '../utils/webrtc';
 import { Icon } from './Icons';
 
@@ -126,11 +125,11 @@ export default function CallDebug({ socket, user, onClose }) {
             <View style={styles.videoArea}>
                 <View style={styles.videoBox}>
                     <Text style={styles.tag}>LOCALE</Text>
-                    {localStream && <RTCView streamURL={localStream} mirror style={{ flex: 1 }} />}
+                    {localStream && <RTCView streamURL={localStream.toURL ? localStream.toURL() : localStream} mirror muted={true} style={{ flex: 1 }} />}
                 </View>
                 <View style={styles.videoBox}>
                     <Text style={styles.tag}>REMOTA</Text>
-                    {remoteStream && <RTCView streamURL={remoteStream} style={{ flex: 1 }} />}
+                    {remoteStream && <RTCView streamURL={remoteStream.toURL ? remoteStream.toURL() : remoteStream} style={{ flex: 1 }} />}
                 </View>
             </View>
 
@@ -138,8 +137,17 @@ export default function CallDebug({ socket, user, onClose }) {
                 <TouchableOpacity style={styles.btn} onPress={startLocalMedia}>
                     <Text style={styles.btnTxt}>1. Attiva Local Media</Text>
                 </TouchableOpacity>
-                <View style={[styles.btn, { backgroundColor: '#1C1A12', borderWidth: 1, borderColor: '#C9A84C' }]}>
-                    <Text style={[styles.btnTxt, { fontSize: 10, color: '#C9A84C' }]}>ID Target: {targetId || 'Aspettando...'}</Text>
+                <View style={[styles.btn, { backgroundColor: '#1C1A12', borderWidth: 1, borderColor: '#C9A84C', padding: 5 }]}>
+                    <Text style={{ fontSize: 10, color: '#C9A84C', marginBottom: 5 }}>INCOLLA ID TARGET QUI:</Text>
+                    <TextInput
+                        style={{ color: '#FFF', width: '100%', textAlign: 'center', fontWeight: '800' }}
+                        value={targetId}
+                        onChangeText={setTargetId}
+                        placeholder="Es. abc-123..."
+                        placeholderTextColor="#444"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
                 </View>
                 <TouchableOpacity style={styles.btnCall} onPress={startCall}>
                     <Text style={styles.btnTxt}>2. Chiama ID Sopra</Text>

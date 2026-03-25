@@ -880,7 +880,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             {/* Sidebar toggle tabs are now children of the sidebars themselves to move with them */}
 
             {/* ── LEFT SIDEBAR ────────────────────────────────────────── */}
-            {(!IS_MOBILE || sidebarVisible) && (
+            {true && (
                 <View style={{ position: 'relative', height: '100%', flexDirection: 'row', zIndex: IS_MOBILE ? 200 : 10 }}>
                     <Animated.View style={[
                         styles.column,
@@ -1018,7 +1018,6 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
             {/* ── CENTER CHAT ─────────────────────────────────────────── */}
             {!hideChatColumn && <View style={[styles.column, styles.chatCol]}>
                 <View style={styles.chatHeader}>
-                    {IS_MOBILE && <TouchableOpacity onPress={onToggleSidebar} style={{ marginRight: 12 }}><Icon name="menu" size={20} color="#C8C4B8" /></TouchableOpacity>}
                     <Icon name="hash" size={20} color="#554E40" />
                     <Text style={styles.headerChName}>{activeChannel.name}</Text>
                     <View style={{ flex: 1 }} />
