@@ -170,28 +170,12 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     useEffect(() => {
         if (!socket || !roomId) return;
         startLocalStream();
-        const onUserJoined = async ({ socketId, username }) => {
-            console.log('User joined room:', username);
-            setRemoteUsernames(prev => ({ ...prev, [socketId]: username }));
-            const pc = createPC(socketId);
-            ensureTracks(pc, localStreamRef.current);
-        };
 
-        const initPeers = async () => {
-            if (!initialPeers || initialPeers.length === 0 || !localStreamRef.current) return;
-            console.log('Initializing connections with existing peers:', initialPeers);
-            initialPeers.forEach(peerId => {
-                if (peerId !== socket.id && !pcsRef.current.has(peerId)) {
-                    console.log('Initiating connection to existing peer:', peerId);
-                    const pc = createPC(peerId);
-                    ensureTracks(pc, localStreamRef.current);
-                }
-            });
+        // Automated Handshake Logic
+        const onUserJoined = ({ socketId, username }) => {
+            console.log('User joined room:', username, socketId);
+            setRemoteUsernames(prev => ({ ...prev, [socketId]: username }));
         };
-        // Wait a bit for localStream to be fully captured if it's currently capturing
-        const timer = setTimeout(() => {
-            initPeers();
-        }, 1000);
 
         const onOffer = async ({ sender, offer }) => {
             console.log('Received offer from:', sender);
@@ -225,17 +209,14 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 console.log('Sending answer to:', sender);
                 socket.emit('answer', { target: sender, answer });
                 
-                // Process queued ICE candidates
                 const queue = iceQueuesRef.current.get(sender) || [];
                 while (queue.length > 0) {
                     const candidate = queue.shift();
-                    console.log('Processing queued ICE candidate for:', sender);
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 }
             } catch (err) {
                 console.error('Error handling offer from:', sender, err);
                 isSettingRemoteDescriptionRef.current = false;
-                setConnectionErrors(prev => ({ ...prev, [sender]: err.message || 'Errore offerta' }));
             }
         };
 
@@ -246,22 +227,16 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                 try {
                     isSettingRemoteDescriptionRef.current = true;
                     await pc.setRemoteDescription(new RTCSessionDescription(answer));
-                    console.log('Set remote description (answer) for:', sender);
                     isSettingRemoteDescriptionRef.current = false;
-
-                    // Process queued ICE candidates
                     const queue = iceQueuesRef.current.get(sender) || [];
                     while (queue.length > 0) {
                         const candidate = queue.shift();
-                        console.log('Processing queued ICE candidate for:', sender);
                         await pc.addIceCandidate(new RTCIceCandidate(candidate));
                     }
                 } catch (err) {
                     console.error('Error setting remote answer:', err);
                     isSettingRemoteDescriptionRef.current = false;
                 }
-            } else {
-                console.warn('No peer connection found for answer from:', sender);
             }
         };
 
@@ -271,32 +246,26 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             if (pc && pc.remoteDescription && pc.remoteDescription.type && !isSettingRemoteDescriptionRef.current) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                } catch (err) {
-                    console.error('Error adding ICE candidate:', err);
-                }
+                } catch (err) { console.error('Error adding ICE:', err); }
             } else {
-                console.log('Remote description not set yet or being set. Queuing ICE candidate for:', sender);
                 if (!iceQueuesRef.current.has(sender)) iceQueuesRef.current.set(sender, []);
                 iceQueuesRef.current.get(sender).push(candidate);
             }
         };
 
         const onUserLeft = ({ socketId }) => {
+            console.log('User left room:', socketId);
             const pc = pcsRef.current.get(socketId);
             if (pc) { pc.close(); pcsRef.current.delete(socketId); }
             setRemoteStreams(prev => { const next = { ...prev }; delete next[socketId]; return next; });
+            setRemoteUsernames(prev => { const next = { ...prev }; delete next[socketId]; return next; });
         };
-
-        // Message to request in-call chat history
-        socket.emit('room-chat-history', { roomId });
-        socket.on('room-chat-history', ({ messages: hist }) => {
-            if (hist && hist.length) setChatMessages(hist);
-        });
 
         const onChatMsg = (msg) => {
             setChatMessages(prev => [...prev, msg]);
             setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
         };
+
         const onEmojiReaction = ({ socketId, emoji }) => {
             const id = Date.now() + Math.random();
             setFloatingReactions(prev => [...prev, { id, emoji }]);
@@ -316,8 +285,12 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         socket.on('emoji-reaction', onEmojiReaction);
         socket.on('media-state-change', onMediaState);
 
-        // Sync initial state
-        socket.emit('media-state-change', { micOn, camOn, deafenOn });
+        socket.emit('room-chat-history', { roomId });
+        socket.on('room-chat-history', ({ messages: hist }) => {
+            if (hist) setChatMessages(hist);
+        });
+
+        startLocalStream();
 
         return () => {
             socket.off('user-joined-room', onUserJoined);
@@ -334,6 +307,19 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             pcsRef.current.clear();
         };
     }, [socket, roomId]);
+
+    // ── Peer Initialization Loop ──────────────────────────────────────────
+    // Whenever localStream becomes ready, connect to initialPeers
+    useEffect(() => {
+        if (!localStream || !socket || !initialPeers.length) return;
+        initialPeers.forEach(peerId => {
+            if (peerId !== socket.id && !pcsRef.current.has(peerId)) {
+                console.log('Auto-initiating connection to peer:', peerId);
+                const pc = createPC(peerId);
+                ensureTracks(pc, localStream);
+            }
+        });
+    }, [localStream, initialPeers]);
 
     // ── Browser Picture-in-Picture logic ─────────────────────────
     useEffect(() => {

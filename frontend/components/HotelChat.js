@@ -1,5 +1,5 @@
 /**
- * HotelChat.js — v4.1.4
+ * HotelChat.js — v4.1.5
  * Major overhaul:
  * - 3-column layout (Sidebar | Chat | Occupancy)
  * - [+ Crea Stanza] lobby button in sidebar
@@ -224,7 +224,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
 
 
-    const APP_VERSION = "4.1.4";
+    const APP_VERSION = "4.1.5";
     const [pinnedExpanded, setPinnedExpanded] = useState(false);
 
     // Server Keep-Alive
@@ -901,7 +901,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <Image source={require('../assets/logo.png')} style={{ width: 26, height: 26, resizeMode: 'contain' }} />
-                                    <Text style={styles.brandName}>CHAT v4.1.4</Text>
+                                    <Text style={styles.brandName}>CHAT v4.1.5</Text>
+
                                 </View>
                             </LinearGradient>
 
@@ -1100,18 +1101,6 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                         }
                                     }}
                                 >
-                                    {/* Lateral Reaction Trigger (WhatsApp Style) */}
-                                    {hoveredMsg === m.id && !isSelectMode && (
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.reactionSideBtn,
-                                                isMine ? { left: -36 } : { right: -36 }
-                                            ]}
-                                            onPress={() => onReactionClick(m)}
-                                        >
-                                            <Icon name="emoji" size={20} color="#6E6960" />
-                                        </TouchableOpacity>
-                                    )}
 
                                     <View
                                         style={[
@@ -1129,17 +1118,37 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                             onDoubleClick: () => setReplyingTo(m)
                                         } : {})}
                                     >
+                                        {/* Lateral Reaction Trigger (WhatsApp Style) - Moved inside Wrap for stability */}
+                                        {hoveredMsg === m.id && !isSelectMode && (
+                                            <TouchableOpacity
+                                                style={[
+                                                    styles.reactionSideBtn,
+                                                    isMine ? { left: -42 } : { right: -42 }
+                                                ]}
+                                                onPress={() => onReactionClick(m)}
+                                            >
+                                                <Icon name="emoji" size={18} color="#6E6960" />
+                                            </TouchableOpacity>
+                                        )}
                                         {/* Caret / Dropdown Arrow (INSIDE BUBBLE) */}
                                         {hoveredMsg === m.id && !isSelectMode && (
-                                            <TouchableOpacity 
-                                                style={styles.bubbleCaret}
-                                                onPress={(e) => {
-                                                    e.stopPropagation();
-                                                    onMsgAction(m, e);
-                                                }}
-                                            >
-                                                <Icon name="chevron-down" size={18} color="rgba(200,200,200,0.6)" />
-                                            </TouchableOpacity>
+                                            <View style={styles.bubbleCaretWrap}>
+                                                <LinearGradient 
+                                                    colors={[isMine ? '#28241C' : '#1C1A16', 'transparent']} 
+                                                    start={{ x: 1, y: 0 }} 
+                                                    end={{ x: 0, y: 1 }} 
+                                                    style={styles.bubbleCaretGradient} 
+                                                />
+                                                <TouchableOpacity 
+                                                    style={styles.bubbleCaret}
+                                                    onPress={(e) => {
+                                                        e.stopPropagation();
+                                                        onMsgAction(m, e);
+                                                    }}
+                                                >
+                                                    <Icon name="chevron-down" size={16} color="rgba(200,200,200,0.8)" />
+                                                </TouchableOpacity>
+                                            </View>
                                         )}
                                         {/* Hover Actions Panel - (Removed hoverEmojiBtn, kept for logic if needed elsewhere but mostly superseded by lateral) */}
                                         {false && hoveredMsg === m.id && !isSelectMode && (
@@ -1795,8 +1804,10 @@ const styles = StyleSheet.create({
     statusBadgeDot: { width: 8, height: 8, borderRadius: 4 },
     statusBadgeTxt: { color: '#C8C4B8', fontSize: 12, fontWeight: '600' },
 
-    reactionSideBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(28, 26, 20, 0.8)', justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginHorizontal: 8, borderWidth: 1, borderColor: 'rgba(201,168,76,0.1)' },
-    reactionSidePlus: { position: 'absolute', top: 4, right: 4, fontSize: 10, color: '#C9A84C', fontWeight: 'bold' },
+    reactionSideBtn: { position: 'absolute', top: '50%', marginTop: -16, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(28, 26, 20, 0.9)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)', zIndex: 100 },
+    bubbleCaretWrap: { position: 'absolute', top: 0, right: 0, borderTopRightRadius: 12, overflow: 'hidden', zIndex: 20 },
+    bubbleCaretGradient: { position: 'absolute', top: 0, right: 0, width: 40, height: 40 },
+    bubbleCaret: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
 
     messagesScroll: { flex: 1 },
     msgRow: { flexDirection: 'row', marginBottom: 6, width: '100%', position: 'relative', paddingHorizontal: 16 },
