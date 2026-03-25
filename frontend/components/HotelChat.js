@@ -135,7 +135,7 @@ const PollMessage = ({ msg, onVote, user }) => {
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────
-export default function HotelChat({ socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId }) {
+export default function HotelChat({ socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId, onOpenDebug }) {
     // Definizione locale dei dati emoji per evitare ReferenceError
     const GSA_EMOJI_DATA = [
         {
@@ -243,8 +243,23 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [lbIdx, setLbIdx] = useState(0);
 
     const leftCollapsed = useRef(false); // local ref to track since state is async? Or just keep state
-    const [leftCollapsedState, setLeftCollapsed] = useState(false);
-    const [rightCollapsedState, setRightCollapsed] = useState(false);
+    const [leftCollapsedState, setLeftCollapsed] = useState(IS_MOBILE);
+    const [rightCollapsedState, setRightCollapsed] = useState(IS_MOBILE);
+
+    const toggleLeft = () => {
+        const next = !leftCollapsedState;
+        setLeftCollapsed(next);
+        if (IS_MOBILE && !next) { // Opening left
+            setRightCollapsed(true);
+        }
+    };
+    const toggleRight = () => {
+        const next = !rightCollapsedState;
+        setRightCollapsed(next);
+        if (IS_MOBILE && !next) { // Opening right
+            setLeftCollapsed(true);
+        }
+    };
 
     // We animate margin from 0 to negative width to slide without squishing text
     const leftAnim = useRef(new Animated.Value(0)).current;
@@ -870,8 +885,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     <Animated.View style={[
                         styles.column,
                         styles.sidebar,
-                        !IS_MOBILE && { width: 260, marginLeft: leftAnim },
-                        IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 200, width: 260, backgroundColor: '#141210' }
+                        { width: 260, marginLeft: leftAnim },
+                        IS_MOBILE && { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 200, backgroundColor: '#141210' }
                     ]}>
                         <View style={{ width: 260, height: '100%', position: 'absolute', right: 0, top: 0 }}>
                             <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
@@ -982,23 +997,21 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     </Animated.View>
 
                     {/* Unified Rhombus Tab (Left) - Always visible because its parent isn't absolute overflow hidden! */}
-                    {!IS_MOBILE && (
-                        <View style={[
-                            styles.externalTab,
-                            styles.leftExternalTab,
-                            { left: '100%', position: 'absolute', marginLeft: leftAnim }
-                        ]}>
-                            <TouchableOpacity
-                                onPress={() => setLeftCollapsed(!leftCollapsedState)}
-                                activeOpacity={0.8}
-                                style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
-                            >
-                                <View style={{ transform: [{ rotate: leftRotate }] }}>
-                                    <Icon name="chevron-left" size={16} color="#C9A84C" />
-                                </View>
-                            </TouchableOpacity>
-                        </View>
-                    )}
+                    <View style={[
+                        styles.externalTab,
+                        styles.leftExternalTab,
+                        { left: '100%', position: 'absolute', marginLeft: leftAnim }
+                    ]}>
+                        <TouchableOpacity
+                            onPress={toggleLeft}
+                            activeOpacity={0.8}
+                            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+                        >
+                            <View style={{ transform: [{ rotate: leftRotate }] }}>
+                                <Icon name="chevron-left" size={16} color="#C9A84C" />
+                            </View>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             )}
 
@@ -1407,8 +1420,8 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     <Animated.View style={[
                         styles.column,
                         styles.rightPanel,
-                        !IS_MOBILE && { width: 280, marginRight: rightAnim },
-                        IS_MOBILE && { position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 100, width: 280, backgroundColor: '#141210' }
+                        { width: 280, marginRight: rightAnim },
+                        IS_MOBILE && { position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 100, backgroundColor: '#141210' }
                     ]}>
                         <View style={{ width: 280, height: '100%', padding: 16, position: 'absolute', left: 0, top: 0 }}>
                             <View style={styles.rightHeader}>
@@ -1549,7 +1562,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
                                     <View style={styles.hotelInfoBox}>
                                         <Text style={styles.hotelInfoTitle}>DIAGNOSTICA</Text>
-                                        <TouchableOpacity style={styles.createBtn} onPress={() => props.onOpenDebug?.()}>
+                                        <TouchableOpacity style={styles.createBtn} onPress={() => onOpenDebug?.()}>
                                             <Icon name="activity" size={16} color="#111" />
                                             <Text style={styles.createBtnTxt}>TEST HANDSHAKE WebRTC</Text>
                                         </TouchableOpacity>
@@ -1572,23 +1585,21 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                     </Animated.View>
 
                     {/* Unified Rhombus Tab (Right) - Sibling and moving with rightAnim */}
-                    {!IS_MOBILE && (
-                        <View style={[
-                            styles.externalTab,
-                            styles.rightExternalTab,
-                            { right: '100%', position: 'absolute', marginRight: rightAnim }
-                        ]}>
-                            <TouchableOpacity
-                                onPress={() => setRightCollapsed(!rightCollapsedState)}
-                                activeOpacity={0.8}
-                                style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
-                            >
-                                <View style={{ transform: [{ rotate: rightRotate }] }}>
-                                    <Icon name="chevron-right" size={16} color="#C9A84C" />
-                                </View>
-                            </TouchableOpacity>
-                        </View>
-                    )}
+                    <View style={[
+                        styles.externalTab,
+                        styles.rightExternalTab,
+                        { right: '100%', position: 'absolute', marginRight: rightAnim }
+                    ]}>
+                        <TouchableOpacity
+                            onPress={toggleRight}
+                            activeOpacity={0.8}
+                            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+                        >
+                            <View style={{ transform: [{ rotate: rightRotate }] }}>
+                                <Icon name="chevron-right" size={16} color="#C9A84C" />
+                            </View>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             )}
 
