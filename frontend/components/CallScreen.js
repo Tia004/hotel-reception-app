@@ -119,9 +119,9 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     // Peer connections map
     const pcsRef = useRef(new Map()); // socketId → RTCPeerConnection
     const localStreamRef = useRef(null);
-    const makingOfferRef = useRef(false);
-    const isSettingRemoteDescriptionRef = useRef(false);
-    const ignoreOfferRef = useRef(false);
+    const makingOfferMap = useRef(new Map()); // socketId → boolean
+    const isSettingRemoteDescriptionMap = useRef(new Map()); // socketId → boolean
+    const ignoreOfferMap = useRef(new Map()); // socketId → boolean
     const pipVideoRef = useRef(null); // hidden video element for Browser PiP
     
     // Document PiP
@@ -173,20 +173,30 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
 
         // Automated Handshake Logic
         const onUserJoined = ({ socketId, username }) => {
-            console.log('User joined room:', username, socketId);
+            console.log(`[Discovery] User joined room: ${username} (${socketId})`);
             setRemoteUsernames(prev => ({ ...prev, [socketId]: username }));
             
-            // PROACTIVE: If we are already in and have a stream, initiate to the newcomer immediately
             if (socketId !== socket.id && !pcsRef.current.has(socketId) && localStreamRef.current) {
-                console.log('Proactively initiating connection to new joiner:', socketId);
+                console.log(`[Discovery] Proactively initiating connection to new joiner: ${socketId}`);
                 const pc = createPC(socketId);
                 ensureTracks(pc, localStreamRef.current);
             }
         };
 
+        const onRoomPeers = ({ peers }) => {
+            console.log(`[Discovery] Received peer directory:`, peers);
+            peers.forEach(peerId => {
+                if (peerId !== socket.id && !pcsRef.current.has(peerId) && localStreamRef.current) {
+                    console.log(`[Discovery] Found missing peer in directory, initiating: ${peerId}`);
+                    const pc = createPC(peerId);
+                    ensureTracks(pc, localStreamRef.current);
+                }
+            });
+        };
+
         const onPeerHeartbeat = ({ sender }) => {
             if (sender !== socket.id && !pcsRef.current.has(sender) && localStreamRef.current) {
-                console.log('Discovered peer via heartbeat, initiating:', sender);
+                console.log(`[Discovery] Peer heartbeat from ${sender}, initiating:`);
                 const pc = createPC(sender);
                 ensureTracks(pc, localStreamRef.current);
             }
@@ -197,41 +207,47 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             const pc = createPC(sender);
             
             const isPolite = socket.id > sender;
-            const offerCollision = (offer.type === "offer") && (makingOfferRef.current || pc.signalingState !== "stable");
+            const isMakingOffer = makingOfferMap.current.get(sender) || false;
+            const pcSignaling = pc.signalingState;
+            const offerCollision = (offer.type === "offer") && (isMakingOffer || pcSignaling !== "stable");
             
-            ignoreOfferRef.current = !isPolite && offerCollision;
-            if (ignoreOfferRef.current) {
-                console.log('Glare detected: we are the impolite peer, ignoring incoming offer from:', sender);
+            const shouldIgnore = !isPolite && offerCollision;
+            ignoreOfferMap.current.set(sender, shouldIgnore);
+            
+            if (shouldIgnore) {
+                console.log(`[Signaling] Glare DISCARDED: We are impolite and making offer to ${sender}. Ignoring incoming offer.`);
                 return;
             }
 
             try {
-                isSettingRemoteDescriptionRef.current = true;
+                isSettingRemoteDescriptionMap.current.set(sender, true);
                 if (offerCollision) {
-                    console.log('Glare detected: we are the polite peer, rolling back to accept offer from:', sender);
+                    console.log(`[Signaling] Glare RESOLVED: We are polite. Rolling back for ${sender}.`);
                     await Promise.all([
                         pc.setLocalDescription({ type: 'rollback' }),
                         pc.setRemoteDescription(new RTCSessionDescription(offer))
                     ]);
                 } else {
+                    console.log(`[Signaling] Applying remote offer from ${sender}. State: ${pcSignaling}`);
                     await pc.setRemoteDescription(new RTCSessionDescription(offer));
                 }
-                isSettingRemoteDescriptionRef.current = false;
+                isSettingRemoteDescriptionMap.current.set(sender, false);
                 
                 ensureTracks(pc, localStreamRef.current);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                console.log('Sending answer to:', sender);
+                console.log(`[Signaling] Sending answer to: ${sender}`);
                 socket.emit('answer', { target: sender, answer });
                 
                 const queue = iceQueuesRef.current.get(sender) || [];
                 while (queue.length > 0) {
                     const candidate = queue.shift();
+                    console.log(`[Signaling] Draining queued ICE for ${sender}`);
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 }
             } catch (err) {
-                console.error('Error handling offer from:', sender, err);
-                isSettingRemoteDescriptionRef.current = false;
+                console.error(`[Signaling] Error handling offer from ${sender}:`, err);
+                isSettingRemoteDescriptionMap.current.set(sender, false);
             }
         };
 
@@ -240,28 +256,31 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             const pc = pcsRef.current.get(sender);
             if (pc) {
                 try {
-                    isSettingRemoteDescriptionRef.current = true;
+                    isSettingRemoteDescriptionMap.current.set(sender, true);
+                    console.log(`[Signaling] Applying remote answer from ${sender}.`);
                     await pc.setRemoteDescription(new RTCSessionDescription(answer));
-                    isSettingRemoteDescriptionRef.current = false;
+                    isSettingRemoteDescriptionMap.current.set(sender, false);
                     const queue = iceQueuesRef.current.get(sender) || [];
                     while (queue.length > 0) {
                         const candidate = queue.shift();
+                        console.log(`[Signaling] Draining queued ICE for ${sender} (after answer)`);
                         await pc.addIceCandidate(new RTCIceCandidate(candidate));
                     }
                 } catch (err) {
-                    console.error('Error setting remote answer:', err);
-                    isSettingRemoteDescriptionRef.current = false;
+                    console.error(`[Signaling] Error setting remote answer from ${sender}:`, err);
+                    isSettingRemoteDescriptionMap.current.set(sender, false);
                 }
             }
         };
 
         const onIce = async ({ sender, candidate }) => {
-            console.log('Received ICE candidate from:', sender);
+            console.log(`[Signaling] Received ICE from ${sender}`);
             const pc = pcsRef.current.get(sender);
-            if (pc && pc.remoteDescription && pc.remoteDescription.type && !isSettingRemoteDescriptionRef.current) {
+            const isSettingRemote = isSettingRemoteDescriptionMap.current.get(sender);
+            if (pc && pc.remoteDescription && pc.remoteDescription.type && !isSettingRemote) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                } catch (err) { console.error('Error adding ICE:', err); }
+                } catch (err) { console.error(`[Signaling] Error adding ICE for ${sender}:`, err); }
             } else {
                 if (!iceQueuesRef.current.has(sender)) iceQueuesRef.current.set(sender, []);
                 iceQueuesRef.current.get(sender).push(candidate);
@@ -292,6 +311,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         };
 
         socket.on('user-joined-room', onUserJoined);
+        socket.on('room-peers', onRoomPeers);
         socket.on('peer-heartbeat', onPeerHeartbeat);
         socket.on('offer', onOffer);
         socket.on('answer', onAnswer);
@@ -307,17 +327,21 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         });
 
         startLocalStream();
+        
+        // Initial Peer sync
+        socket.emit('get-room-peers', { roomId });
 
-        // Heartbeat Pulse (Every 3s)
+        // Heartbeat Pulse (Every 4s)
         const heartbeatInterval = setInterval(() => {
             if (socket.connected) {
                 socket.emit('peer-heartbeat', { roomId });
             }
-        }, 3000);
+        }, 4000);
 
         return () => {
             clearInterval(heartbeatInterval);
             socket.off('user-joined-room', onUserJoined);
+            socket.off('room-peers', onRoomPeers);
             socket.off('peer-heartbeat', onPeerHeartbeat);
             socket.off('offer', onOffer);
             socket.off('answer', onAnswer);
@@ -514,21 +538,21 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             }
         };
         pc.onnegotiationneeded = async () => {
-            console.log(`Negotiation needed for [${targetId}]`);
+            console.log(`[Signaling] Negotiation needed for ${targetId}`);
             try {
-                makingOfferRef.current = true;
+                makingOfferMap.current.set(targetId, true);
                 const offer = await pc.createOffer();
                 if (pc.signalingState !== 'stable') {
-                    console.log('Negotiation skipped: PC not stable');
+                    console.log(`[Signaling] Negotiation aborted for ${targetId}: State not stable (${pc.signalingState})`);
                     return;
                 }
                 await pc.setLocalDescription(offer);
-                console.log(`Sending offer to [${targetId}]`);
+                console.log(`[Signaling] Sending offer to ${targetId}`);
                 socket.emit('offer', { target: targetId, offer, sender: socket.id });
             } catch (err) {
-                console.error(`Error in onnegotiationneeded for [${targetId}]:`, err);
+                console.error(`[Signaling] Error onnegotiationneeded for ${targetId}:`, err);
             } finally {
-                makingOfferRef.current = false;
+                makingOfferMap.current.set(targetId, false);
             }
         };
         return pc;

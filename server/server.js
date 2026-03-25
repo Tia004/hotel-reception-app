@@ -319,6 +319,13 @@ io.on('connection', (socket) => {
         if (roomId) socket.to(roomId).emit('peer-heartbeat', { sender: socket.id });
     });
 
+    socket.on('get-room-peers', ({ roomId }) => {
+        const room = rooms.get(roomId);
+        if (room) {
+            socket.emit('room-peers', { peers: room.peers });
+        }
+    });
+
     // Debug 1v1
     socket.on('debug-offer', (d) => io.to(d.target).emit('debug-offer', { ...d, sender: socket.id }));
     socket.on('debug-answer', (d) => io.to(d.target).emit('debug-answer', { ...d, sender: socket.id }));
