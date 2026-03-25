@@ -1547,17 +1547,26 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                     </View>
                                 )}
 
-                                <View style={styles.hotelInfoBox}>
-                                    <Text style={styles.hotelInfoTitle}>INFORMAZIONI HOTEL</Text>
-                                    <Text style={styles.hotelInfoName}>{activeHotel ? activeHotel.name : 'Seleziona un hotel'}</Text>
-                                    <Text style={styles.hotelInfoDesc}>{activeHotel ? activeHotel.desc : ''}</Text>
-                                    {activeHotel && (
-                                        <TouchableOpacity style={styles.contactRow}>
-                                            <Icon name="phone" size={14} color="#C9A84C" />
-                                            <Text style={styles.contactTxt}>{activeHotel.contact}</Text>
+                                    <View style={styles.hotelInfoBox}>
+                                        <Text style={styles.hotelInfoTitle}>DIAGNOSTICA</Text>
+                                        <TouchableOpacity style={styles.createBtn} onPress={() => props.onOpenDebug?.()}>
+                                            <Icon name="activity" size={16} color="#111" />
+                                            <Text style={styles.createBtnTxt}>TEST HANDSHAKE WebRTC</Text>
                                         </TouchableOpacity>
-                                    )}
-                                </View>
+                                        <Text style={styles.hotelInfoDesc}>Usa questo strumento per testare la connessione 1v1 se le chiamate normali non funzionano.</Text>
+                                    </View>
+
+                                    <View style={styles.hotelInfoBox}>
+                                        <Text style={styles.hotelInfoTitle}>INFORMAZIONI HOTEL</Text>
+                                        <Text style={styles.hotelInfoName}>{activeHotel ? activeHotel.name : 'Seleziona un hotel'}</Text>
+                                        <Text style={styles.hotelInfoDesc}>{activeHotel ? activeHotel.desc : ''}</Text>
+                                        {activeHotel && (
+                                            <TouchableOpacity style={styles.contactRow}>
+                                                <Icon name="phone" size={14} color="#C9A84C" />
+                                                <Text style={styles.contactTxt}>{activeHotel.contact}</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
                             </ScrollView>
                         </View>
                     </Animated.View>

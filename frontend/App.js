@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import LoginScreen from './components/LoginScreen';
 import CallScreen from './components/CallScreen';
 import HotelChat from './components/HotelChat';
+import CallDebug from './components/CallDebug';
 import io from 'socket.io-client';
 import { Icon } from './components/Icons';
 import SplashScreen from './components/SplashScreen';
@@ -27,6 +28,7 @@ export default function App() {
   const [callPiP, setCallPiP] = useState(false);
   // On mobile: flip between "call view" and "chat view"
   const [mobileView, setMobileView] = useState('chat'); // 'chat' | 'call'
+  const [showDebugCall, setShowDebugCall] = useState(false);
 
   const socketRef = useRef(null);
   const [socketReady, setSocketReady] = useState(false);
@@ -268,6 +270,7 @@ export default function App() {
                 hideChatColumn={false}
                 onChannelClick={null}
                 currentRoomId={currentRoom}
+                onOpenDebug={() => setShowDebugCall(true)}
               />
               {/* Floating "return to call" button when in a call */}
               {inCall && mobileView === 'chat' && (
@@ -296,6 +299,16 @@ export default function App() {
                 isTempProp={isTemp}
                 onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
                 onMinimize={() => setMobileView('chat')} // "minimize" = go to chat on mobile
+              />
+            </View>
+          )}
+
+          {showDebugCall && (
+            <View style={StyleSheet.absoluteFillObject}>
+              <CallDebug 
+                socket={socketRef.current} 
+                user={user} 
+                onClose={() => setShowDebugCall(false)} 
               />
             </View>
           )}
@@ -332,6 +345,7 @@ export default function App() {
               hideChatColumn={showCallFull}
               onChannelClick={handleChannelClick}
               currentRoomId={currentRoom}
+              onOpenDebug={() => setShowDebugCall(true)}
             />
           </View>
 
@@ -372,6 +386,16 @@ export default function App() {
             </View>
           )}
         </View>
+
+        {showDebugCall && (
+           <View style={[StyleSheet.absoluteFillObject, { zIndex: 10000 }]}>
+              <CallDebug 
+                socket={socketRef.current} 
+                user={user} 
+                onClose={() => setShowDebugCall(false)} 
+              />
+           </View>
+        )}
       </Animated.View>
     </ErrorBoundary>
   );

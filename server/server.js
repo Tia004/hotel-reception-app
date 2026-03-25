@@ -316,6 +316,11 @@ io.on('connection', (socket) => {
     socket.on('answer', (d) => io.to(d.target).emit('answer', { ...d, sender: socket.id }));
     socket.on('ice-candidate', (d) => io.to(d.target).emit('ice-candidate', { ...d, sender: socket.id }));
 
+    // Debug 1v1
+    socket.on('debug-offer', (d) => io.to(d.target).emit('debug-offer', { ...d, sender: socket.id }));
+    socket.on('debug-answer', (d) => io.to(d.target).emit('debug-answer', { ...d, sender: socket.id }));
+    socket.on('debug-ice', (d) => io.to(d.target).emit('debug-ice', { ...d, sender: socket.id }));
+
     // ── In-Call Media State ──────────────────────────────────────────────────
     socket.on('media-state-change', (data) => {
         const user = users.get(socket.id);

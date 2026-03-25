@@ -79,6 +79,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
     ];
     const [localStream, setLocalStream] = useState(null);
     const [remoteStreams, setRemoteStreams] = useState({}); // socketId → MediaStream
+    const [pcsInfo, setPcsInfo] = useState({}); // socketId → { ice: string, signaling: string, candidates: number }
     const [micOn, setMicOn] = useState(true);
     const [camOn, setCamOn] = useState(true);
     const [deafenOn, setDeafenOn] = useState(false); // Discord-style deafen
@@ -458,6 +459,14 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
 
         pc.oniceconnectionstatechange = () => {
             console.log(`ICE Connection State [${targetId}]:`, pc.iceConnectionState);
+            setConnectionStates(prev => ({ ...prev, [targetId]: pc.iceConnectionState }));
+            setPcsInfo(prev => ({ ...prev, [targetId]: { ...prev[targetId], ice: pc.iceConnectionState } }));
+        };
+        pc.onsignalingstatechange = () => {
+            setPcsInfo(prev => ({ ...prev, [targetId]: { ...prev[targetId], signaling: pc.signalingState } }));
+        };
+        pc.onicegatheringstatechange = () => {
+            console.log(`ICE Gathering State for [${targetId}]: ${pc.iceGatheringState}`);
         };
         pc.onconnectionstatechange = () => {
             console.log(`Connection State [${targetId}]:`, pc.connectionState);
@@ -487,6 +496,10 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
             if (e.candidate) {
                 console.log(`Sending ICE candidate to [${targetId}]`);
                 socket.emit('ice-candidate', { target: targetId, candidate: e.candidate });
+                setPcsInfo(prev => {
+                    const info = prev[targetId] || { candidates: 0 };
+                    return { ...prev, [targetId]: { ...info, candidates: (info.candidates || 0) + 1 } };
+                });
             }
         };
         pc.onnegotiationneeded = async () => {
@@ -755,6 +768,8 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         
         if (cError) { label = 'Errore'; color = styles.statusFailed; txtColor = '#ED4245'; }
 
+        const info = pcsInfo[sid] || {};
+
         return (
             <View style={{ position: 'absolute', top: 12, right: 12, alignItems: 'flex-end', zIndex: 100 }}>
                 <View style={[styles.statusBadge, color]}>
@@ -767,6 +782,11 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
                     )}
                 </View>
                 {cError && <Text style={styles.statusErrorTxt}>{cError}</Text>}
+                <View style={styles.diagBox}>
+                    <Text style={styles.diagTxt}>ICE: {info.ice || 'idle'}</Text>
+                    <Text style={styles.diagTxt}>SIG: {info.signaling || 'stable'}</Text>
+                    <Text style={styles.diagTxt}>CAND: {info.candidates || 0}</Text>
+                </View>
             </View>
         );
     };
@@ -1372,4 +1392,6 @@ const styles = StyleSheet.create({
         marginLeft: 6
     },
     reconnectTxt: { color: '#fff', fontSize: 10, fontWeight: '900' },
+    diagBox: { marginTop: 4, backgroundColor: 'rgba(0,0,0,0.6)', padding: 4, borderRadius: 4, borderSize: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    diagTxt: { color: 'rgba(255,255,255,0.5)', fontSize: 8, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', textAlign: 'right' },
 });
