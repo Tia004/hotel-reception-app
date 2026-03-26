@@ -29,6 +29,12 @@ export default function App() {
   // On mobile: flip between "call view" and "chat view"
   const [mobileView, setMobileView] = useState('chat'); // 'chat' | 'call'
   const [showDebugCall, setShowDebugCall] = useState(false);
+  
+  // Hoisted call media states for syncing with User Bar
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
+  const [deafenOn, setDeafenOn] = useState(false);
+  const [screenShareOn, setScreenShareOn] = useState(false);
 
   const socketRef = useRef(null);
   const [socketReady, setSocketReady] = useState(false);
@@ -271,6 +277,14 @@ export default function App() {
                 onChannelClick={null}
                 currentRoomId={currentRoom}
                 onOpenDebug={() => setShowDebugCall(true)}
+                micOn={micOn}
+                setMicOn={setMicOn}
+                camOn={camOn}
+                setCamOn={setCamOn}
+                deafenOn={deafenOn}
+                setDeafenOn={setDeafenOn}
+                screenShareOn={screenShareOn}
+                setScreenShareOn={setScreenShareOn}
               />
               {/* Floating "return to call" button when in a call */}
               {inCall && mobileView === 'chat' && (
@@ -299,6 +313,14 @@ export default function App() {
                 isTempProp={isTemp}
                 onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
                 onMinimize={() => setMobileView('chat')} // "minimize" = go to chat on mobile
+                micOn={micOn}
+                setMicOn={setMicOn}
+                camOn={camOn}
+                setCamOn={setCamOn}
+                deafenOn={deafenOn}
+                setDeafenOn={setDeafenOn}
+                screenShareOn={screenShareOn}
+                setScreenShareOn={setScreenShareOn}
               />
             </View>
           )}
@@ -346,6 +368,14 @@ export default function App() {
               onChannelClick={handleChannelClick}
               currentRoomId={currentRoom}
               onOpenDebug={() => setShowDebugCall(true)}
+              micOn={micOn}
+              setMicOn={setMicOn}
+              camOn={camOn}
+              setCamOn={setCamOn}
+              deafenOn={deafenOn}
+              setDeafenOn={setDeafenOn}
+              screenShareOn={screenShareOn}
+              setScreenShareOn={setScreenShareOn}
             />
           </View>
 
@@ -361,6 +391,14 @@ export default function App() {
                 onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
                 onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
                 onMinimize={() => setCallPiP(true)}
+                micOn={micOn}
+                setMicOn={setMicOn}
+                camOn={camOn}
+                setCamOn={setCamOn}
+                deafenOn={deafenOn}
+                setDeafenOn={setDeafenOn}
+                screenShareOn={screenShareOn}
+                setScreenShareOn={setScreenShareOn}
               />
             </View>
           )}
@@ -382,6 +420,14 @@ export default function App() {
                 onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
                 isPiP={true}
                 onExpand={() => setCallPiP(false)}
+                micOn={micOn}
+                setMicOn={setMicOn}
+                camOn={camOn}
+                setCamOn={setCamOn}
+                deafenOn={deafenOn}
+                setDeafenOn={setDeafenOn}
+                screenShareOn={screenShareOn}
+                setScreenShareOn={setScreenShareOn}
               />
             </View>
           )}

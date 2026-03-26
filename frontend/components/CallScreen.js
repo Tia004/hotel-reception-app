@@ -47,14 +47,15 @@ function FloatingEmoji({ emoji, onComplete }) {
     );
 }
 
-export default function CallScreen({ socket, roomId, user, onMinimize, onClose }) {
+export default function CallScreen({ 
+    socket, roomId, user, onMinimize, onClose, 
+    micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn,
+    screenShareOn, setScreenShareOn
+}) {
     // ── UI States ────────────────────────────────────────────────────────
     const [loading, setLoading] = useState(true);
-    const [micOn, setMicOn] = useState(true);
-    const [camOn, setCamOn] = useState(true);
-    const [deafenOn, setDeafenOn] = useState(false);
+    // micOn, camOn, deafenOn, screenShareOn moved to props
     const [handRaised, setHandRaised] = useState(false);
-    const [screenSharing, setScreenSharing] = useState(false);
     const [activeTab, setActiveTab] = useState('video'); // 'video' | 'participants'
     const [chatVisible, setChatVisible] = useState(false);
     const [chatMessages, setChatMessages] = useState([]);
@@ -64,6 +65,33 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
     const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
     const [connectionErrors, setConnectionErrors] = useState({});
     const [showDebug, setShowDebug] = useState(false);
+
+    // Discord UI States
+    const [focusedId, setFocusedId] = useState(null);
+    const [showOthers, setShowOthers] = useState(true);
+    const [fullScreen, setFullScreen] = useState(false);
+    
+    // Device States
+    const [audioInputs, setAudioInputs] = useState([]);
+    const [audioOutputs, setAudioOutputs] = useState([]);
+    const [videoInputs, setVideoInputs] = useState([]);
+    const [showMicMenu, setShowMicMenu] = useState(false);
+    const [showCamMenu, setShowCamMenu] = useState(false);
+    const [selectedAudioInput, setSelectedAudioInput] = useState(null);
+    const [selectedAudioOutput, setSelectedAudioOutput] = useState(null);
+    const [selectedVideoInput, setSelectedVideoInput] = useState(null);
+
+    const getParticipantColor = (identity) => {
+        const colors = [
+            '#5865F2', '#3BA55C', '#FAA61A', '#ED4245', '#EB459E', 
+            '#FF73FA', '#00AFF4', '#57F287', '#FEE75C', '#95A5A6'
+        ];
+        let hash = 0;
+        for (let i = 0; i < identity.length; i++) {
+            hash = identity.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return colors[Math.abs(hash) % colors.length];
+    };
 
     const [lkRoom, setLkRoom] = useState(null);
     const [participants, setParticipants] = useState([]); // Array of Participant objects
@@ -197,6 +225,9 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
             setLkRoom(room);
             updateParticipants();
             setConnecting(false);
+            
+            // Fetch initial devices
+            refreshDevices();
         } catch (err) {
             addLog(`❌ ERRORE CRITICO: ${err.message}`);
             console.error('[LiveKit] Connection Failed:', err);
@@ -204,6 +235,35 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
             setConnectionErrors({ main: err.message });
         }
     }, [roomId, user.username, lkUrl, API_BASE]);
+
+    useEffect(() => {
+        if (!lkRoom?.localParticipant) return;
+        lkRoom.localParticipant.setMicrophoneEnabled(micOn);
+    }, [micOn, lkRoom]);
+
+    useEffect(() => {
+        if (!lkRoom?.localParticipant) return;
+        lkRoom.localParticipant.setCameraEnabled(camOn);
+    }, [camOn, lkRoom]);
+
+    useEffect(() => {
+        if (!lkRoom) return;
+        participants.forEach(p => {
+            if (p.identity === user.username) return;
+            p.getTrackPublications().forEach(pub => {
+                if (pub.kind === Track.Kind.Audio) {
+                    if (deafenOn) pub.track?.detach();
+                    else pub.track?.attach();
+                }
+            });
+        });
+    }, [deafenOn, participants, lkRoom]);
+
+    useEffect(() => {
+        if (!lkRoom?.localParticipant) return;
+        lkRoom.localParticipant.setScreenShareEnabled(screenShareOn, { audio: true })
+            .catch(err => addLog(`❌ Errore sync Screen Share: ${err.message}`));
+    }, [screenShareOn, lkRoom]);
 
     useEffect(() => {
         if (!socket || !roomId) return;
@@ -252,20 +312,15 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
     }, [lkRoom, onMinimize, onClose]);
 
     const toggleMic = () => {
-        const next = !micOn;
-        setMicOn(next);
-        lkRoom?.localParticipant.setMicrophoneEnabled(next);
+        setMicOn(!micOn);
     };
 
     const toggleCam = () => {
-        const next = !camOn;
-        setCamOn(next);
-        lkRoom?.localParticipant.setCameraEnabled(next);
+        setCamOn(!camOn);
     };
 
     const toggleDeafen = () => {
         setDeafenOn(!deafenOn);
-        // Logic to mute all remote audio
     };
 
     const sendReaction = (emoji) => {
@@ -277,6 +332,40 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
         if (lkRoom) {
             const data = JSON.stringify({ type: 'reaction', emoji });
             lkRoom.localParticipant.publishData(new TextEncoder().encode(data));
+        }
+    };
+
+    const toggleFullScreen = () => {
+        setFullScreen(!fullScreen);
+    };
+
+    const toggleScreenShare = () => {
+        setScreenShareOn(!screenShareOn);
+    };
+
+    const refreshDevices = async () => {
+        try {
+            const devices = await Room.getDevices();
+            setAudioInputs(devices.filter(d => d.kind === 'audioinput'));
+            setAudioOutputs(devices.filter(d => d.kind === 'audiooutput'));
+            setVideoInputs(devices.filter(d => d.kind === 'videoinput'));
+        } catch (err) {
+            addLog(`Errore nel recupero dispositivi: ${err.message}`);
+        }
+    };
+
+    const switchDevice = async (kind, deviceId) => {
+        if (!lkRoom) return;
+        try {
+            addLog(`Switching ${kind} to ${deviceId}...`);
+            await lkRoom.switchActiveDevice(kind, deviceId);
+            if (kind === 'audioinput') setSelectedAudioInput(deviceId);
+            if (kind === 'audiooutput') setSelectedAudioOutput(deviceId);
+            if (kind === 'videoinput') setSelectedVideoInput(deviceId);
+            setShowMicMenu(false);
+            setShowCamMenu(false);
+        } catch (err) {
+            addLog(`❌ Errore switch dispositivo: ${err.message}`);
         }
     };
 
@@ -296,25 +385,39 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
     };
 
     // ── Render Parts ─────────────────────────────────────────────────────
-    const renderTile = (participant) => {
+    const renderTile = (participant, source = Track.Source.Camera, size = 'grid') => {
         if (!participant) return null;
         const isLocal = participant instanceof LocalParticipant;
-        const stream = getParticipantStream(participant);
+        const isScreen = source === Track.Source.ScreenShare;
+        const tileId = `${participant.identity}-${source}`;
+        const isFocused = tileId === focusedId;
         
-        const videoPub = participant.getTrackPublication(Track.Source.Camera);
+        const pub = participant.getTrackPublication(source);
         const micPub = participant.getTrackPublication(Track.Source.Microphone);
         
-        const videoTrack = videoPub?.videoTrack;
-        const hasVideo = isLocal ? camOn : (videoPub?.isSubscribed && !videoPub?.isMuted);
+        const stream = pub?.videoTrack?.mediaStream || (isLocal && !isScreen && localStream);
+        const hasVideo = isLocal ? (isScreen ? screenSharing : camOn) : (pub?.isSubscribed && !pub?.isMuted);
         const isMuted = isLocal ? !micOn : (micPub?.isMuted || !micPub?.isSubscribed);
+        
+        const bgColor = isScreen ? '#000' : getParticipantColor(participant.identity);
 
         return (
-            <View key={participant.identity} style={[styles.tile, participants.length <= 2 ? styles.tileLarge : styles.tileMedium]}>
+            <TouchableOpacity 
+                key={tileId} 
+                activeOpacity={0.9}
+                onPress={() => setFocusedId(isFocused ? null : tileId)}
+                style={[
+                    styles.tile, 
+                    size === 'grid' ? styles.tileGrid : (size === 'focus' ? styles.tileLarge : styles.tileSmall),
+                    { backgroundColor: bgColor }
+                ]}
+            >
                 {hasVideo && stream ? (
                     <RTCView 
                         streamURL={stream.toURL?.() || (Platform.OS === 'web' ? stream : '')} 
                         style={styles.rtc} 
-                        objectFit="cover"
+                        objectFit="contain"
+                        mirror={isLocal && !isScreen}
                     />
                 ) : (
                     <View style={styles.avatarTile}>
@@ -325,15 +428,20 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
                 )}
                 <View style={styles.participantOverlay}>
                     <View style={styles.participantNameRow}>
-                        <Text style={styles.participantName}>{isLocal ? "Tu" : participant.identity}</Text>
-                        {!participant.isMicrophoneEnabled && (
+                        <View style={[styles.participantBadge, isScreen && styles.screenBadge]}>
+                            <Text style={styles.participantName}>
+                                {isLocal ? "Tu" : participant.identity}
+                                {isScreen ? " (Schermo)" : ""}
+                            </Text>
+                        </View>
+                        {isMuted && !isScreen && (
                             <View style={styles.statusIconRed}>
                                 <Icon name="mic-off" size={10} color="#fff" />
                             </View>
                         )}
                     </View>
                 </View>
-            </View>
+            </TouchableOpacity>
         );
     };
 
@@ -362,31 +470,100 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
             </View>
 
             {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={onMinimize} style={styles.minimizeBtn}>
-                    <Icon name="chevron-down" size={18} color="#C9A84C" />
-                </TouchableOpacity>
-                <View style={{ flex: 1, alignItems: 'center' }}>
-                    <View style={styles.roomBadge}>
-                        <Text style={styles.roomName}>{roomId.toUpperCase()}</Text>
-                        {connecting && <ActivityIndicator size="small" color="#C9A84C" />}
+            {!fullScreen && (
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={onMinimize} style={styles.minimizeBtn}>
+                        <Icon name="chevron-down" size={18} color="#C9A84C" />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1, alignItems: 'center' }}>
+                        <View style={styles.roomBadge}>
+                            <Text style={styles.roomName}>{roomId.toUpperCase()}</Text>
+                            {connecting && <ActivityIndicator size="small" color="#C9A84C" />}
+                        </View>
                     </View>
+                    <TouchableOpacity onPress={() => setShowDebug(!showDebug)} style={{ marginRight: 10 }}>
+                        <Icon name="terminal" size={18} color={showDebug ? "#C9A84C" : "#E8E4D8"} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setChatVisible(!chatVisible)} style={styles.reactionBtn}>
+                        <Icon name="message-square" size={18} color={chatVisible ? "#C9A84C" : "#E8E4D8"} />
+                    </TouchableOpacity>
                 </View>
-                <TouchableOpacity onPress={() => setShowDebug(!showDebug)} style={{ marginRight: 10 }}>
-                    <Icon name="terminal" size={18} color={showDebug ? "#C9A84C" : "#E8E4D8"} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setChatVisible(!chatVisible)} style={styles.reactionBtn}>
-                    <Icon name="message-square" size={18} color={chatVisible ? "#C9A84C" : "#E8E4D8"} />
-                </TouchableOpacity>
+            )}
+
+            {/* Video Content */}
+            <View style={styles.gridContainer}>
+                {focusedId ? (
+                    <View style={styles.focusedLayout}>
+                        {/* Focused Tile */}
+                        <View style={styles.focusedTileWrapper}>
+                            {(() => {
+                                const parts = focusedId.split('-');
+                                const source = parts.pop();
+                                const identity = parts.join('-');
+                                const p = participants.find(x => x.identity === identity);
+                                return renderTile(p, source, 'focus');
+                            })()}
+                        </View>
+                        
+                        {/* Others Row */}
+                        {!fullScreen && showOthers && (
+                            <View style={styles.othersRowWrapper}>
+                                <TouchableOpacity 
+                                    style={styles.hideOthersBtn}
+                                    onPress={() => setShowOthers(false)}
+                                >
+                                    <Icon name="chevron-down" size={14} color="#fff" />
+                                </TouchableOpacity>
+                                <ScrollView 
+                                    horizontal 
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={styles.othersScroll}
+                                >
+                                    {participants.flatMap(p => {
+                                        const cameraTileId = `${p.identity}-${Track.Source.Camera}`;
+                                        const screenTileId = `${p.identity}-${Track.Source.ScreenShare}`;
+                                        const tiles = [];
+                                        
+                                        if (cameraTileId !== focusedId) {
+                                            tiles.push(renderTile(p, Track.Source.Camera, 'small'));
+                                        }
+                                        
+                                        const screenPub = p.getTrackPublication(Track.Source.ScreenShare);
+                                        if (screenPub && screenPub.isSubscribed && screenTileId !== focusedId) {
+                                            tiles.push(renderTile(p, Track.Source.ScreenShare, 'small'));
+                                        }
+                                        
+                                        return tiles;
+                                    })}
+                                </ScrollView>
+                            </View>
+                        )}
+                        {!fullScreen && !showOthers && (
+                            <TouchableOpacity 
+                                style={styles.showOthersBtn}
+                                onPress={() => setShowOthers(true)}
+                            >
+                                <Icon name="users" size={14} color="#C9A84C" />
+                                <Text style={styles.showOthersTxt}>Mostra Partecipanti</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                ) : (
+                    <ScrollView contentContainerStyle={styles.videoGrid}>
+                        {participants.flatMap(p => {
+                            const res = [renderTile(p, Track.Source.Camera, 'grid')];
+                            const screenPub = p.getTrackPublication(Track.Source.ScreenShare);
+                            if (screenPub && screenPub.isSubscribed) {
+                                res.push(renderTile(p, Track.Source.ScreenShare, 'grid'));
+                            }
+                            return res;
+                        })}
+                    </ScrollView>
+                )}
             </View>
 
-            {/* Video Grid */}
-            <ScrollView contentContainerStyle={styles.videoGrid}>
-                {participants.map(renderTile)}
-            </ScrollView>
-
             {/* Chat Panel */}
-            {chatVisible && (
+            {chatVisible && !fullScreen && (
                 <View style={styles.chatPanel}>
                     <ScrollView ref={chatScrollRef} style={styles.chatScroll}>
                         {(chatMessages || []).map((msg, i) => (
@@ -423,23 +600,59 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
             )}
 
             {/* Controls */}
-            <View style={styles.controls}>
-                <TouchableOpacity onPress={toggleMic} style={[styles.ctrlBtn, !micOn && styles.ctrlBtnOff]}>
-                    <Icon name={micOn ? "mic" : "mic-off"} size={20} color="#fff" />
+            {!fullScreen ? (
+                <View style={styles.controls}>
+                    <View style={styles.controlGroup}>
+                        <TouchableOpacity onPress={toggleMic} style={[styles.ctrlBtn, !micOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}>
+                            <Icon name={micOn ? "mic" : "mic-off"} size={20} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            onPress={() => { setShowMicMenu(!showMicMenu); setShowCamMenu(false); }} 
+                            style={[styles.ctrlBtnChevron, !micOn && styles.ctrlBtnOff]}
+                        >
+                            <Icon name="chevron-up" size={12} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.controlGroup}>
+                        <TouchableOpacity onPress={toggleCam} style={[styles.ctrlBtn, !camOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}>
+                            <Icon name={camOn ? "video" : "video-off"} size={20} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            onPress={() => { setShowCamMenu(!showCamMenu); setShowMicMenu(false); }} 
+                            style={[styles.ctrlBtnChevron, !camOn && styles.ctrlBtnOff]}
+                        >
+                            <Icon name="chevron-up" size={12} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity onPress={toggleScreenShare} style={[styles.ctrlBtn, screenSharing && styles.ctrlBtnActive]}>
+                        <Icon name="monitor" size={20} color="#fff" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => setShowReactions(!showReactions)} style={styles.ctrlBtn}>
+                        <Icon name="smile" size={20} color="#fff" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity onPress={toggleFullScreen} style={styles.ctrlBtn}>
+                        <Icon name="maximize" size={20} color="#fff" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity onPress={() => leaveCall()} style={styles.hangupBtn}>
+                        <Icon name="phone-off" size={20} color="#fff" />
+                    </TouchableOpacity>
+                </View>
+            ) : (
+                <TouchableOpacity 
+                    onPress={toggleFullScreen} 
+                    style={styles.exitFullScreenBtn}
+                >
+                    <Icon name="minimize" size={20} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={toggleCam} style={[styles.ctrlBtn, !camOn && styles.ctrlBtnOff]}>
-                    <Icon name={camOn ? "video" : "video-off"} size={20} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setShowReactions(!showReactions)} style={styles.ctrlBtn}>
-                    <Icon name="smile" size={20} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => leaveCall()} style={styles.hangupBtn}>
-                    <Icon name="phone-off" size={20} color="#fff" />
-                </TouchableOpacity>
-            </View>
+            )}
 
             {/* Emoji Popup */}
-            {showReactions && (
+            {showReactions && !fullScreen && (
                 <View style={styles.reactionsPopup}>
                     <View style={styles.reactionsRow}>
                         {EMOJI_REACTIONS.map(e => (
@@ -447,6 +660,56 @@ export default function CallScreen({ socket, roomId, user, onMinimize, onClose }
                                 <Text style={{ fontSize: 24 }}>{e}</Text>
                             </TouchableOpacity>
                         ))}
+                    </View>
+                </View>
+            )}
+
+            {/* Device Menus (Discord Style) */}
+            {(showMicMenu || showCamMenu) && (
+                <View style={styles.deviceMenuContainer}>
+                    <TouchableOpacity 
+                        style={StyleSheet.absoluteFill} 
+                        onPress={() => { setShowMicMenu(false); setShowCamMenu(false); }} 
+                    />
+                    <View style={[styles.deviceMenu, showMicMenu ? styles.micMenuPos : styles.camMenuPos]}>
+                        <Text style={styles.menuLabel}>{showMicMenu ? "INPUT AUDIO" : "CAMERA"}</Text>
+                        <ScrollView style={styles.menuScroll}>
+                            {(showMicMenu ? audioInputs : videoInputs).map(d => (
+                                <TouchableOpacity 
+                                    key={d.deviceId} 
+                                    style={styles.menuItem}
+                                    onPress={() => switchDevice(showMicMenu ? 'audioinput' : 'videoinput', d.deviceId)}
+                                >
+                                    <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
+                                    {(d.deviceId === selectedAudioInput || d.deviceId === selectedVideoInput) && (
+                                        <Icon name="check" size={14} color="#5865F2" />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                            {showMicMenu && (
+                                <>
+                                    <View style={styles.menuDivider} />
+                                    <Text style={styles.menuLabel}>OUTPUT AUDIO</Text>
+                                    {audioOutputs.map(d => (
+                                        <TouchableOpacity 
+                                            key={d.deviceId} 
+                                            style={styles.menuItem}
+                                            onPress={() => switchDevice('audiooutput', d.deviceId)}
+                                        >
+                                            <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
+                                            {d.deviceId === selectedAudioOutput && (
+                                                <Icon name="check" size={14} color="#5865F2" />
+                                            )}
+                                        </TouchableOpacity>
+                                    ))}
+                                </>
+                            )}
+                        </ScrollView>
+                        <View style={styles.menuDivider} />
+                        <TouchableOpacity style={styles.menuSettingsBtn} onPress={onMinimize}>
+                            <Text style={styles.menuSettingsText}>Impostazioni</Text>
+                            <Icon name="settings" size={14} color="#B9BBBE" />
+                        </TouchableOpacity>
                     </View>
                 </View>
             )}
@@ -461,21 +724,94 @@ const styles = StyleSheet.create({
     roomBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 },
     roomName: { color: '#C9A84C', fontWeight: '800', fontSize: 13 },
     videoGrid: { padding: 10, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10 },
-    tile: { backgroundColor: '#000', borderRadius: 16, overflow: 'hidden', position: 'relative', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-    tileLarge: { width: '100%', aspectRatio: 16 / 9 },
-    tileMedium: { width: '48%', aspectRatio: 16 / 9 },
+    gridContainer: { flex: 1, backgroundColor: '#12110F' },
+    focusedLayout: { flex: 1, position: 'relative' },
+    focusedTileWrapper: { flex: 1 },
+    othersRowWrapper: { 
+        height: 120, 
+        backgroundColor: 'rgba(0,0,0,0.4)', 
+        borderTopWidth: 1, 
+        borderTopColor: 'rgba(255,255,255,0.05)',
+        paddingTop: 10,
+        position: 'relative'
+    },
+    othersScroll: { paddingHorizontal: 10, gap: 10 },
+    hideOthersBtn: { 
+        position: 'absolute', 
+        top: -20, 
+        left: '50%', 
+        marginLeft: -15,
+        width: 30, 
+        height: 20, 
+        backgroundColor: 'rgba(0,0,0,0.6)', 
+        borderTopLeftRadius: 10,
+        borderTopRightRadius: 10,
+        justifyContent: 'center', 
+        alignItems: 'center',
+        zIndex: 10
+    },
+    showOthersBtn: {
+        position: 'absolute',
+        bottom: 20,
+        alignSelf: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: '#2B2D31',
+        paddingHorizontal: 15,
+        paddingVertical: 10,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#C9A84C'
+    },
+    showOthersTxt: { color: '#C9A84C', fontWeight: 'bold', fontSize: 12 },
+    tile: { backgroundColor: '#2B2D31', borderRadius: 16, overflow: 'hidden', position: 'relative', borderWidth: 2, borderColor: 'transparent' },
+    tileGrid: { width: Platform.OS === 'web' ? '18%' : 150, aspectRatio: 1, margin: 5 },
+    tileSmall: { width: 140, height: 90 },
+    tileLarge: { flex: 1 },
+    exitFullScreenBtn: {
+        position: 'absolute',
+        bottom: 30,
+        right: 30,
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10000
+    },
     rtc: { flex: 1 },
     avatarTile: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#12110F' },
     avatarCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#1C1A16', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#C9A84C' },
     avatarTxt: { color: '#C9A84C', fontSize: 32, fontWeight: '800' },
     participantOverlay: { position: 'absolute', bottom: 10, left: 10, right: 10 },
     participantNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    participantName: { color: '#fff', fontSize: 12, fontWeight: '800' },
+    participantBadge: { backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+    screenBadge: { backgroundColor: '#5865F2' },
+    participantName: { color: '#fff', fontSize: 11, fontWeight: '800' },
     statusIconRed: { backgroundColor: '#ED4245', borderRadius: 10, padding: 2 },
-    controls: { height: 100, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 20, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
-    ctrlBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#2B2D31', justifyContent: 'center', alignItems: 'center' },
+    controls: { height: 100, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 15, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
+    controlGroup: { flexDirection: 'row', backgroundColor: '#2B2D31', borderRadius: 25, overflow: 'hidden' },
+    ctrlBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#2B2D31', justifyContent: 'center', alignItems: 'center' },
+    ctrlBtnSplit: { borderTopRightRadius: 0, borderBottomRightRadius: 0, width: 40 },
+    ctrlBtnChevron: { width: 22, height: 44, borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
     ctrlBtnOff: { backgroundColor: '#ED4245' },
-    hangupBtn: { width: 70, height: 50, borderRadius: 25, backgroundColor: '#ED4245', justifyContent: 'center', alignItems: 'center' },
+    ctrlBtnActive: { backgroundColor: '#5865F2' },
+    hangupBtn: { width: 64, height: 44, borderRadius: 22, backgroundColor: '#ED4245', justifyContent: 'center', alignItems: 'center' },
+    
+    // Device Menu
+    deviceMenuContainer: { ...StyleSheet.absoluteFillObject, zIndex: 3000 },
+    deviceMenu: { position: 'absolute', bottom: 110, width: 220, backgroundColor: '#18191C', borderRadius: 8, paddingVertical: 8, borderContent: 'none', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 },
+    micMenuPos: { left: Dimensions.get('window').width / 2 - 180 },
+    camMenuPos: { left: Dimensions.get('window').width / 2 - 110 },
+    menuLabel: { color: '#B9BBBE', fontSize: 10, fontWeight: 'bold', paddingHorizontal: 12, paddingVertical: 6 },
+    menuScroll: { maxHeight: 200 },
+    menuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8 },
+    menuItemText: { color: '#DCDDDE', fontSize: 12, flex: 1, marginRight: 8 },
+    menuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginVertical: 4 },
+    menuSettingsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
+    menuSettingsText: { color: '#DCDDDE', fontSize: 12 },
     chatPanel: { height: 300, backgroundColor: '#12110F', borderTopWidth: 1, borderTopColor: '#C9A84C' },
     chatScroll: { flex: 1, padding: 15 },
     chatMsg: { marginBottom: 10, backgroundColor: 'rgba(255,255,255,0.05)', padding: 10, borderRadius: 10, maxWidth: '80%' },

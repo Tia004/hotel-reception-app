@@ -1,5 +1,5 @@
 /**
- * HotelChat.js — v5.0.0
+ * HotelChat.js — v5.0.7
  * Major overhaul:
  * - 3-column layout (Sidebar | Chat | Occupancy)
  * - [+ Crea Stanza] lobby button in sidebar
@@ -135,7 +135,10 @@ const PollMessage = ({ msg, onVote, user }) => {
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────
-export default function HotelChat({ socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId, onOpenDebug }) {
+export default function HotelChat({ 
+    socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId, onOpenDebug,
+    micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn, screenShareOn, setScreenShareOn
+}) {
     // Definizione locale dei dati emoji per evitare ReferenceError
     const GSA_EMOJI_DATA = [
         {
@@ -175,7 +178,6 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     const [messages, setMessages] = useState({});
     const [pinned, setPinned] = useState({});
     const [onlineUsers, setOnlineUsers] = useState([]);
-    const [activeRooms, setActiveRooms] = useState([]);
     const [expanded, setExpanded] = useState({ voice: true, saved: false, users: true, rooms: true, pinned: false });
     const [expandedHotels, setExpandedHotels] = useState({ duchessa: true, blumen: false, santorsola: false });
 
@@ -224,7 +226,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
 
 
-    const APP_VERSION = "5.0.0";
+    const APP_VERSION = "5.0.7";
     const [pinnedExpanded, setPinnedExpanded] = useState(false);
 
     // Server Keep-Alive
@@ -302,10 +304,10 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
     };
 
     useEffect(() => {
-        if (activeRooms.length > prevRoomsCount.current) playSound('join');
-        else if (activeRooms.length < prevRoomsCount.current) playSound('leave');
-        prevRoomsCount.current = activeRooms.length;
-    }, [activeRooms.length]);
+        if (availableRooms.length > prevRoomsCount.current) playSound('join');
+        else if (availableRooms.length < prevRoomsCount.current) playSound('leave');
+        prevRoomsCount.current = availableRooms.length;
+    }, [availableRooms.length]);
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -901,7 +903,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <Image source={require('../assets/logo.png')} style={{ width: 26, height: 26, resizeMode: 'contain' }} />
-                                    <Text style={styles.brandName}>CHAT v5.0.0</Text>
+                                    <Text style={styles.brandName}>CHAT v5.0.7</Text>
 
                                 </View>
                             </LinearGradient>
@@ -957,8 +959,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                 {['Duchessa Vocale', 'Blumen Vocale', 'SantOrsola Vocale', 'Stanza Generale'].map((name, idx) => {
                                     const ids = ['duchessa-voice', 'blumen-voice', 'santorsola-voice', 'generale-voice'];
                                     const rid = ids[idx];
-                                    const room = activeRooms.find(r => r.id === rid);
-                                    const roomUsers = onlineUsers.filter(u => u.roomId === rid);
+                                    const room = availableRooms.find(r => r.id === rid);
                                     const isActive = currentRoomId === rid;
 
                                     return (
@@ -974,34 +975,90 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                                                     <Text style={{ color: '#6E6960', fontSize: 10 }}>{room.peerCount} partecipanti</Text>
                                                 )}
                                             </View>
-                                            {room && room.peerCount > 0 && (
-                                                <View style={{ flexDirection: 'row', gap: -6 }}>
-                                                    {room.peers.slice(0, 3).map((p, pi) => (
-                                                        <View key={pi} style={[styles.userAvatarSmall, { width: 18, height: 18, borderWidth: 1, borderColor: '#111' }]}>
-                                                            <Text style={{ fontSize: 8, color: '#C9A84C' }}>{p.username[0].toUpperCase()}</Text>
-                                                        </View>
-                                                    ))}
-                                                </View>
-                                            )}
                                         </TouchableOpacity>
                                     );
                                 })}
                             </ScrollView>
 
-                            <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(201,168,76,0.05)' }}>
-                                <TouchableOpacity style={styles.avatarBtn} onPress={() => setProfileVisible(true)}>
-                                    <View style={[styles.avatar, { borderRadius: 12, borderWidth: 2, borderColor: '#C9A84C', overflow: 'hidden' }]}>
-                                        {user.profilePic ? <Image source={{ uri: user.profilePic }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : <Text style={styles.avatarTxt}>{user.username[0].toUpperCase()}</Text>}
-                                        <View style={[styles.statusDot, { backgroundColor: statusColor(onlineUsers.find(u => u.username === user.username)?.status || 'online') }]} />
+                            <View style={styles.userBarContainer}>
+                                {inCall && (
+                                    <View style={styles.voiceConnectedPanel}>
+                                        <View style={styles.voiceInfoRow}>
+                                            <Icon name="activity" size={16} color="#23A559" />
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.voiceStatusTxt}>Voice Connected</Text>
+                                                <Text style={styles.voiceChannelTxt} numberOfLines={1}>
+                                                    {['Duchessa Vocale', 'Blumen Vocale', 'SantOrsola Vocale', 'Stanza Generale'][['duchessa-voice', 'blumen-voice', 'santorsola-voice', 'generale-voice'].indexOf(currentRoomId)] || currentRoomId}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        <View style={styles.voiceActionRow}>
+                                            <View style={styles.voiceQuickActions}>
+                                                <TouchableOpacity style={styles.voiceQuickBtn}>
+                                                    <Icon name="speaker" size={14} color="#6E6960" />
+                                                </TouchableOpacity>
+                                            </View>
+                                            <TouchableOpacity 
+                                                style={styles.voiceDisconnectBtn} 
+                                                onPress={() => socket.emit('leave-room', { roomId: currentRoomId })}
+                                            >
+                                                <Icon name="phone-off" size={18} color="#ED4245" />
+                                            </TouchableOpacity>
+                                        </View>
                                     </View>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={styles.userName}>{user.username}</Text>
-                                        <Text style={styles.userStat}>{user.station || 'Online'}</Text>
+                                )}
+
+                                {inCall && (
+                                    <View style={styles.actionButtonsBar}>
+                                        <TouchableOpacity 
+                                            style={[styles.userActionBtn, camOn && styles.userActionBtnActive]} 
+                                            onPress={() => setCamOn(!camOn)}
+                                        >
+                                            <Icon name={camOn ? "video-filled" : "video-off"} size={18} color={camOn ? "#23A559" : "#B5BAC1"} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity 
+                                            style={[styles.userActionBtn, screenShareOn && styles.userActionBtnActive]} 
+                                            onPress={() => setScreenShareOn(!screenShareOn)}
+                                        >
+                                            <Icon name="screen-share" size={18} color={screenShareOn ? "#23A559" : "#B5BAC1"} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={styles.userActionBtn}>
+                                            <Icon name="rocket" size={18} color="#B5BAC1" />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={styles.userActionBtn}>
+                                            <Icon name="smile" size={18} color="#B5BAC1" />
+                                        </TouchableOpacity>
                                     </View>
-                                    <TouchableOpacity onPress={() => setSettingsVisible(true)} style={styles.gearBtn}>
-                                        <Icon name="settings" size={16} color="#554E40" />
+                                )}
+
+                                <View style={styles.profileBar}>
+                                    <TouchableOpacity style={styles.profileInfo} onPress={() => setProfileVisible(true)}>
+                                        <View style={[styles.avatar, { borderRadius: 12, borderWidth: 2, borderColor: '#C9A84C', overflow: 'hidden', width: 32, height: 32 }]}>
+                                            {user.profilePic ? (
+                                                <Image source={{ uri: user.profilePic }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                                            ) : (
+                                                <Text style={[styles.avatarTxt, { fontSize: 14 }]}>{user.username[0].toUpperCase()}</Text>
+                                            )}
+                                            <View style={[styles.statusDot, { width: 10, height: 10, backgroundColor: statusColor(onlineUsers.find(u => u.username === user.username)?.status || 'online') }]} />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[styles.userName, { fontSize: 13 }]} numberOfLines={1}>{user.username}</Text>
+                                            <Text style={styles.userStat} numberOfLines={1}>{user.station || 'Online'}</Text>
+                                        </View>
                                     </TouchableOpacity>
-                                </TouchableOpacity>
+
+                                    <View style={styles.profileControls}>
+                                        <TouchableOpacity style={styles.controlBtn} onPress={() => setMicOn(!micOn)}>
+                                            <Icon name={micOn ? "mic" : "mic-off"} size={18} color={micOn ? "#B5BAC1" : "#ED4245"} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={styles.controlBtn} onPress={() => setDeafenOn(!deafenOn)}>
+                                            <Icon name={deafenOn ? "headphones-off" : "headphones"} size={18} color={deafenOn ? "#ED4245" : "#B5BAC1"} />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={styles.controlBtn} onPress={() => setSettingsVisible(true)}>
+                                            <Icon name="settings" size={18} color="#B5BAC1" />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
                             </View>
                         </View>
                     </Animated.View>
@@ -1942,4 +1999,90 @@ const styles = StyleSheet.create({
 
     forwardItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(201,168,76,0.05)' },
     forwardItemTxt: { color: '#C8C4B8', fontSize: 15, fontWeight: '600' },
+
+    // Discord User Bar styles
+    userBarContainer: {
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(201,168,76,0.1)',
+        backgroundColor: '#0B0A08', // Match sidebar
+    },
+    voiceConnectedPanel: {
+        padding: 10,
+        backgroundColor: 'rgba(35,165,89,0.05)', // Subtle green
+        flexDirection: 'column',
+        gap: 4,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(35,165,89,0.1)',
+    },
+    voiceInfoRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    voiceStatusTxt: {
+        color: '#23A559',
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    voiceChannelTxt: {
+        color: '#6E6960',
+        fontSize: 11,
+    },
+    voiceActionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 2,
+    },
+    voiceQuickActions: {
+        flexDirection: 'row',
+        gap: 4,
+    },
+    voiceDisconnectBtn: {
+        padding: 4,
+    },
+    actionButtonsBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+        paddingVertical: 6,
+        paddingHorizontal: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(201,168,76,0.05)',
+    },
+    userActionBtn: {
+        width: 32,
+        height: 32,
+        borderRadius: 4,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    userActionBtnActive: {
+        backgroundColor: 'rgba(35,165,89,0.15)',
+    },
+    profileBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 6,
+        paddingHorizontal: 10,
+        gap: 8,
+    },
+    profileInfo: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    profileControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 0,
+    },
+    controlBtn: {
+        width: 32,
+        height: 32,
+        borderRadius: 4,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
 });
