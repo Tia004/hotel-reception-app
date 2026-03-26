@@ -46,7 +46,7 @@ export default function LoginScreen({ onLogin }) {
             }
         } catch (err) {
             console.error('Login error:', err);
-            setError('Errore di connessione al server.');
+            setError(`DEBUG ERROR: ${err.message || String(err)}\nURL: ${API_BASE}/login`);
         } finally {
             setLoading(false);
         }
