@@ -1,29 +1,54 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, Dimensions, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView, Dimensions, Image, ActivityIndicator } from 'react-native';
 import Animated, { FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSequence, withDelay } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
-const USERS = {
-    'admin': { password: 'password123', role: 'Amministratore' },
-    'reception1': { password: 'password123', role: 'Reception Principale' },
-    'reception2': { password: 'password123', role: 'Reception Secondaria' },
-    'mobile_lobby': { password: 'password123', role: 'Telefono Hall' },
-    'stefano': { password: 'gsahotelsisthebest', role: 'Stefano Golisano' }
-};
+const API_BASE = "https://hotel-reception-app-server.onrender.com";
 
 export default function LoginScreen({ onLogin }) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
 
-    const handleLogin = () => {
-        const user = USERS[username.toLowerCase().trim()];
-        if (user && user.password === password) {
-            onLogin({ username: username.toLowerCase().trim(), station: user.role });
-        } else {
-            setError('OPS! Credenziali non valide.');
+    const handleLogin = async () => {
+        if (!username || !password) {
+            setError('Inserisci nome utente e password.');
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+
+        try {
+            const response = await fetch(`${API_BASE}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    username: username.toLowerCase().trim(), 
+                    password 
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                onLogin({ 
+                    username: data.username, 
+                    station: data.station,
+                    bio: data.bio,
+                    profilePic: data.profilePic 
+                });
+            } else {
+                setError(data.error || 'OPS! Credenziali non valide.');
+            }
+        } catch (err) {
+            console.error('Login error:', err);
+            setError('Errore di connessione al server.');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -81,14 +106,23 @@ export default function LoginScreen({ onLogin }) {
                             </Animated.Text>
                         ) : null}
 
-                        <TouchableOpacity style={styles.button} onPress={handleLogin} activeOpacity={0.8}>
+                        <TouchableOpacity 
+                            style={styles.button} 
+                            onPress={handleLogin} 
+                            activeOpacity={0.8}
+                            disabled={loading}
+                        >
                             <LinearGradient
                                 colors={['#1a1a1a', '#0a0a0a']}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
                                 style={styles.buttonGradient}
                             >
-                                <Text style={styles.buttonText}>ACCEDI ➔</Text>
+                                {loading ? (
+                                    <ActivityIndicator color="#C9A84C" />
+                                ) : (
+                                    <Text style={styles.buttonText}>ACCEDI ➔</Text>
+                                )}
                             </LinearGradient>
                         </TouchableOpacity>
                     </LinearGradient>

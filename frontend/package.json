@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "2.9.4",
+  "version": "5.0.0",
   "main": "index.js",
   "scripts": {
     "start": "expo start --host lan",
@@ -19,6 +19,7 @@
     "expo-linear-gradient": "^55.0.8",
     "expo-status-bar": "~55.0.4",
     "html2pdf.js": "^0.14.0",
+    "livekit-client": "^2.18.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.2",

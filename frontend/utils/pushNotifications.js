@@ -1,5 +1,5 @@
 /**
- * pushNotifications.js — v4.1.5
+ * pushNotifications.js — v5.0.0
  * Browser Push Notification utility.
  * Supports Chrome, Firefox, and Safari (with fallback).
  */

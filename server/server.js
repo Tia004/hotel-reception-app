@@ -1,6 +1,8 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const { AccessToken } = require('livekit-server-sdk');
+const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
@@ -11,6 +13,60 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
+// ── LiveKit Token Endpoint ───────────────────────────────────────────────
+app.post('/get-livekit-token', async (req, res) => {
+    try {
+        const { room, username } = req.body;
+        if (!room || !username) return res.status(400).json({ error: 'Missing room or username' });
+
+        const apiKey = process.env.LIVEKIT_API_KEY;
+        const apiSecret = process.env.LIVEKIT_API_SECRET;
+
+        if (!apiKey || !apiSecret) {
+            console.error('LiveKit Server Error: API keys not found in .env');
+            return res.status(500).json({ error: 'Server configuration error' });
+        }
+
+        const at = new AccessToken(apiKey, apiSecret, { identity: username });
+        at.addGrant({ roomJoin: true, room: room, canPublish: true, canSubscribe: true });
+
+        const token = await at.toJwt();
+        res.json({ token });
+    } catch (error) {
+        console.error('Error generating LiveKit token:', error);
+        res.status(500).json({ error: 'Failed to generate token' });
+    }
+});
+
+// ── Authentication Endpoint ──────────────────────────────────────────────
+app.post('/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
+
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('username', username.toLowerCase().trim())
+            .eq('password', password)
+            .single();
+
+        if (error || !data) {
+            return res.status(401).json({ error: 'Credenziali non valide' });
+        }
+
+        res.json({ 
+            username: data.username, 
+            station: data.role,
+            bio: data.bio,
+            profilePic: data.profile_pic
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 app.get('/ping', (req, res) => res.status(200).send('pong'));
 
 const server = http.createServer(app);
@@ -18,11 +74,36 @@ const io = new Server(server, {
     cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
+// ── Supabase Initialization ──────────────────────────────────────────────
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY
+);
+
+// ── Auto-Cleanup Logic (Delete messages older than 48 hours) ──────────
+const cleanupOldMessages = async () => {
+    try {
+        const threshold = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        const { error, count } = await supabase
+            .from('messages')
+            .delete()
+            .lt('created_at', threshold);
+        
+        if (error) throw error;
+        console.log(`[Supabase] Cleanup done. Deleted ${count || 0} messages older than 48h.`);
+    } catch (err) {
+        console.error('[Supabase] Cleanup error:', err.message);
+    }
+};
+
+// Run cleanup every 6 hours
+setInterval(cleanupOldMessages, 6 * 60 * 60 * 1000);
+// Initial run
+cleanupOldMessages();
+
 // ─── Persistence Helpers ────────────────────────────────────────────────────
 const DATA_DIR = path.join(__dirname, 'data');
-const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
-const PINNED_FILE = path.join(DATA_DIR, 'pinned.json');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const LIMIT_HISTORY = 200;
 const ARCHIVES_FILE = path.join(DATA_DIR, 'voice_archives.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -39,45 +120,39 @@ function saveJSON(file, data) {
     catch (e) { console.error(`Failed to save ${file}:`, e.message); }
 }
 
-function saveMessages() {
-    const obj = {};
-    for (const [k, v] of channelMessages.entries()) obj[k] = v;
-    saveJSON(MESSAGES_FILE, obj);
-}
-function savePinned() {
-    const obj = {};
-    for (const [k, v] of pinnedMessages.entries()) obj[k] = v;
-    saveJSON(PINNED_FILE, obj);
-}
 function saveVoiceArchives() {
     const obj = {};
     for (const [k, v] of voiceArchives.entries()) obj[k] = v;
     saveJSON(ARCHIVES_FILE, obj);
 }
-function saveKnownUsers() {
-    const obj = {};
-    for (const [k, v] of allKnownUsers.entries()) obj[k] = v;
-    saveJSON(USERS_FILE, obj);
-}
 
 // ─── Data Stores ───────────────────────────────────────────────────────────────
 const users = new Map();          // socketId → { id, username, station, roomId, status }
+const allKnownUsers = new Map();  // Cache of profiles from Supabase
 
-// Load known users from disk or use defaults
-const defaultUsers = {
-    'admin': { username: 'admin', station: 'Amministratore', status: 'invisible', bio: '', profilePic: null },
-    'reception1': { username: 'reception1', station: 'Reception Principale', status: 'invisible', bio: '', profilePic: null },
-    'reception2': { username: 'reception2', station: 'Reception Secondaria', status: 'invisible', bio: '', profilePic: null },
-    'mobile_lobby': { username: 'mobile_lobby', station: 'Telefono Hall', status: 'invisible', bio: '', profilePic: null },
-    'stefano': { username: 'stefano', station: 'Stefano Golisano', status: 'invisible', bio: '', profilePic: null },
+// Fetch all profiles from Supabase to initialize the cache
+const syncProfiles = async () => {
+    try {
+        const { data, error } = await supabase.from('profiles').select('*');
+        if (error) throw error;
+        
+        allKnownUsers.clear();
+        data.forEach(p => {
+            allKnownUsers.set(p.username, {
+                username: p.username,
+                station: p.role,
+                status: 'invisible',
+                bio: p.bio || '',
+                profilePic: p.profile_pic || null
+            });
+        });
+        console.log(`[Supabase] Synced ${data.length} user profiles.`);
+    } catch (err) {
+        console.error('[Supabase] Profile sync error:', err.message);
+    }
 };
-const savedUsers = loadJSON(USERS_FILE, defaultUsers);
-const allKnownUsers = new Map(Object.entries(savedUsers));
-// Ensure all default users exist and all are invisible on server start
-for (const [k, v] of Object.entries(defaultUsers)) {
-    if (!allKnownUsers.has(k)) allKnownUsers.set(k, v);
-    else allKnownUsers.get(k).status = 'invisible'; // reset on server restart
-}
+
+syncProfiles();
 
 const rooms = new Map();          // roomId → { id, name, creatorName, peers, isTemp, chatMessages, deleteTimer }
 
@@ -87,38 +162,18 @@ const HOTEL_CHANNELS = [
     'blumen-generale', 'blumen-media', 'blumen-annunci',
     'santorsola-generale', 'santorsola-media', 'santorsola-annunci',
 ];
-const savedMessages = loadJSON(MESSAGES_FILE, {});
-const channelMessages = new Map();
-const savedPinned = loadJSON(PINNED_FILE, {});
-const pinnedMessages = new Map();
-for (const k in savedPinned) pinnedMessages.set(k, savedPinned[k]);
 
 const voiceArchives = new Map();
 const objArch = loadJSON(ARCHIVES_FILE, {});
 for (const k in objArch) voiceArchives.set(k, objArch[k]);
 
-HOTEL_CHANNELS.forEach(ch => {
-    channelMessages.set(ch, savedMessages[ch] || []);
-    pinnedMessages.set(ch, savedPinned[ch] || []);
-});
-
-const MESSAGE_TTL = 48 * 60 * 60 * 1000; // 48 hours
-
-// Auto-cleanup expired messages every 10 minutes
+// Auto-save voice archives every 30 seconds
 setInterval(() => {
-    const now = Date.now();
-    for (const [chId, msgs] of channelMessages.entries()) {
-        channelMessages.set(chId, msgs.filter(m => m.expiresAt > now));
-    }
-    saveMessages();
-    console.log('[Cleanup] Expired messages removed');
-}, 10 * 60 * 1000);
-
-// Auto-save messages every 30 seconds
-setInterval(() => {
-    saveMessages();
-    savePinned();
+    saveVoiceArchives();
 }, 30 * 1000);
+
+// Also re-sync profiles periodically
+setInterval(syncProfiles, 5 * 60 * 1000);
 
 // ─── Room Helpers ──────────────────────────────────────────────────────────────
 function broadcastRooms() {
@@ -220,30 +275,17 @@ io.on('connection', (socket) => {
         known.status = 'online';
         known.station = station;
         allKnownUsers.set(username, known);
-        saveKnownUsers();
+
+        // Persist profile pic if it changed
+        if (data.profilePic) {
+            supabase.from('profiles')
+                .update({ profile_pic: data.profilePic })
+                .eq('username', username)
+                .then(({ error }) => { if (error) console.error('[Supabase] Pic update error:', error); });
+        }
 
         broadcastRooms();
         broadcastUsers();
-
-        // Retroactively mark messages as delivered for this user
-        // (covers case where messages were sent before this user logged in)
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        for (const [chId, msgs] of channelMessages.entries()) {
-            const updates = [];
-            for (const msg of msgs) {
-                if (msg.sender === username) continue; // skip own messages
-                if (!msg.deliveredTo) msg.deliveredTo = [];
-                const alreadyDelivered = msg.deliveredTo.some(d => (typeof d === 'string' ? d : d.user) === username);
-                if (!alreadyDelivered) {
-                    const receipt = { user: username, time: timeStr };
-                    msg.deliveredTo.push(receipt);
-                    updates.push({ messageId: msg.id, receipt });
-                }
-            }
-            if (updates.length > 0) {
-                io.to(`channel:${chId}`).emit('read-receipt-update', { channelId: chId, reader: username, receipts: updates, type: 'delivered' });
-            }
-        }
     });
 
     // ── Room Management ──────────────────────────────────────────────────────
@@ -342,58 +384,86 @@ io.on('connection', (socket) => {
         if (user?.roomId) socket.to(user.roomId).emit('hand-raise', { socketId: socket.id, isRaised: data.isRaised });
     });
 
-    // ── In-Call Chat (room chat, not hotel channels) ──────────────────────────
-    socket.on('chat-message', (data) => {
+    // ── In-Call Chat (LiveKit Room Chat) ───────────────────────────────────
+    socket.on('chat-message', async (data) => {
         const user = users.get(socket.id);
         if (!user?.roomId) return;
-        const room = rooms.get(user.roomId);
-        const msgObj = { socketId: socket.id, sender: user.username, ...data, timestamp: Date.now() };
-        // Save to room chat history (in-memory)
-        if (room) room.chatMessages.push(msgObj);
-        socket.to(user.roomId).emit('chat-message', msgObj);
-    });
+        
+        const msgObj = { 
+            room_id: user.roomId, 
+            sender: user.username, 
+            text: data.text, 
+            image_data: data.imageData || null,
+            created_at: new Date().toISOString()
+        };
 
-    // ── Persist in-call chat to disk ─────────────────────────────────────────
-    socket.on('room-chat-save', ({ roomId, message }) => {
-        if (!roomId || !message) return;
-        const chatFile = path.join(DATA_DIR, `room_chat_${roomId}.json`);
+        // Emit to room (real-time)
+        socket.to(user.roomId).emit('chat-message', { ...data, sender: user.username, timestamp: Date.now() });
+
+        // Persist to Supabase
         try {
-            let history = [];
-            if (fs.existsSync(chatFile)) history = JSON.parse(fs.readFileSync(chatFile, 'utf8'));
-            history.push({ ...message, timestamp: message.timestamp || Date.now() });
-            // Keep max 200 messages per room
-            if (history.length > 200) history = history.slice(-200);
-            fs.writeFileSync(chatFile, JSON.stringify(history), 'utf8');
-        } catch (e) { console.error('Failed to save room chat:', e.message); }
+            const { error } = await supabase.from('messages').insert([msgObj]);
+            if (error) console.error('[Supabase] Save error:', error.message);
+        } catch (e) {
+            console.error('[Supabase] Network error:', e.message);
+        }
     });
 
-    socket.on('room-chat-history', ({ roomId }) => {
+    socket.on('room-chat-history', async ({ roomId }) => {
         if (!roomId) return;
-        const chatFile = path.join(DATA_DIR, `room_chat_${roomId}.json`);
         try {
-            if (fs.existsSync(chatFile)) {
-                const history = JSON.parse(fs.readFileSync(chatFile, 'utf8'));
-                socket.emit('room-chat-history', { messages: history });
-            } else {
-                socket.emit('room-chat-history', { messages: [] });
-            }
-        } catch (e) { socket.emit('room-chat-history', { messages: [] }); }
+            const { data: messages, error } = await supabase
+                .from('messages')
+                .select('*')
+                .eq('room_id', roomId)
+                .order('created_at', { ascending: true })
+                .limit(100);
+
+            if (error) throw error;
+            
+            // Format for frontend (identity mapping)
+            const history = (messages || []).map(m => ({
+                sender: m.sender,
+                text: m.text,
+                imageData: m.image_data,
+                timestamp: new Date(m.created_at).getTime()
+            }));
+            
+            socket.emit('room-chat-history', { messages: history });
+        } catch (e) {
+            console.error('[Supabase] History fetch error:', e.message);
+            socket.emit('room-chat-history', { messages: [] });
+        }
     });
 
-    // List all saved chat archives
-    socket.on('get-room-archives', () => {
+    // List all rooms that have messages in Supabase
+    socket.on('get-room-archives', async () => {
         try {
-            const files = fs.readdirSync(DATA_DIR);
-            const archives = files
-                .filter(f => f.startsWith('room_chat_') && f.endsWith('.json'))
-                .map(f => {
-                    const roomId = f.replace('room_chat_', '').replace('.json', '');
-                    const stats = fs.statSync(path.join(DATA_DIR, f));
-                    return { roomId, mtime: stats.mtimeMs };
-                })
-                .sort((a, b) => b.mtime - a.mtime);
+            const { data: messages, error } = await supabase
+                .from('messages')
+                .select('room_id, created_at')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            // Deduplicate room IDs and keep the most recent created_at
+            const archiveMap = new Map();
+            (messages || []).forEach(m => {
+                if (!archiveMap.has(m.room_id)) {
+                    archiveMap.set(m.room_id, new Date(m.created_at).getTime());
+                }
+            });
+
+            const archives = Array.from(archiveMap.entries()).map(([roomId, mtime]) => ({
+                roomId,
+                mtime
+            }));
+
             socket.emit('room-archives', { archives });
-        } catch (e) { console.error('Archive list failed', e); }
+        } catch (e) {
+            console.error('[Supabase] Archive list failed:', e.message);
+            socket.emit('room-archives', { archives: [] });
+        }
     });
 
     // ── Emoji Reactions (in-call) ────────────────────────────────────────────
@@ -411,161 +481,178 @@ io.on('connection', (socket) => {
         socket.leave(`channel:${channelId}`);
     });
 
-    // Get history for a channel (messages not yet expired)
-    socket.on('get-channel-history', ({ channelId }) => {
-        const now = Date.now();
-        const msgs = (channelMessages.get(channelId) || []).filter(m => m.expiresAt > now);
-        const pinned = pinnedMessages.get(channelId) || [];
-        socket.emit('channel-history', { channelId, messages: msgs, pinned });
-    });
-
-    // Send a message to a hotel channel
-    socket.on('channel-message', ({ channelId, text, imageData, gifUrl, poll, voiceData, voiceDuration, replyTo }) => {
+    socket.on('channel-message', async (data) => {
+        const { channelId, text, imageData, gifUrl, poll, voiceData, voiceDuration, replyTo } = data;
         const user = users.get(socket.id);
         if (!user || !HOTEL_CHANNELS.includes(channelId)) return;
-        const now = Date.now();
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
-        // Get list of currently online usernames for deliveredTo
-        const onlineUsersInfo = [];
-        for (const u of users.values()) {
-            if (u.username !== user.username) {
-                onlineUsersInfo.push({ user: u.username, time: timeStr });
-            }
-        }
-        
-        const msg = {
-            id: `${socket.id}-${now}`,
+
+        const msgObj = {
+            room_id: `channel:${channelId}`,
             sender: user.username,
             station: user.station,
             text: text || '',
-            imageData: imageData || null,
-            gifUrl: gifUrl || null,
-            poll: poll ? { ...poll, votes: poll.votes || {}, isMultiple: poll.isMultiple || false } : null,
-            voiceData: voiceData || null,
-            voiceDuration: voiceDuration || 0,
-            replyTo: replyTo || null,
+            image_data: imageData || null,
+            gif_url: gifUrl || null,
+            poll_data: poll ? { ...poll, votes: poll.votes || {}, isMultiple: poll.isMultiple || false } : null,
+            voice_data: voiceData || null,
+            voice_duration: voiceDuration || 0,
+            reply_to: replyTo || null,
             edited: false,
-            timestamp: now,
-            expiresAt: now + MESSAGE_TTL,
             pinned: false,
             reactions: {},
-            // Read receipts
-            status: 'sent',
-            deliveredTo: onlineUsersInfo,
-            readBy: [],
+            created_at: new Date().toISOString()
         };
-        const msgs = channelMessages.get(channelId) || [];
-        msgs.push(msg);
-        channelMessages.set(channelId, msgs);
-        saveMessages();
-        io.to(`channel:${channelId}`).emit('channel-message', { channelId, message: msg });
+
+        // Emit to channel (real-time)
+        io.to(`channel:${channelId}`).emit('channel-message', { ...data, sender: user.username, timestamp: Date.now() });
+
+        // Save to Supabase
+        try {
+            const { error } = await supabase.from('messages').insert([msgObj]);
+            if (error) console.error('[Supabase] Channel save error:', error.message);
+        } catch (e) { console.error('[Supabase] Channel network error:', e.message); }
     });
 
-    // Mark messages as read
+    socket.on('get-channel-history', async ({ channelId }) => {
+        if (!channelId) return;
+        try {
+            const { data: messages, error } = await supabase
+                .from('messages')
+                .select('*')
+                .eq('room_id', `channel:${channelId}`)
+                .order('created_at', { ascending: true })
+                .limit(LIMIT_HISTORY);
+
+            if (error) throw error;
+            const history = (messages || []).map(m => ({
+                id: m.id, // Supabase ID
+                sender: m.sender,
+                station: m.station,
+                text: m.text,
+                imageData: m.image_data,
+                gifUrl: m.gif_url,
+                poll: m.poll_data,
+                voiceData: m.voice_data,
+                voiceDuration: m.voice_duration,
+                replyTo: m.reply_to,
+                edited: m.edited,
+                timestamp: new Date(m.created_at).getTime(),
+                pinned: m.pinned,
+                reactions: m.reactions,
+                status: 'sent', // Default status for historical messages
+                deliveredTo: [], // Not tracked in Supabase for channel messages
+                readBy: [], // Not tracked in Supabase for channel messages
+            }));
+
+            // Fetch pinned messages separately
+            const { data: pinnedMessagesData, error: pinnedError } = await supabase
+                .from('messages')
+                .select('*')
+                .eq('room_id', `channel:${channelId}`)
+                .eq('pinned', true)
+                .order('created_at', { ascending: true });
+
+            if (pinnedError) throw pinnedError;
+
+            const pinned = (pinnedMessagesData || []).map(m => ({
+                id: m.id,
+                sender: m.sender,
+                station: m.station,
+                text: m.text,
+                imageData: m.image_data,
+                gifUrl: m.gif_url,
+                poll: m.poll_data,
+                voiceData: m.voice_data,
+                voiceDuration: m.voice_duration,
+                replyTo: m.reply_to,
+                edited: m.edited,
+                timestamp: new Date(m.created_at).getTime(),
+                pinned: m.pinned,
+                reactions: m.reactions,
+            }));
+
+            socket.emit('channel-history', { channelId, messages: history, pinned });
+        } catch (e) {
+            console.error('[Supabase] Channel history error:', e.message);
+            socket.emit('channel-history', { channelId, messages: [], pinned: [] });
+        }
+    });
+
+    // Mark messages as read (Simplified: not persisting for now)
     socket.on('mark-read', ({ channelId, messageIds }) => {
         const user = users.get(socket.id);
         if (!user) return;
-        const msgs = channelMessages.get(channelId);
-        if (!msgs) return;
-        let changed = false;
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const receiptUpdate = [];
-
-        for (const mid of messageIds) {
-            const msg = msgs.find(m => m.id === mid);
-            if (msg && msg.sender !== user.username && !msg.readBy?.some(r => r.user === user.username)) {
-                if (!msg.readBy) msg.readBy = [];
-                const receipt = { user: user.username, time: timeStr };
-                msg.readBy.push(receipt);
-                receiptUpdate.push({ messageId: mid, receipt });
-                changed = true;
-            }
-        }
-        if (changed) {
-            // Broadcast updated read status
-            io.to(`channel:${channelId}`).emit('read-receipt-update', { channelId, reader: user.username, receipts: receiptUpdate });
-        }
+        io.to(`channel:${channelId}`).emit('read-receipt-update', { channelId, reader: user.username, receipts: messageIds.map(id => ({ messageId: id, receipt: { user: user.username, time: new Date().toLocaleTimeString() } })) });
     });
 
-    socket.on('edit-message', ({ channelId, messageId, text }) => {
-        const msgs = channelMessages.get(channelId);
-        if (!msgs) return;
-        const msg = msgs.find(m => m.id === messageId);
-        if (!msg) return;
-        msg.text = text;
-        msg.edited = true;
-        saveMessages();
-        io.to(`channel:${channelId}`).emit('message-edited', { channelId, messageId, text });
+    socket.on('edit-message', async ({ channelId, messageId, text }) => {
+        try {
+            const { error } = await supabase.from('messages').update({ text, edited: true }).eq('id', messageId);
+            if (error) throw error;
+            io.to(`channel:${channelId}`).emit('message-edited', { channelId, messageId, text });
+        } catch (e) { console.error('[Supabase] Edit error:', e.message); }
     });
 
-    socket.on('delete-message', ({ channelId, messageId }) => {
-        const msgs = channelMessages.get(channelId);
-        if (!msgs) return;
-        const msgIdx = msgs.findIndex(m => m.id === messageId);
-        if (msgIdx === -1) return;
-        msgs.splice(msgIdx, 1);
-        saveMessages();
-        io.to(`channel:${channelId}`).emit('message-deleted', { channelId, messageId });
+    socket.on('delete-message', async ({ channelId, messageId }) => {
+        try {
+            const { error } = await supabase.from('messages').delete().eq('id', messageId);
+            if (error) throw error;
+            io.to(`channel:${channelId}`).emit('message-deleted', { channelId, messageId });
+        } catch (e) { console.error('[Supabase] Delete error:', e.message); }
     });
 
-    socket.on('react-message', ({ channelId, messageId, emoji }) => {
+    socket.on('react-message', async ({ channelId, messageId, emoji }) => {
         const user = users.get(socket.id);
         if (!user) return;
-        const msgs = channelMessages.get(channelId);
-        if (!msgs) return;
-        const msg = msgs.find(m => m.id === messageId);
-        if (!msg) return;
+        try {
+            // Get current reactions
+            const { data, error: fetchErr } = await supabase.from('messages').select('reactions').eq('id', messageId).single();
+            if (fetchErr) throw fetchErr;
 
-        if (!msg.reactions) msg.reactions = {};
-        
-        // Ensure single reaction per user: remove user from any other emoji array
-        for (const existingEmoji in msg.reactions) {
-            if (existingEmoji !== emoji) {
-                const userIdx = msg.reactions[existingEmoji].indexOf(user.username);
-                if (userIdx > -1) {
-                    msg.reactions[existingEmoji].splice(userIdx, 1);
-                    if (msg.reactions[existingEmoji].length === 0) {
-                        delete msg.reactions[existingEmoji];
-                    }
-                }
-            }
-        }
+            let reactions = data.reactions || {};
+            
+            // Toggle reaction
+            if (!reactions[emoji]) reactions[emoji] = [];
+            const idx = reactions[emoji].indexOf(user.username);
+            if (idx > -1) reactions[emoji].splice(idx, 1);
+            else reactions[emoji].push(user.username);
+            
+            if (reactions[emoji].length === 0) delete reactions[emoji];
 
-        if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+            const { error: updateErr } = await supabase.from('messages').update({ reactions }).eq('id', messageId);
+            if (updateErr) throw updateErr;
 
-        const idx = msg.reactions[emoji].indexOf(user.username);
-        if (idx > -1) msg.reactions[emoji].splice(idx, 1);
-        else msg.reactions[emoji].push(user.username);
-
-        if (msg.reactions[emoji].length === 0) delete msg.reactions[emoji];
-
-        saveMessages();
-        io.to(`channel:${channelId}`).emit('message-reacted', { channelId, messageId, reactions: msg.reactions });
+            io.to(`channel:${channelId}`).emit('message-reacted', { channelId, messageId, reactions });
+        } catch (e) { console.error('[Supabase] React error:', e.message); }
     });
 
-    // Poll vote: toggle vote on an option
-    socket.on('channel-poll-vote', ({ channelId, messageId, optionIndex }) => {
+    socket.on('channel-poll-vote', async ({ channelId, messageId, optionIndex }) => {
         const user = users.get(socket.id);
         if (!user) return;
-        const msgs = channelMessages.get(channelId) || [];
-        const msg = msgs.find(m => m.id === messageId);
-        if (!msg || !msg.poll) return;
-        const votes = msg.poll.votes || {};
-        const userId = user.username;
-        // Single choice: remove from all other options first
-        if (!msg.poll.isMultiple) {
-            Object.keys(votes).forEach(k => {
-                if (parseInt(k) !== optionIndex) votes[k] = (votes[k] || []).filter(u => u !== userId);
-            });
-        }
-        if (!votes[optionIndex]) votes[optionIndex] = [];
-        const already = votes[optionIndex].includes(userId);
-        if (already) { votes[optionIndex] = votes[optionIndex].filter(u => u !== userId); }
-        else { votes[optionIndex].push(userId); }
-        msg.poll.votes = votes;
-        saveMessages();
-        io.to(`channel:${channelId}`).emit('channel-poll-update', { channelId, messageId, votes });
+        try {
+            const { data, error: fetchErr } = await supabase.from('messages').select('poll_data').eq('id', messageId).single();
+            if (fetchErr) throw fetchErr;
+            if (!data.poll_data) return;
+
+            let poll = data.poll_data;
+            let votes = poll.votes || {};
+            const userId = user.username;
+
+            if (!poll.isMultiple) {
+                Object.keys(votes).forEach(k => {
+                    if (parseInt(k) !== optionIndex) votes[k] = (votes[k] || []).filter(u => u !== userId);
+                });
+            }
+            if (!votes[optionIndex]) votes[optionIndex] = [];
+            if (votes[optionIndex].includes(userId)) votes[optionIndex] = votes[optionIndex].filter(u => u !== userId);
+            else votes[optionIndex].push(userId);
+
+            poll.votes = votes;
+            const { error: updateErr } = await supabase.from('messages').update({ poll_data: poll }).eq('id', messageId);
+            if (updateErr) throw updateErr;
+
+            io.to(`channel:${channelId}`).emit('channel-poll-update', { channelId, messageId, votes });
+        } catch (e) { console.error('[Supabase] Poll vote error:', e.message); }
     });
 
     // User presence / status broadcast
@@ -574,7 +661,6 @@ io.on('connection', (socket) => {
         if (user) { 
             user.status = status; 
             if(allKnownUsers.has(user.username)) allKnownUsers.get(user.username).status = status;
-            saveKnownUsers();
             broadcastUsers(); 
         }
     });
@@ -583,7 +669,13 @@ io.on('connection', (socket) => {
         if (user) { 
             user.bio = bio; 
             if(allKnownUsers.has(user.username)) allKnownUsers.get(user.username).bio = bio;
-            saveKnownUsers();
+            
+            // Persist to Supabase
+            supabase.from('profiles')
+                .update({ bio: bio })
+                .eq('username', user.username)
+                .then(({ error }) => { if (error) console.error('[Supabase] Bio update error:', error); });
+
             broadcastUsers();
         }
     });
@@ -642,7 +734,6 @@ io.on('connection', (socket) => {
             if (allKnownUsers.has(user.username)) {
                 // Tab closed = idle (orange). After some time the client can set offline explicitly.
                 allKnownUsers.get(user.username).status = 'idle';
-                saveKnownUsers();
             }
             broadcastRooms();
             broadcastUsers();

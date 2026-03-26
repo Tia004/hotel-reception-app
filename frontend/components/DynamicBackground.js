@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 
 /**
- * DynamicBackground — v4.1.5
+ * DynamicBackground — v5.0.0
  * True DOM canvas with mouse-reactive particles.
  * Uses document.createElement to bypass RN's JSX pipeline.
  */

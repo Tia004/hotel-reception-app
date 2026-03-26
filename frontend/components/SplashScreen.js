@@ -1,5 +1,5 @@
 /**
- * SplashScreen.js — v4.1.5
+ * SplashScreen.js — v5.0.0
  * Beautiful gold/black loading screen shown during initial app load.
  * Animated GSA monogram, shimmering text, fade-out on complete.
  */
@@ -80,7 +80,7 @@ export default function SplashScreen({ onDone }) {
 
             {/* Brand text */}
             <Animated.View style={[styles.brandBlock, { opacity: fadeAnim }]}>
-                <Text style={styles.brandTitle}>Chat v4.1.5</Text>
+                <Text style={styles.brandTitle}>Chat v5.0.0</Text>
             </Animated.View>
 
             {/* Loading dots */}
@@ -91,7 +91,7 @@ export default function SplashScreen({ onDone }) {
             </View>
 
             {/* Version watermark */}
-            <Text style={styles.version}>v4.1.5</Text>
+            <Text style={styles.version}>v5.0.0</Text>
         </Animated.View>
     );
 }

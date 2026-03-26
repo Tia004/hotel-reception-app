@@ -1,5 +1,5 @@
 /**
- * HotelChat.js — v4.1.5
+ * HotelChat.js — v5.0.0
  * Major overhaul:
  * - 3-column layout (Sidebar | Chat | Occupancy)
  * - [+ Crea Stanza] lobby button in sidebar
@@ -224,7 +224,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
 
 
 
-    const APP_VERSION = "4.1.5";
+    const APP_VERSION = "5.0.0";
     const [pinnedExpanded, setPinnedExpanded] = useState(false);
 
     // Server Keep-Alive
@@ -901,7 +901,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             <LinearGradient colors={['#1C1A12', '#141210']} style={styles.sidebarHeader}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <Image source={require('../assets/logo.png')} style={{ width: 26, height: 26, resizeMode: 'contain' }} />
-                                    <Text style={styles.brandName}>CHAT v4.1.5</Text>
+                                    <Text style={styles.brandName}>CHAT v5.0.0</Text>
 
                                 </View>
                             </LinearGradient>
