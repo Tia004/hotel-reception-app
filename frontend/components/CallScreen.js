@@ -396,7 +396,7 @@ export default function CallScreen({
         const micPub = participant.getTrackPublication(Track.Source.Microphone);
         
         const stream = pub?.videoTrack?.mediaStream || (isLocal && !isScreen && localStream);
-        const hasVideo = isLocal ? (isScreen ? screenSharing : camOn) : (pub?.isSubscribed && !pub?.isMuted);
+        const hasVideo = isLocal ? (isScreen ? screenShareOn : camOn) : (pub?.isSubscribed && !pub?.isMuted);
         const isMuted = isLocal ? !micOn : (micPub?.isMuted || !micPub?.isSubscribed);
         
         const bgColor = isScreen ? '#000' : getParticipantColor(participant.identity);
@@ -626,7 +626,7 @@ export default function CallScreen({
                         </TouchableOpacity>
                     </View>
 
-                    <TouchableOpacity onPress={toggleScreenShare} style={[styles.ctrlBtn, screenSharing && styles.ctrlBtnActive]}>
+                    <TouchableOpacity onPress={toggleScreenShare} style={[styles.ctrlBtn, screenShareOn && styles.ctrlBtnActive]}>
                         <Icon name="monitor" size={20} color="#fff" />
                     </TouchableOpacity>
 
