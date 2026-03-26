@@ -47,7 +47,7 @@ function FloatingEmoji({ emoji, onComplete }) {
     );
 }
 
-export default function CallScreen({ socket, roomId, user, onMinimize }) {
+export default function CallScreen({ socket, roomId, user, onMinimize, onClose }) {
     // ── UI States ────────────────────────────────────────────────────────
     const [loading, setLoading] = useState(true);
     const [micOn, setMicOn] = useState(true);
@@ -244,8 +244,12 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
         }
         setLocalStream(null);
         setRemoteStreams({});
-        onMinimize();
-    }, [lkRoom, onMinimize]);
+        if (onClose) {
+            onClose();
+        } else {
+            onMinimize();
+        }
+    }, [lkRoom, onMinimize, onClose]);
 
     const toggleMic = () => {
         const next = !micOn;
