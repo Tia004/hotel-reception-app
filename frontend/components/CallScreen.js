@@ -293,10 +293,16 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
 
     // ── Render Parts ─────────────────────────────────────────────────────
     const renderTile = (participant) => {
+        if (!participant) return null;
         const isLocal = participant instanceof LocalParticipant;
         const stream = getParticipantStream(participant);
-        const videoTrack = participant.getTrack(Track.Source.Camera);
-        const hasVideo = videoTrack?.isSubscribed || isLocal ? videoTrack?.isEnabled : false;
+        
+        const videoPub = participant.getTrackPublication(Track.Source.Camera);
+        const micPub = participant.getTrackPublication(Track.Source.Microphone);
+        
+        const videoTrack = videoPub?.videoTrack;
+        const hasVideo = isLocal ? camOn : (videoPub?.isSubscribed && !videoPub?.isMuted);
+        const isMuted = isLocal ? !micOn : (micPub?.isMuted || !micPub?.isSubscribed);
 
         return (
             <View key={participant.identity} style={[styles.tile, participants.length <= 2 ? styles.tileLarge : styles.tileMedium]}>
