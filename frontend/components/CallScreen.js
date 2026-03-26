@@ -136,16 +136,105 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         return () => clearTimeout(timer);
     }, []);
     
+    const discoveredPeersRef = useRef(new Set()); // socketId set
+
+    const ensureTracks = (pc, stream) => {
+        if (!stream) return;
+        const senders = pc.getSenders();
+        stream.getTracks().forEach(track => {
+            const alreadyAdded = senders.some(s => s.track === track);
+            if (!alreadyAdded) {
+                console.log(`[Signaling] Adding track [${track.kind}] to PC`);
+                pc.addTrack(track, stream);
+            }
+        });
+    };
+
+    const createPC = useCallback((targetId) => {
+        if (pcsRef.current.has(targetId)) {
+            const existing = pcsRef.current.get(targetId);
+            if (existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
+                return existing;
+            }
+            existing.close();
+            pcsRef.current.delete(targetId);
+        }
+        
+        console.log(`[Signaling] Creating new RTCPeerConnection for ${targetId}`);
+        const pc = new RTCPeerConnection(ICE_CONFIG);
+        pcsRef.current.set(targetId, pc);
+
+        pc.oniceconnectionstatechange = () => {
+            setConnectionStates(prev => ({ ...prev, [targetId]: pc.iceConnectionState }));
+            setPcsInfo(prev => ({ ...prev, [targetId]: { ...prev[targetId], ice: pc.iceConnectionState } }));
+        };
+        pc.onsignalingstatechange = () => {
+            setPcsInfo(prev => ({ ...prev, [targetId]: { ...prev[targetId], signaling: pc.signalingState } }));
+        };
+        pc.onconnectionstatechange = () => {
+            setConnectionStates(prev => ({ ...prev, [targetId]: pc.connectionState }));
+            if (pc.connectionState === 'failed') {
+                setConnectionErrors(prev => ({ ...prev, [targetId]: 'Connessione Fallita' }));
+            }
+        };
+        pc.onicecandidate = (e) => {
+            if (e.candidate) {
+                socket.emit('ice-candidate', { target: targetId, candidate: e.candidate });
+            }
+        };
+        pc.ontrack = (e) => {
+            console.log(`[Signaling] Track received from ${targetId}`);
+            if (e.streams && e.streams[0]) {
+                setRemoteStreams(prev => ({ ...prev, [targetId]: e.streams[0] }));
+            }
+        };
+        pc.onnegotiationneeded = () => {
+            console.log(`[Signaling] onnegotiationneeded (skipping automated, using deterministic pattern)`);
+        };
+        return pc;
+    }, [socket]);
+
+    // ── Call Initiation ──────────────────────────────────────────────────
+    const initiateCall = useCallback(async (targetId) => {
+        if (!socket || !roomId || targetId === socket.id) return;
+        if (!localStreamRef.current) {
+            console.log(`[Signaling] Deferring call to ${targetId}: Stream not ready yet.`);
+            return;
+        }
+        console.log(`[Signaling] Deterministic INITIATOR for ${targetId} (socket.id < targetId)`);
+        const pc = createPC(targetId);
+        ensureTracks(pc, localStreamRef.current);
+        
+        try {
+            makingOfferMap.current.set(targetId, true);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            console.log(`[Signaling] Sending deterministic offer to ${targetId}`);
+            socket.emit('offer', { target: targetId, offer, sender: socket.id });
+        } catch (err) {
+            console.error(`[Signaling] initiateCall error for ${targetId}:`, err);
+        } finally {
+            makingOfferMap.current.set(targetId, false);
+        }
+    }, [socket, roomId]);
+
     // ── Stream Synchronization ────────────────────────────────────────────
     useEffect(() => {
         const stream = localStream;
         if (!stream) return;
         
-        console.log('Local stream updated, syncing with all peers...', stream.getTracks().length);
+        console.log('[Discovery] Stream ready, checking discovered peers for initiation...', discoveredPeersRef.current.size);
         pcsRef.current.forEach((pc, targetId) => {
             ensureTracks(pc, stream);
         });
-    }, [localStream]);
+
+        // If we just got the stream and have peers we should have called, do it now
+        discoveredPeersRef.current.forEach(peerId => {
+            if (!pcsRef.current.has(peerId) && socket.id < peerId) {
+                initiateCall(peerId);
+            }
+        });
+    }, [localStream, initiateCall]);
 
 
     // ── Enumerate Devices ────────────────────────────────────────────────
@@ -171,34 +260,70 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         if (!socket || !roomId) return;
         startLocalStream();
 
+        const initiateCall = async (targetId) => {
+            if (targetId === socket.id) return;
+            if (!localStreamRef.current) {
+                console.log(`[Signaling] Deferring call to ${targetId}: Stream not ready yet.`);
+                return;
+            }
+            console.log(`[Signaling] Deterministic INITIATOR for ${targetId} (socket.id < targetId)`);
+            const pc = createPC(targetId);
+            ensureTracks(pc, localStreamRef.current);
+            
+            try {
+                makingOfferMap.current.set(targetId, true);
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                console.log(`[Signaling] Sending deterministic offer to ${targetId}`);
+                socket.emit('offer', { target: targetId, offer, sender: socket.id });
+            } catch (err) {
+                console.error(`[Signaling] initiateCall error for ${targetId}:`, err);
+            } finally {
+                makingOfferMap.current.set(targetId, false);
+            }
+        };
+
         // Automated Handshake Logic
         const onUserJoined = ({ socketId, username }) => {
             console.log(`[Discovery] User joined room: ${username} (${socketId})`);
             setRemoteUsernames(prev => ({ ...prev, [socketId]: username }));
+            discoveredPeersRef.current.add(socketId);
             
-            if (socketId !== socket.id && !pcsRef.current.has(socketId) && localStreamRef.current) {
-                console.log(`[Discovery] Proactively initiating connection to new joiner: ${socketId}`);
-                const pc = createPC(socketId);
-                ensureTracks(pc, localStreamRef.current);
+            if (socketId !== socket.id && !pcsRef.current.has(socketId)) {
+                if (socket.id < socketId) {
+                    initiateCall(socketId);
+                } else {
+                    console.log(`[Discovery] Waiting for offer from ${socketId} (we are receiver)`);
+                }
             }
         };
 
         const onRoomPeers = ({ peers }) => {
             console.log(`[Discovery] Received peer directory:`, peers);
             peers.forEach(peerId => {
-                if (peerId !== socket.id && !pcsRef.current.has(peerId) && localStreamRef.current) {
-                    console.log(`[Discovery] Found missing peer in directory, initiating: ${peerId}`);
-                    const pc = createPC(peerId);
-                    ensureTracks(pc, localStreamRef.current);
+                if (peerId !== socket.id) {
+                    discoveredPeersRef.current.add(peerId);
+                    if (!pcsRef.current.has(peerId)) {
+                        if (socket.id < peerId) {
+                            initiateCall(peerId);
+                        } else {
+                            console.log(`[Discovery] Peer ${peerId} found, waiting for their offer...`);
+                        }
+                    }
                 }
             });
         };
 
         const onPeerHeartbeat = ({ sender }) => {
-            if (sender !== socket.id && !pcsRef.current.has(sender) && localStreamRef.current) {
-                console.log(`[Discovery] Peer heartbeat from ${sender}, initiating:`);
-                const pc = createPC(sender);
-                ensureTracks(pc, localStreamRef.current);
+            if (sender !== socket.id) {
+                discoveredPeersRef.current.add(sender);
+                if (!pcsRef.current.has(sender)) {
+                    if (socket.id < sender) {
+                        initiateCall(sender);
+                    } else {
+                        console.log(`[Discovery] Heartbeat from ${sender}, waiting for their offer...`);
+                    }
+                }
             }
         };
 
@@ -465,98 +590,7 @@ export default function CallScreen({ user, socket, roomId, onClose, isTempProp, 
         setLocalStream(null);
     };
 
-    const ensureTracks = (pc, stream) => {
-        if (!pc || !stream) return;
-        const senders = pc.getSenders();
-        stream.getTracks().forEach(track => {
-            const alreadyAdded = senders.some(s => s.track === track);
-            if (!alreadyAdded) {
-                console.log(`Adding track [${track.kind}] to PC`);
-                pc.addTrack(track, stream);
-            }
-        });
-    };
-
-    const createPC = (targetId) => {
-        if (pcsRef.current.has(targetId)) {
-            const existing = pcsRef.current.get(targetId);
-            if (existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
-                console.log(`Reusing existing PC for [${targetId}]`);
-                return existing;
-            }
-            existing.close();
-            pcsRef.current.delete(targetId);
-        }
-        
-        console.log(`Creating new RTCPeerConnection for [${targetId}]`);
-        const pc = new RTCPeerConnection(ICE_CONFIG);
-        pcsRef.current.set(targetId, pc);
-
-        pc.oniceconnectionstatechange = () => {
-            console.log(`ICE Connection State [${targetId}]:`, pc.iceConnectionState);
-            setConnectionStates(prev => ({ ...prev, [targetId]: pc.iceConnectionState }));
-            setPcsInfo(prev => ({ ...prev, [targetId]: { ...prev[targetId], ice: pc.iceConnectionState } }));
-        };
-        pc.onsignalingstatechange = () => {
-            setPcsInfo(prev => ({ ...prev, [targetId]: { ...prev[targetId], signaling: pc.signalingState } }));
-        };
-        pc.onicegatheringstatechange = () => {
-            console.log(`ICE Gathering State for [${targetId}]: ${pc.iceGatheringState}`);
-        };
-        pc.onconnectionstatechange = () => {
-            console.log(`Connection State [${targetId}]:`, pc.connectionState);
-            setConnectionStates(prev => ({ ...prev, [targetId]: pc.connectionState }));
-            if (pc.connectionState === 'failed') {
-                console.warn(`Connection failed with [${targetId}], attempting restart...`);
-                setConnectionErrors(prev => ({ ...prev, [targetId]: 'Connessione Fallita' }));
-            }
-            if (pc.connectionState === 'connected') {
-                setConnectionErrors(prev => { const n = { ...prev }; delete n[targetId]; return n; });
-            }
-        };
-        pc.ontrack = (e) => {
-            console.log(`Received remote track [${targetId}]:`, e.track.kind, e.streams.length);
-            if (e.streams && e.streams[0]) {
-                const stream = e.streams[0];
-                console.log(`Setting remote stream for [${targetId}], tracks:`, stream.getTracks().length);
-                setRemoteStreams(prev => {
-                    if (prev[targetId] === stream) return prev;
-                    return { ...prev, [targetId]: stream };
-                });
-            } else {
-                console.warn(`Ontrack fired for [${targetId}] but no stream was found.`);
-            }
-        };
-        pc.onicecandidate = (e) => {
-            if (e.candidate) {
-                console.log(`Sending ICE candidate to [${targetId}]`);
-                socket.emit('ice-candidate', { target: targetId, candidate: e.candidate });
-                setPcsInfo(prev => {
-                    const info = prev[targetId] || { candidates: 0 };
-                    return { ...prev, [targetId]: { ...info, candidates: (info.candidates || 0) + 1 } };
-                });
-            }
-        };
-        pc.onnegotiationneeded = async () => {
-            console.log(`[Signaling] Negotiation needed for ${targetId}`);
-            try {
-                makingOfferMap.current.set(targetId, true);
-                const offer = await pc.createOffer();
-                if (pc.signalingState !== 'stable') {
-                    console.log(`[Signaling] Negotiation aborted for ${targetId}: State not stable (${pc.signalingState})`);
-                    return;
-                }
-                await pc.setLocalDescription(offer);
-                console.log(`[Signaling] Sending offer to ${targetId}`);
-                socket.emit('offer', { target: targetId, offer, sender: socket.id });
-            } catch (err) {
-                console.error(`[Signaling] Error onnegotiationneeded for ${targetId}:`, err);
-            } finally {
-                makingOfferMap.current.set(targetId, false);
-            }
-        };
-        return pc;
-    };
+    // Redundant createPC/ensureTracks removed. Using top-level scoped versions above.
 
     const toggleMic = () => {
         if (localStreamRef.current) {
