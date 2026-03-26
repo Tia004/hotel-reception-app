@@ -503,8 +503,13 @@ io.on('connection', (socket) => {
             created_at: new Date().toISOString()
         };
 
+        const finalMsg = { ...data, sender: user.username, timestamp: Date.now() };
+
         // Emit to channel (real-time)
-        io.to(`channel:${channelId}`).emit('channel-message', { ...data, sender: user.username, timestamp: Date.now() });
+        io.to(`channel:${channelId}`).emit('channel-message', { 
+            channelId, 
+            message: finalMsg 
+        });
 
         // Save to Supabase
         try {

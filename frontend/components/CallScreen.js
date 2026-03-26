@@ -63,13 +63,20 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
     const [floatingReactions, setFloatingReactions] = useState([]);
     const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
     const [connectionErrors, setConnectionErrors] = useState({});
+    const [showDebug, setShowDebug] = useState(false);
 
-    // ── LiveKit States ───────────────────────────────────────────────────
     const [lkRoom, setLkRoom] = useState(null);
     const [participants, setParticipants] = useState([]); // Array of Participant objects
     const [localStream, setLocalStream] = useState(null);
     const [remoteStreams, setRemoteStreams] = useState({}); // identity -> MediaStream
     const [connecting, setConnecting] = useState(false);
+    const [debugLogs, setDebugLogs] = useState([]);
+
+    const addLog = (msg) => {
+        const time = new Date().toLocaleTimeString();
+        setDebugLogs(prev => [`[${time}] ${msg}`, ...prev].slice(0, 50));
+        console.log(`[LK-DEBUG] ${msg}`);
+    };
 
     const chatScrollRef = useRef(null);
     const spinAnim = useRef(new Animated.Value(0)).current;
@@ -84,19 +91,29 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
     }, []);
 
     const lkUrl = "wss://gsa-hotels-calls-ls2c6m36.livekit.cloud";
-    const API_BASE = "https://hotel-reception-app-server.onrender.com";
+    const API_BASE = "https://hotel-reception-app.onrender.com";
 
     const fetchTokenAndConnect = useCallback(async () => {
         try {
             setConnecting(true);
+            addLog(`Inizio connessione a ${roomId}...`);
+
             // 1. Get Token from Internal Server
+            addLog(`Richiesta token a ${API_BASE}...`);
             const response = await fetch(`${API_BASE}/get-livekit-token`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ room: roomId, username: user.username })
             });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(`Server Token Error: ${response.status} ${errData.error || ''}`);
+            }
+
             const { token } = await response.json();
-            if (!token) throw new Error("Token not received");
+            if (!token) throw new Error("Token non ricevuto dal server");
+            addLog("Token ricevuto correttamente.");
 
             // 2. Initialize LiveKit Room
             const room = new Room({
@@ -109,9 +126,16 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
                 setParticipants([room.localParticipant, ...Array.from(room.participants.values())]);
             };
 
-            room.on(RoomEvent.ParticipantConnected, updateParticipants);
-            room.on(RoomEvent.ParticipantDisconnected, updateParticipants);
+            room.on(RoomEvent.ParticipantConnected, (p) => {
+                addLog(`Partecipante connesso: ${p.identity}`);
+                updateParticipants();
+            });
+            room.on(RoomEvent.ParticipantDisconnected, (p) => {
+                addLog(`Partecipante disconnesso: ${p.identity}`);
+                updateParticipants();
+            });
             room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                addLog(`Traccia sottoscritta: ${track.kind} da ${participant.identity}`);
                 if (track.kind === Track.Kind.Video || track.kind === Track.Kind.Audio) {
                     setRemoteStreams(prev => ({
                         ...prev,
@@ -119,13 +143,11 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
                     }));
                 }
             });
-            room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-                setRemoteStreams(prev => {
-                    const next = { ...prev };
-                    delete next[participant.identity];
-                    return next;
-                });
+            
+            room.on(RoomEvent.ConnectionStateChanged, (state) => {
+                addLog(`Stato connessione: ${state}`);
             });
+
             room.on(RoomEvent.DataReceived, (payload, participant) => {
                 const data = JSON.parse(new TextDecoder().decode(payload));
                 if (data.type === 'reaction') {
@@ -134,22 +156,39 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
             });
 
             // 4. Connect
+            addLog(`Connessione a LiveKit SFU (${lkUrl})...`);
             await room.connect(lkUrl, token);
-            console.log(`[LiveKit] Connected to ${room.name}`);
+            addLog(`Connesso alla stanza: ${room.name}`);
 
             // 5. Start Local Media
-            await room.localParticipant.enableCameraAndMicrophone();
-            setLocalStream(room.localParticipant.getTrack(Track.Source.Camera)?.videoTrack?.mediaStream);
+            addLog("Tentativo di attivazione Camera e Microfono...");
+            try {
+                await room.localParticipant.enableCameraAndMicrophone();
+                addLog("Camera e Microfono attivati.");
+                
+                // Get the video track media stream
+                const videoPub = room.localParticipant.getTrack(Track.Source.Camera);
+                if (videoPub && videoPub.videoTrack) {
+                    addLog("Traccia video locale trovata.");
+                    setLocalStream(videoPub.videoTrack.mediaStream);
+                } else {
+                    addLog("⚠️ ATTENZIONE: Traccia video locale non trovata dopo enable.");
+                }
+            } catch (mediaErr) {
+                addLog(`❌ Errore Media: ${mediaErr.message}`);
+                console.error("Media Error:", mediaErr);
+            }
             
             setLkRoom(room);
             updateParticipants();
             setConnecting(false);
         } catch (err) {
+            addLog(`❌ ERRORE CRITICO: ${err.message}`);
             console.error('[LiveKit] Connection Failed:', err);
             setConnecting(false);
-            setConnectionErrors({ main: "Errore di connessione al server" });
+            setConnectionErrors({ main: err.message });
         }
-    }, [roomId, user.username]);
+    }, [roomId, user.username, lkUrl, API_BASE]);
 
     useEffect(() => {
         if (!socket || !roomId) return;
@@ -299,6 +338,9 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
                         {connecting && <ActivityIndicator size="small" color="#C9A84C" />}
                     </View>
                 </View>
+                <TouchableOpacity onPress={() => setShowDebug(!showDebug)} style={{ marginRight: 10 }}>
+                    <Icon name="terminal" size={18} color={showDebug ? "#C9A84C" : "#E8E4D8"} />
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => setChatVisible(!chatVisible)} style={styles.reactionBtn}>
                     <Icon name="message-square" size={18} color={chatVisible ? "#C9A84C" : "#E8E4D8"} />
                 </TouchableOpacity>
@@ -313,10 +355,10 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
             {chatVisible && (
                 <View style={styles.chatPanel}>
                     <ScrollView ref={chatScrollRef} style={styles.chatScroll}>
-                        {chatMessages.map((msg, i) => (
-                            <View key={i} style={[styles.chatMsg, msg.sender === user.username && styles.chatMsgMine]}>
-                                <Text style={styles.chatMsgSender}>{msg.sender}</Text>
-                                <Text style={styles.chatMsgText}>{msg.text}</Text>
+                        {(chatMessages || []).map((msg, i) => (
+                            <View key={i} style={[styles.chatMsg, msg?.sender === user.username && styles.chatMsgMine]}>
+                                <Text style={styles.chatMsgSender}>{msg?.sender || '?'}</Text>
+                                <Text style={styles.chatMsgText}>{msg?.text || ''}</Text>
                             </View>
                         ))}
                     </ScrollView>
@@ -331,6 +373,18 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
                             <Icon name="send" size={16} color="#111" />
                         </TouchableOpacity>
                     </View>
+                </View>
+            )}
+
+            {/* Debug Panel */}
+            {showDebug && (
+                <View style={styles.debugPanel}>
+                    <Text style={styles.debugTitle}>LIVEKIT DEBUG CONSOLE</Text>
+                    <ScrollView style={styles.debugScroll}>
+                        {(debugLogs || []).map((log, i) => (
+                            <Text key={i} style={styles.debugText}>{log}</Text>
+                        ))}
+                    </ScrollView>
                 </View>
             )}
 
@@ -400,5 +454,9 @@ const styles = StyleSheet.create({
     reactionsPopup: { position: 'absolute', bottom: 150, alignSelf: 'center', backgroundColor: '#2B2D31', padding: 15, borderRadius: 30 },
     reactionsRow: { flexDirection: 'row', gap: 15 },
     floatingEmojiContainer: { ...StyleSheet.absoluteFillObject, zIndex: 1000 },
-    floatingEmoji: { fontSize: 40, alignSelf: 'center' }
+    floatingEmoji: { fontSize: 40, alignSelf: 'center' },
+    debugPanel: { position: 'absolute', top: 70, left: 10, right: 10, bottom: 120, backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: 10, padding: 10, zIndex: 2000, borderWidth: 1, borderColor: '#C9A84C' },
+    debugTitle: { color: '#C9A84C', fontWeight: 'bold', fontSize: 12, marginBottom: 5, textAlign: 'center' },
+    debugScroll: { flex: 1 },
+    debugText: { color: '#00FF00', fontSize: 10, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', marginBottom: 2 }
 });

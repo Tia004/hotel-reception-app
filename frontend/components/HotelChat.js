@@ -1082,6 +1082,7 @@ export default function HotelChat({ socket, user, sidebarVisible, onToggleSideba
                             </View>
                         )}
                         {(messages[activeChannel.id] || []).map(m => {
+                            if (!m) return null;
                             const isMine = m.sender === user.username;
                             const repliedMsg = m.replyTo ? (messages[activeChannel.id] || []).find(rm => rm.id === m.replyTo) : null;
 
