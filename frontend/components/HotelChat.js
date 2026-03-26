@@ -600,7 +600,7 @@ export default function HotelChat({
         });
 
         socket.on('online-users', setOnlineUsers);
-        socket.on('rooms-update', setActiveRooms);
+
 
         socket.on('channel-poll-update', ({ channelId, messageId, votes }) => {
             setMessages(p => ({
