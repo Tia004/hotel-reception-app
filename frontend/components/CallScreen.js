@@ -81,6 +81,12 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
     const chatScrollRef = useRef(null);
     const spinAnim = useRef(new Animated.Value(0)).current;
 
+    const onEmojiReaction = useCallback(({ emoji }) => {
+        const id = Date.now() + Math.random();
+        setFloatingReactions(prev => [...prev, { id, emoji }]);
+        setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2500);
+    }, []);
+
     // ── Initialization ───────────────────────────────────────────────────
     useEffect(() => {
         Animated.loop(
@@ -123,7 +129,10 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
 
             // 3. Event Listeners
             const updateParticipants = () => {
-                setParticipants([room.localParticipant, ...Array.from(room.participants.values())]);
+                if (!room) return;
+                const remoteMap = room.remoteParticipants || room.participants || new Map();
+                const remoteArray = Array.from(remoteMap.values());
+                setParticipants([room.localParticipant, ...remoteArray]);
             };
 
             room.on(RoomEvent.ParticipantConnected, (p) => {
@@ -167,12 +176,18 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
                 addLog("Camera e Microfono attivati.");
                 
                 // Get the video track media stream
-                const videoPub = room.localParticipant.getTrack(Track.Source.Camera);
+                const videoPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
                 if (videoPub && videoPub.videoTrack) {
                     addLog("Traccia video locale trovata.");
                     setLocalStream(videoPub.videoTrack.mediaStream);
                 } else {
                     addLog("⚠️ ATTENZIONE: Traccia video locale non trovata dopo enable.");
+                    // In some versions, it might be in videoTracks map
+                    const vt = Array.from(room.localParticipant.videoTrackPublications.values()).find(p => p.source === Track.Source.Camera);
+                    if (vt && vt.videoTrack) {
+                        addLog("Traccia video locale trovata (fallback).");
+                        setLocalStream(vt.videoTrack.mediaStream);
+                    }
                 }
             } catch (mediaErr) {
                 addLog(`❌ Errore Media: ${mediaErr.message}`);
@@ -219,6 +234,19 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
     }, [roomId, socket, fetchTokenAndConnect]);
 
     // ── Actions ──────────────────────────────────────────────────────────
+    const leaveCall = useCallback(async () => {
+        addLog("ABBANDONO CHIAMATA...");
+        if (lkRoom) {
+            try {
+                await lkRoom.disconnect();
+            } catch (e) {}
+            setLkRoom(null);
+        }
+        setLocalStream(null);
+        setRemoteStreams({});
+        onMinimize();
+    }, [lkRoom, onMinimize]);
+
     const toggleMic = () => {
         const next = !micOn;
         setMicOn(next);
@@ -248,11 +276,7 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
         }
     };
 
-    const onEmojiReaction = ({ emoji }) => {
-        const id = Date.now() + Math.random();
-        setFloatingReactions(prev => [...prev, { id, emoji }]);
-        setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2500);
-    };
+
 
     const sendChatMessage = () => {
         if (!chatDraft.trim()) return;
@@ -399,7 +423,7 @@ export default function CallScreen({ socket, roomId, user, onMinimize }) {
                 <TouchableOpacity onPress={() => setShowReactions(!showReactions)} style={styles.ctrlBtn}>
                     <Icon name="smile" size={20} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => onMinimize()} style={styles.hangupBtn}>
+                <TouchableOpacity onPress={() => leaveCall()} style={styles.hangupBtn}>
                     <Icon name="phone-off" size={20} color="#fff" />
                 </TouchableOpacity>
             </View>
