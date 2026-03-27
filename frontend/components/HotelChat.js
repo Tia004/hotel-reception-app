@@ -344,9 +344,23 @@ export default function HotelChat({
             e.preventDefault?.();
             e.stopPropagation?.();
         }
-        const x = e?.nativeEvent?.pageX || 400;
-        const y = e?.nativeEvent?.pageY || 200;
-        setMsgActionMenu({ id: m.id, x, y, isMine: m.sender === user.username, msg: m });
+        let x = 400, y = 200, isRightClick = e?.type === 'contextmenu';
+        
+        if (isRightClick) {
+            // "starting top right from click" -> the click is the top-right corner of the menu
+            x = e.nativeEvent.pageX;
+            y = e.nativeEvent.pageY;
+        } else if (e?.target && e.target.getBoundingClientRect) {
+            const rect = e.target.getBoundingClientRect();
+            // Recalled near the arrow, to the left of the arrow
+            x = rect.left;
+            y = rect.top;
+        } else if (e?.nativeEvent) {
+            x = e.nativeEvent.pageX;
+            y = e.nativeEvent.pageY;
+        }
+
+        setMsgActionMenu({ id: m.id, x, y, isMine: m.sender === user.username, msg: m, isRightClick });
         setHoveredMsg(m.id);
     };
 
@@ -355,8 +369,16 @@ export default function HotelChat({
             e.preventDefault?.();
             e.stopPropagation?.();
         }
-        const x = e?.nativeEvent?.pageX || 400;
-        const y = e?.nativeEvent?.pageY || 200;
+        let x = 400, y = 200;
+        if (e?.target && e.target.getBoundingClientRect) {
+            const rect = e.target.getBoundingClientRect();
+            // "center of the bar aligned with center of button"
+            x = rect.left + rect.width / 2;
+            y = rect.top;
+        } else if (e?.nativeEvent) {
+            x = e.nativeEvent.pageX;
+            y = e.nativeEvent.pageY;
+        }
         setEmojiPickerMsg({ id: m.id, x, y, msg: m });
         setHoveredMsg(m.id);
     };
@@ -1201,9 +1223,13 @@ export default function HotelChat({
                                     }}
                                     {...(Platform.OS === 'web' ? {
                                         onMouseEnter: () => setHoveredMsg(m.id),
-                                        onMouseLeave: () => { if (emojiPickerMsg !== m.id && msgActionMenu?.id !== m.id) setHoveredMsg(null); },
+                                        onMouseLeave: () => {
+                                            // Keep hover state if a menu for THIS message is open
+                                            if (emojiPickerMsg?.id === m.id || msgActionMenu?.id === m.id) return;
+                                            setHoveredMsg(null);
+                                        },
                                         onContextMenu: (e) => onMsgAction(m, e),
-                                        onDoubleClick: () => setReplyingTo(m)
+                                        onDoubleClick: () => { if (!isSelectMode) setReplyingTo(m); }
                                     } : {})}
                                 >
 
@@ -1219,7 +1245,8 @@ export default function HotelChat({
                                                 style={[
                                                     styles.reactionSideBtn,
                                                     isMine ? { left: -42 } : { right: -42 },
-                                                    hoveredBtn?.id === m.id && hoveredBtn?.type === 'REACTION' && { borderColor: '#C9A84C', backgroundColor: 'rgba(201,168,76,0.1)' }
+                                                    // Golden border and background on hover
+                                                    (hoveredBtn?.id === m.id && hoveredBtn?.type === 'REACTION') && { borderColor: '#C9A84C', backgroundColor: 'rgba(201,168,76,0.1)' }
                                                 ]}
                                                 onPress={(e) => onReactionClick(m, e)}
                                                 {...(Platform.OS === 'web' ? {
@@ -1227,7 +1254,11 @@ export default function HotelChat({
                                                     onMouseLeave: () => setHoveredBtn(null)
                                                 } : {})}
                                             >
-                                                <Icon name="smile" size={18} color={hoveredBtn?.id === m.id && hoveredBtn?.type === 'REACTION' ? "#C9A84C" : "#6E6960"} />
+                                                <Icon 
+                                                    name="smile" 
+                                                    size={hoveredBtn?.id === m.id && hoveredBtn?.type === 'REACTION' ? 22 : 18} 
+                                                    color={hoveredBtn?.id === m.id && hoveredBtn?.type === 'REACTION' ? "#C9A84C" : "#6E6960"} 
+                                                />
                                             </TouchableOpacity>
                                         )}
                                         {/* Caret / Dropdown Arrow (INSIDE BUBBLE) */}
@@ -1242,7 +1273,7 @@ export default function HotelChat({
                                                 <TouchableOpacity
                                                     style={[
                                                         styles.bubbleCaret,
-                                                        hoveredBtn?.id === m.id && hoveredBtn?.type === 'CARET' && { transform: [{ scale: 1.15 }] }
+                                                        hoveredBtn?.id === m.id && hoveredBtn?.type === 'CARET' && { transform: [{ scale: 1.25 }] }
                                                     ]}
                                                     onPress={(e) => {
                                                         e.stopPropagation();
@@ -1253,7 +1284,11 @@ export default function HotelChat({
                                                         onMouseLeave: () => setHoveredBtn(null)
                                                     } : {})}
                                                 >
-                                                    <Icon name="chevron-down" size={20} color={hoveredBtn?.id === m.id && hoveredBtn?.type === 'CARET' ? "#C9A84C" : "rgba(200,200,200,0.8)"} />
+                                                    <Icon 
+                                                        name="chevron-down" 
+                                                        size={hoveredBtn?.id === m.id && hoveredBtn?.type === 'CARET' ? 24 : 20} 
+                                                        color={hoveredBtn?.id === m.id && hoveredBtn?.type === 'CARET' ? "#C9A84C" : "rgba(200,200,200,0.8)"} 
+                                                    />
                                                 </TouchableOpacity>
                                             </View>
                                         )}
@@ -1472,98 +1507,10 @@ export default function HotelChat({
                                 <Icon name="send" size={16} color="#111" />
                             </TouchableOpacity>
                         ) : null}
-                    </View>
                 </View>
             </View>
-            }
-                {/* ── TOP-LEVEL CONTEXT MENUS ── */}
-
-                {/* EMOJI PICKER MENU */}
-                {emojiPickerMsg && (
-                    <View style={StyleSheet.absoluteFill}>
-                        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setEmojiPickerMsg(null)} />
-                        <View style={[
-                            styles.msgEmojiPicker,
-                            {
-                                position: 'absolute',
-                                // Centering: Bar is ~260px wide, so subtract 130px from click position
-                                left: Math.max(10, Math.min(emojiPickerMsg.x - 130, 1000)),
-                                top: Math.max(10, Math.min(emojiPickerMsg.y - 60, 800)),
-                                zIndex: 100000
-                            }
-                        ]}>
-                            {['❤️', '👍', '🔥', '👏', '😂', '😮'].map(emo => (
-                                <TouchableOpacity key={emo} onPress={() => { reactMessage(emojiPickerMsg.id, emo); setEmojiPickerMsg(null); }} style={{ padding: 8 }}>
-                                    <Text style={{ fontSize: 20 }}>{emo}</Text>
-                                </TouchableOpacity>
-                            ))}
-                            <View style={{ width: 1, backgroundColor: 'rgba(201,168,76,0.2)', marginHorizontal: 4, height: 24, alignSelf: 'center' }} />
-                            <TouchableOpacity onPress={() => { setFullPickerVisible(emojiPickerMsg.id); setEmojiPickerMsg(null); }} style={{ padding: 8 }}>
-                                <Icon name="plus" size={18} color="#C9A84C" />
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                )}
-
-                {/* MESSAGE ACTION MENU */}
-                {msgActionMenu && (
-                    <View style={StyleSheet.absoluteFill}>
-                        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setMsgActionMenu(null)} />
-                        <View style={[
-                            styles.msgActionMenu,
-                            {
-                                position: 'absolute',
-                                // Alignment: Align top-right of menu with source point
-                                left: Math.max(10, Math.min(msgActionMenu.x - 180, 1000)),
-                                top: Math.min(msgActionMenu.y, 800),
-                                zIndex: 99999
-                            }
-                        ]}>
-                            <TouchableOpacity style={styles.menuItem} onPress={() => { setReplyingTo(msgActionMenu.msg); setMsgActionMenu(null); }}>
-                                <Icon name="corner-up-left" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Rispondi</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.menuItem} onPress={() => {
-                                try { navigator.clipboard.writeText(msgActionMenu.msg.text || ''); } catch (e) { }
-                                setMsgActionMenu(null);
-                            }}>
-                                <Icon name="copy" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Copia testo</Text>
-                            </TouchableOpacity>
-
-                            <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
-
-                            <TouchableOpacity style={styles.menuItem} onPress={() => { saveMessage(msgActionMenu.msg); setMsgActionMenu(null); }}>
-                                <Icon name="bookmark" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Salva messaggio</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.menuItem} onPress={() => { setIsSelectMode(true); setSelectedMsgIds([msgActionMenu.id]); setMsgActionMenu(null); }}>
-                                <Icon name="check-square" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Seleziona</Text>
-                            </TouchableOpacity>
-
-                            <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
-
-                            <TouchableOpacity style={styles.menuItem} onPress={() => { setForwardTarget(msgActionMenu.msg); setMsgActionMenu(null); }}>
-                                <Icon name="share" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Inoltra</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.menuItem} onPress={() => {
-                                socket.emit('pin-message', { channelId: activeChannel.id, messageId: msgActionMenu.id });
-                                setMsgActionMenu(null);
-                            }}>
-                                <Icon name="pin" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Fissa messaggio</Text>
-                            </TouchableOpacity>
-
-                            {msgActionMenu.isMine && (
-                                <>
-                                    <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
-                                    <TouchableOpacity style={styles.menuItem} onPress={() => { setEditingMsg(msgActionMenu.msg); setDraft(msgActionMenu.msg.text); setMsgActionMenu(null); }}>
-                                        <Icon name="edit-2" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Modifica</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => { setDeleteTarget({ channelId: activeChannel.id, messageId: msgActionMenu.id }); setMsgActionMenu(null); }}>
-                                        <Icon name="trash-2" size={14} color="#FF4D4D" /><Text style={[styles.menuItemText, { color: '#FF4D4D' }]}>Elimina</Text>
-                                    </TouchableOpacity>
-                                </>
-                            )}
-                        </View>
-                    </View>
-                )}
+        </View>
+        }
 
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
@@ -1846,6 +1793,105 @@ export default function HotelChat({
                 socket={socket}
                 onLogout={onLogout}
             />
+
+            {/* ── TOP-LEVEL CONTEXT MENUS ── */}
+
+            {/* EMOJI PICKER MENU */}
+            {emojiPickerMsg && (
+                <View style={[StyleSheet.absoluteFill, { zIndex: 999999 }]}>
+                    <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setEmojiPickerMsg(null)} />
+                        <View style={[
+                        styles.msgEmojiPicker,
+                        {
+                            position: 'absolute',
+                            // Centering: Bar is ~260px wide, so subtract 130px from click position (which is now the button center)
+                            left: Math.max(10, Math.min(emojiPickerMsg.x - 130, 2000)),
+                            top: Math.max(10, Math.min(emojiPickerMsg.y - 65, 2000)),
+                            zIndex: 1000000
+                        }
+                    ]}>
+                        {['❤️', '👍', '🔥', '👏', '😂', '😮'].map(emo => (
+                            <TouchableOpacity
+                                key={emo}
+                                onPress={() => { reactMessage(emojiPickerMsg.id, emo); setEmojiPickerMsg(null); }}
+                                style={{ padding: 8 }}
+                                {...(Platform.OS === 'web' ? {
+                                    onMouseEnter: (e) => (e.target.style.transform = 'scale(1.3)'),
+                                    onMouseLeave: (e) => (e.target.style.transform = 'scale(1.0)')
+                                } : {})}
+                            >
+                                <Text style={{ fontSize: 20 }}>{emo}</Text>
+                            </TouchableOpacity>
+                        ))}
+                        <View style={{ width: 1, backgroundColor: 'rgba(201,168,76,0.2)', marginHorizontal: 4, height: 24, alignSelf: 'center' }} />
+                        <TouchableOpacity onPress={() => { setFullPickerVisible(emojiPickerMsg.id); setEmojiPickerMsg(null); }} style={{ padding: 8 }}>
+                            <Icon name="plus" size={18} color="#C9A84C" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
+
+            {/* MESSAGE ACTION MENU */}
+            {msgActionMenu && (
+                <View style={[StyleSheet.absoluteFill, { zIndex: 999999 }]}>
+                    <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setMsgActionMenu(null)} />
+                    <View style={[
+                        styles.msgActionMenu,
+                        {
+                            position: 'absolute',
+                            // If Right Click: top-right corner from X,Y -> menu is ~180px wide. 
+                            // So left is X - 180.
+                            // If Chevron Click: left of arrow -> left is X - 185 approx.
+                            left: Math.max(10, Math.min(msgActionMenu.isRightClick ? msgActionMenu.x - 180 : msgActionMenu.x - 185, 2000)),
+                            top: Math.min(msgActionMenu.y, 2000),
+                            zIndex: 1000000
+                        }
+                    ]}>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => { setReplyingTo(msgActionMenu.msg); setMsgActionMenu(null); }}>
+                            <Icon name="corner-up-left" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Rispondi</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => {
+                            try { navigator.clipboard.writeText(msgActionMenu.msg.text || ''); } catch (e) { }
+                            setMsgActionMenu(null);
+                        }}>
+                            <Icon name="copy" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Copia testo</Text>
+                        </TouchableOpacity>
+
+                        <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
+
+                        <TouchableOpacity style={styles.menuItem} onPress={() => { saveMessage(msgActionMenu.msg); setMsgActionMenu(null); }}>
+                            <Icon name="bookmark" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Salva messaggio</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => { setIsSelectMode(true); setSelectedMsgIds([msgActionMenu.id]); setMsgActionMenu(null); }}>
+                            <Icon name="check-square" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Seleziona</Text>
+                        </TouchableOpacity>
+
+                        <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
+
+                        <TouchableOpacity style={styles.menuItem} onPress={() => { setForwardTarget(msgActionMenu.msg); setMsgActionMenu(null); }}>
+                            <Icon name="share" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Inoltra</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => {
+                            socket.emit('pin-message', { channelId: activeChannel.id, messageId: msgActionMenu.id });
+                            setMsgActionMenu(null);
+                        }}>
+                            <Icon name="pin" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Fissa messaggio</Text>
+                        </TouchableOpacity>
+
+                        {msgActionMenu.isMine && (
+                            <>
+                                <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
+                                <TouchableOpacity style={styles.menuItem} onPress={() => { setEditingMsg(msgActionMenu.msg); setDraft(msgActionMenu.msg.text); setMsgActionMenu(null); }}>
+                                    <Icon name="edit-2" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Modifica</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => { setDeleteTarget({ channelId: activeChannel.id, messageId: msgActionMenu.id }); setMsgActionMenu(null); }}>
+                                    <Icon name="trash-2" size={14} color="#FF4D4D" /><Text style={[styles.menuItemText, { color: '#FF4D4D' }]}>Elimina</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+                    </View>
+                </View>
+            )}
 
         </View>
     );

@@ -98,6 +98,7 @@ export default function CallScreen({
     };
 
     const [lkRoom, setLkRoom] = useState(null);
+    const lkRoomRef = useRef(null);
     const [participants, setParticipants] = useState([]); // Array of Participant objects
     const [localStream, setLocalStream] = useState(null);
     const [remoteStreams, setRemoteStreams] = useState({}); // identity -> MediaStream
@@ -228,6 +229,7 @@ export default function CallScreen({
                 console.error("Media Error:", mediaErr);
             }
             
+            lkRoomRef.current = room;
             setLkRoom(room);
             updateParticipants();
             setConnecting(false);
@@ -243,13 +245,15 @@ export default function CallScreen({
     }, [roomId, user.username, lkUrl, API_BASE]);
 
     useEffect(() => {
-        if (!lkRoom?.localParticipant) return;
-        lkRoom.localParticipant.setMicrophoneEnabled(micOn);
+        const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
+        if (!lp) return;
+        lp.setMicrophoneEnabled(micOn);
     }, [micOn, lkRoom]);
 
     useEffect(() => {
-        if (!lkRoom?.localParticipant) return;
-        lkRoom.localParticipant.setCameraEnabled(camOn);
+        const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
+        if (!lp) return;
+        lp.setCameraEnabled(camOn);
     }, [camOn, lkRoom]);
 
     useEffect(() => {
@@ -266,8 +270,9 @@ export default function CallScreen({
     }, [deafenOn, participants, lkRoom]);
 
     useEffect(() => {
-        if (!lkRoom?.localParticipant) return;
-        lkRoom.localParticipant.setScreenShareEnabled(screenShareOn, { audio: true })
+        const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
+        if (!lp) return;
+        lp.setScreenShareEnabled(screenShareOn, { audio: true })
             .catch(err => addLog(`❌ Errore sync Screen Share: ${err.message}`));
     }, [screenShareOn, lkRoom]);
 
@@ -276,11 +281,10 @@ export default function CallScreen({
         fetchTokenAndConnect();
 
         const onEmoji = ({ emoji }) => onEmojiReaction({ emoji });
-
         socket.on('emoji-reaction', onEmoji);
 
         const handleBeforeUnload = () => {
-            if (lkRoom) lkRoom.disconnect();
+            if (lkRoomRef.current) lkRoomRef.current.disconnect();
         };
         if (Platform.OS === 'web') {
             window.addEventListener('beforeunload', handleBeforeUnload);
@@ -290,36 +294,35 @@ export default function CallScreen({
             if (Platform.OS === 'web') {
                 window.removeEventListener('beforeunload', handleBeforeUnload);
             }
-            if (lkRoom) {
-                lkRoom.disconnect();
+            if (lkRoomRef.current) {
+                lkRoomRef.current.disconnect();
+                lkRoomRef.current = null;
                 setLkRoom(null);
             }
             socket.off('emoji-reaction', onEmoji);
         };
-    }, [roomId, socket, fetchTokenAndConnect, lkRoom]);
+    }, [roomId, socket, fetchTokenAndConnect]); // Loop broken: lkRoom removed from deps
 
     // ── Actions ──────────────────────────────────────────────────────────
     const leaveCall = useCallback(async () => {
         addLog("ABBANDONO CHIAMATA...");
-        if (lkRoom) {
+        const room = lkRoomRef.current || lkRoom;
+        if (room) {
             try {
-                // Publish hand-raise off before leaving
                 if (isHandRaised) {
                     const data = JSON.stringify({ type: 'hand-raise', raised: false });
-                    lkRoom.localParticipant.publishData(new TextEncoder().encode(data));
+                    room.localParticipant.publishData(new TextEncoder().encode(data));
                 }
-                await lkRoom.disconnect();
+                await room.disconnect();
             } catch (e) {}
+            lkRoomRef.current = null;
             setLkRoom(null);
         }
         setLocalStream(null);
         setRemoteStreams({});
-        if (onClose) {
-            onClose();
-        } else {
-            onMinimize();
-        }
-    }, [lkRoom, onMinimize, onClose]);
+        if (onClose) onClose();
+        else onMinimize();
+    }, [lkRoom, isHandRaised, onMinimize, onClose]);
 
     const toggleMic = () => {
         setMicOn(!micOn);
@@ -339,9 +342,10 @@ export default function CallScreen({
         setFloatingReactions(prev => [...prev, { id, emoji }]);
         setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2500);
         
-        if (lkRoom) {
+        const room = lkRoomRef.current || lkRoom;
+        if (room?.localParticipant) {
             const data = JSON.stringify({ type: 'reaction', emoji });
-            lkRoom.localParticipant.publishData(new TextEncoder().encode(data));
+            room.localParticipant.publishData(new TextEncoder().encode(data));
         }
     };
 
@@ -356,11 +360,11 @@ export default function CallScreen({
     const toggleHandRaise = () => {
         const next = !handRaised;
         setHandRaised(next);
-        if (lkRoom) {
+        const room = lkRoomRef.current || lkRoom;
+        if (room?.localParticipant) {
             const data = JSON.stringify({ type: 'hand-raise', raised: next });
-            lkRoom.localParticipant.publishData(new TextEncoder().encode(data));
-            // Update local state map so UI shows the icon immediately on my tile
-            setHandsRaised(prev => ({ ...prev, [lkRoom.localParticipant.identity]: next }));
+            room.localParticipant.publishData(new TextEncoder().encode(data));
+            setHandsRaised(prev => ({ ...prev, [room.localParticipant.identity]: next }));
         }
     };
 
@@ -376,10 +380,11 @@ export default function CallScreen({
     };
 
     const switchDevice = async (kind, deviceId) => {
-        if (!lkRoom) return;
+        const room = lkRoomRef.current || lkRoom;
+        if (!room) return;
         try {
             addLog(`Switching ${kind} to ${deviceId}...`);
-            await lkRoom.switchActiveDevice(kind, deviceId);
+            await room.switchActiveDevice(kind, deviceId);
             if (kind === 'audioinput') setSelectedAudioInput(deviceId);
             if (kind === 'audiooutput') setSelectedAudioOutput(deviceId);
             if (kind === 'videoinput') setSelectedVideoInput(deviceId);
