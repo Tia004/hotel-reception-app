@@ -234,8 +234,15 @@ export default function CallScreen({
             updateParticipants();
             setConnecting(false);
             
-            // Fetch initial devices
-            refreshDevices();
+            // Fetch initial devices and select currently used ones
+            refreshDevices().then(() => {
+                const audioTrack = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+                const videoTrack = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+                if (audioTrack) setSelectedAudioInput(audioTrack.getDeviceId());
+                if (videoTrack) setSelectedVideoInput(videoTrack.getDeviceId());
+                // Note: setSinkId for output might not be available on all browsers/LiveKit versions
+                // but we can at least track what our state says
+            });
         } catch (err) {
             addLog(`❌ ERRORE CRITICO: ${err.message}`);
             console.error('[LiveKit] Connection Failed:', err);
@@ -608,16 +615,18 @@ export default function CallScreen({
                             <Icon name={micOn ? "mic" : "mic-off"} size={20} color="#fff" />
                         </TouchableOpacity>
                         <TouchableOpacity 
-                            onPress={() => { 
+                            onPress={(e) => { 
                                 if (showMicMenu) {
                                     setShowMicMenu(false);
                                 } else {
-                                    micBtnRef.current?.measure((x, y, width, height, pageX, pageY) => {
-                                        setMenuPos({ x: pageX + width / 2, y: pageY });
-                                        setShowMicMenu(true);
-                                        setShowCamMenu(false);
-                                        refreshDevices();
-                                    });
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+                                    setShowMicMenu(true);
+                                    setShowCamMenu(true); // Logic update: ensure others are off
+                                    setShowCamMenu(false);
+                                    setShowReactions(false);
+                                    setEmojiPickerVisible(false);
+                                    refreshDevices();
                                 }
                             }} 
                             style={[styles.ctrlBtnChevron, !micOn && styles.ctrlBtnOff]}
@@ -635,16 +644,17 @@ export default function CallScreen({
                             <Icon name={camOn ? "video" : "video-off"} size={20} color="#fff" />
                         </TouchableOpacity>
                         <TouchableOpacity 
-                            onPress={() => { 
+                            onPress={(e) => { 
                                 if (showCamMenu) {
                                     setShowCamMenu(false);
                                 } else {
-                                    camBtnRef.current?.measure((x, y, width, height, pageX, pageY) => {
-                                        setMenuPos({ x: pageX + width / 2, y: pageY });
-                                        setShowCamMenu(true);
-                                        setShowMicMenu(false);
-                                        refreshDevices();
-                                    });
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+                                    setShowCamMenu(true);
+                                    setShowMicMenu(false);
+                                    setShowReactions(false);
+                                    setEmojiPickerVisible(false);
+                                    refreshDevices();
                                 }
                             }} 
                             style={[styles.ctrlBtnChevron, !camOn && styles.ctrlBtnOff]}
@@ -664,7 +674,21 @@ export default function CallScreen({
                         <Icon name="hand" size={20} color={handRaised ? "#fff" : "#fff"} />
                     </TouchableOpacity>
 
-                    <TouchableOpacity onPress={() => setShowReactions(!showReactions)} style={styles.ctrlBtn}>
+                    <TouchableOpacity 
+                        onPress={(e) => {
+                            if (showReactions) {
+                                setShowReactions(false);
+                            } else {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+                                setShowReactions(true);
+                                setShowMicMenu(false);
+                                setShowCamMenu(false);
+                                setEmojiPickerVisible(false);
+                            }
+                        }} 
+                        style={styles.ctrlBtn}
+                    >
                         <Icon name="smile" size={20} color="#fff" />
                     </TouchableOpacity>
                     
@@ -685,106 +709,137 @@ export default function CallScreen({
                 </TouchableOpacity>
             )}
 
-            {/* Emoji Popup */}
-            {showReactions && !fullScreen && (
-                <View style={styles.reactionsPopup}>
-                    <View style={styles.reactionsRow}>
-                        {EMOJI_REACTIONS.map(e => (
-                            <TouchableOpacity key={e} onPress={() => sendReaction(e)}>
-                                <Text style={{ fontSize: 24 }}>{e}</Text>
-                            </TouchableOpacity>
-                        ))}
-                        <TouchableOpacity 
-                            onPress={() => {
-                                setShowReactions(false);
-                                setEmojiPickerVisible(true);
-                            }} 
-                            style={[styles.ctrlBtn, { width: 32, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' }]}
-                        >
-                            <Icon name="plus" size={16} color="#fff" />
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            )}
+            {/* HOVER MENUS MOVED TO TOP-LEVEL ABSOLUTE VIEW (SEE BELOW) */}
 
-            {/* Full Emoji Picker Modal */}
-            <Modal visible={emojiPickerVisible} transparent animationType="fade" onRequestClose={() => setEmojiPickerVisible(false)}>
-                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setEmojiPickerVisible(false)}>
-                    <TouchableOpacity activeOpacity={1} style={styles.fullEmojiBox}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                            <Text style={styles.menuLabel}>SELEZIONA EMOJI</Text>
-                            <TouchableOpacity onPress={() => setEmojiPickerVisible(false)}>
-                                <Icon name="x" size={18} color="#B9BBBE" />
-                            </TouchableOpacity>
-                        </View>
-                        <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                            {['❤️','😂','😮','😢','🔥','👏','🙌','👍','🎉','✨','💯','🚀','⭐','✅','❌','🤔','👀','🤝','🙏','💪'].map(e => (
-                                <TouchableOpacity key={e} onPress={() => { sendReaction(e); setEmojiPickerVisible(false); }}>
-                                    <Text style={{ fontSize: 28 }}>{e}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    </TouchableOpacity>
-                </TouchableOpacity>
-            </Modal>
-
-            {/* Device Menus (Discord Style) */}
-            {(showMicMenu || showCamMenu) && (
+            {/* TOP-LEVEL MENUS PORTAL */}
+            {(showMicMenu || showCamMenu || showReactions || emojiPickerVisible) && (
                 <View style={styles.deviceMenuContainer}>
                     <TouchableOpacity 
                         style={StyleSheet.absoluteFill} 
-                        onPress={() => { setShowMicMenu(false); setShowCamMenu(false); }} 
+                        activeOpacity={1}
+                        onPress={() => { 
+                            setShowMicMenu(false); 
+                            setShowCamMenu(false); 
+                            setShowReactions(false);
+                            setEmojiPickerVisible(false);
+                        }} 
                     />
-                    <View style={[
-                        styles.deviceMenu, 
-                        { left: menuPos.x - 110, bottom: (Dimensions.get('window').height - menuPos.y) + 10 }
-                    ]}>
-                        <Text style={styles.menuLabel}>{showMicMenu ? "INPUT AUDIO" : "CAMERA"}</Text>
-                        <ScrollView style={styles.menuScroll}>
-                            {(showMicMenu ? audioInputs : videoInputs).map(d => (
+                    
+                    {/* Reactions Bar Contextual */}
+                    {showReactions && (
+                        <View style={[
+                            styles.reactionsPopup,
+                            { 
+                                left: menuPos.x - 130, // 260px width
+                                bottom: (Dimensions.get('window').height - menuPos.y) + 12 
+                            }
+                        ]}>
+                            <View style={styles.reactionsRow}>
+                                {EMOJI_REACTIONS.map(e => (
+                                    <TouchableOpacity key={e} onPress={() => sendReaction(e)}>
+                                        <Text style={{ fontSize: 24 }}>{e}</Text>
+                                    </TouchableOpacity>
+                                ))}
                                 <TouchableOpacity 
-                                    key={d.deviceId} 
-                                    style={styles.menuItem}
-                                    onPress={() => switchDevice(showMicMenu ? 'audioinput' : 'videoinput', d.deviceId)}
+                                    onPress={(e) => {
+                                        // Position the next picker relative to the plus button
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+                                        setShowReactions(false);
+                                        setEmojiPickerVisible(true);
+                                    }} 
+                                    style={[styles.ctrlBtn, { width: 32, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' }]}
                                 >
-                                    <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
-                                    {(d.deviceId === selectedAudioInput || d.deviceId === selectedVideoInput) && (
-                                        <Icon name="check" size={14} color="#5865F2" />
-                                    )}
+                                    <Icon name="plus" size={16} color="#fff" />
                                 </TouchableOpacity>
-                            ))}
-                            {showMicMenu && (
-                                <>
-                                    <View style={styles.menuDivider} />
-                                    <Text style={styles.menuLabel}>OUTPUT AUDIO</Text>
-                                    {audioOutputs.map(d => (
-                                        <TouchableOpacity 
-                                            key={d.deviceId} 
-                                            style={styles.menuItem}
-                                            onPress={() => switchDevice('audiooutput', d.deviceId)}
-                                        >
-                                            <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
-                                            {d.deviceId === selectedAudioOutput && (
-                                                <Icon name="check" size={14} color="#5865F2" />
-                                            )}
-                                        </TouchableOpacity>
-                                    ))}
-                                </>
-                            )}
-                        </ScrollView>
-                        <View style={styles.menuDivider} />
-                        <TouchableOpacity 
-                            style={styles.menuSettingsBtn} 
-                            onPress={() => {
-                                setShowMicMenu(false);
-                                setShowCamMenu(false);
-                                onOpenSettings && onOpenSettings();
-                            }}
-                        >
-                            <Text style={styles.menuSettingsText}>Impostazioni</Text>
-                            <Icon name="settings" size={14} color="#B9BBBE" />
-                        </TouchableOpacity>
-                    </View>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Contextual Emoji Picker (Replaces Modal) */}
+                    {emojiPickerVisible && (
+                        <View style={[
+                            styles.fullEmojiBox,
+                            {
+                                left: menuPos.x - 125,
+                                bottom: (Dimensions.get('window').height - menuPos.y) + 12,
+                                width: 250,
+                                maxHeight: 300,
+                                zIndex: 1000000
+                            }
+                        ]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                                <Text style={styles.menuLabel}>SELEZIONA EMOJI</Text>
+                                <TouchableOpacity onPress={() => setEmojiPickerVisible(false)}>
+                                    <Icon name="x" size={18} color="#B9BBBE" />
+                                </TouchableOpacity>
+                            </View>
+                            <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                                {['❤️','😂','😮','😢','🔥','👏','🙌','👍','🎉','✨','💯','🚀','⭐','✅','❌','🤔','👀','🤝','🙏','💪'].map(e => (
+                                    <TouchableOpacity key={e} onPress={() => { sendReaction(e); setEmojiPickerVisible(false); }}>
+                                        <Text style={{ fontSize: 28 }}>{e}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    )}
+
+                    {/* Mic/Camera Device Menus */}
+                    {(showMicMenu || showCamMenu) && (
+                        <View style={[
+                            styles.deviceMenu, 
+                            { 
+                                left: menuPos.x - 110, 
+                                bottom: (Dimensions.get('window').height - menuPos.y) + 12 
+                            }
+                        ]}>
+                            <Text style={styles.menuLabel}>{showMicMenu ? "INPUT AUDIO" : "CAMERA"}</Text>
+                            <ScrollView style={styles.menuScroll}>
+                                {(showMicMenu ? audioInputs : videoInputs).map(d => (
+                                    <TouchableOpacity 
+                                        key={d.deviceId} 
+                                        style={styles.menuItem}
+                                        onPress={() => switchDevice(showMicMenu ? 'audioinput' : 'videoinput', d.deviceId)}
+                                    >
+                                        <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
+                                        {(d.deviceId === (showMicMenu ? selectedAudioInput : selectedVideoInput)) && (
+                                            <Icon name="check" size={14} color="#C9A84C" />
+                                        )}
+                                    </TouchableOpacity>
+                                ))}
+                                {showMicMenu && (
+                                    <>
+                                        <View style={styles.menuDivider} />
+                                        <Text style={styles.menuLabel}>OUTPUT AUDIO</Text>
+                                        {audioOutputs.map(d => (
+                                            <TouchableOpacity 
+                                                key={d.deviceId} 
+                                                style={styles.menuItem}
+                                                onPress={() => switchDevice('audiooutput', d.deviceId)}
+                                            >
+                                                <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
+                                                {d.deviceId === selectedAudioOutput && (
+                                                    <Icon name="check" size={14} color="#C9A84C" />
+                                                )}
+                                            </TouchableOpacity>
+                                        ))}
+                                    </>
+                                )}
+                            </ScrollView>
+                            <View style={styles.menuDivider} />
+                            <TouchableOpacity 
+                                style={styles.menuSettingsBtn} 
+                                onPress={() => {
+                                    setShowMicMenu(false);
+                                    setShowCamMenu(false);
+                                    onOpenSettings && onOpenSettings();
+                                }}
+                            >
+                                <Text style={styles.menuSettingsText}>Impostazioni</Text>
+                                <Icon name="settings" size={14} color="#B9BBBE" />
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
             )}
         </View>
@@ -906,8 +961,32 @@ const styles = StyleSheet.create({
     chatInputRow: { height: 60, flexDirection: 'row', padding: 10, gap: 10 },
     chatInput: { flex: 1, backgroundColor: '#1C1A16', borderRadius: 10, paddingHorizontal: 15, color: '#fff' },
     chatSendBtn: { width: 40, height: 40, backgroundColor: '#C9A84C', borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-    reactionsPopup: { position: 'absolute', bottom: 150, alignSelf: 'center', backgroundColor: '#2B2D31', padding: 15, borderRadius: 30 },
-    reactionsRow: { flexDirection: 'row', gap: 15 },
+    reactionsPopup: { 
+        position: 'absolute', 
+        backgroundColor: '#2B2D31', 
+        padding: 12, 
+        borderRadius: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 10,
+        zIndex: 1000000
+    },
+    reactionsRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    fullEmojiBox: {
+        position: 'absolute',
+        backgroundColor: '#18191C',
+        borderRadius: 12,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 10,
+        zIndex: 1000001
+    },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
     floatingEmojiContainer: { ...StyleSheet.absoluteFillObject, zIndex: 1000 },
     floatingEmoji: { fontSize: 40, alignSelf: 'center' },
     debugPanel: { position: 'absolute', top: 70, left: 10, right: 10, bottom: 120, backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: 10, padding: 10, zIndex: 2000, borderWidth: 1, borderColor: '#C9A84C' },
