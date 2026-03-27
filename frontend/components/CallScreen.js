@@ -309,7 +309,7 @@ export default function CallScreen({
         const room = lkRoomRef.current || lkRoom;
         if (room) {
             try {
-                if (isHandRaised) {
+                if (handRaised) {
                     const data = JSON.stringify({ type: 'hand-raise', raised: false });
                     room.localParticipant.publishData(new TextEncoder().encode(data));
                 }
@@ -322,7 +322,7 @@ export default function CallScreen({
         setRemoteStreams({});
         if (onClose) onClose();
         else onMinimize();
-    }, [lkRoom, isHandRaised, onMinimize, onClose]);
+    }, [lkRoom, handRaised, onMinimize, onClose]);
 
     const toggleMic = () => {
         setMicOn(!micOn);
