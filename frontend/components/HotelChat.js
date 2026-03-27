@@ -214,7 +214,6 @@ export default function HotelChat({
 
     // UI States
     const [profileVisible, setProfileVisible] = useState(false);
-    const [settingsVisible, setSettingsVisible] = useState(false);
     const [infoModal, setInfoModal] = useState(null);
     const [alertMsg, setAlertMsg] = useState('');
     const [deleteTarget, setDeleteTarget] = useState(null);
