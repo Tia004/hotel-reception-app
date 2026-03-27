@@ -135,7 +135,7 @@ const PollMessage = ({ msg, onVote, user }) => {
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────
-export default function HotelChat({ 
+export default function HotelChat({
     socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId, onOpenDebug,
     micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn, screenShareOn, setScreenShareOn,
     settingsVisible, setSettingsVisible
@@ -343,18 +343,35 @@ export default function HotelChat({
             e.preventDefault?.();
             e.stopPropagation?.();
         }
-        const x = e?.nativeEvent?.pageX || 400; // Fallback
+        const x = e?.nativeEvent?.pageX || 400;
         const y = e?.nativeEvent?.pageY || 200;
         setMsgActionMenu({ id: m.id, x, y, isMine: m.sender === user.username, msg: m });
         setHoveredMsg(m.id);
     };
 
-    // Forward message function
+    const onReactionClick = (m, e) => {
+        if (e) {
+            e.preventDefault?.();
+            e.stopPropagation?.();
+        }
+        const x = e?.nativeEvent?.pageX || 400;
+        const y = e?.nativeEvent?.pageY || 200;
+        setEmojiPickerMsg({ id: m.id, x, y, msg: m });
+        setHoveredMsg(m.id);
+    };
+
+    const saveMessage = (m) => {
+        setSavedChats(prev => {
+            if (prev.find(s => s.id === m.id)) return prev;
+            return [{ ...m, channelId: activeChannel.id }, ...prev];
+        });
+    };
+
     const forwardMessage = (targetChannel) => {
         if (!forwardTarget || !socket) return;
         if (targetChannel.id === activeChannel?.id) {
             setForwardTarget(null);
-            return; // Cannot forward to same channel
+            return;
         }
         socket.emit('channel-message', {
             channelId: targetChannel.id,
@@ -531,23 +548,6 @@ export default function HotelChat({
                 </TouchableOpacity>
             </Modal>
 
-            {/* Delete Alert */}
-            <Modal visible={!!deleteTarget} transparent animationType="fade">
-                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setDeleteTarget(null)}>
-                    <View style={styles.infoModalBox}>
-                        <Text style={[styles.infoTitle, { color: '#E57373' }]}>ELIMINA MESSAGGIO?</Text>
-                        <Text style={styles.infoLabel}>L'azione è irreversibile per tutti i membri del canale.</Text>
-                        <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
-                            <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 8, alignItems: 'center' }} onPress={() => setDeleteTarget(null)}>
-                                <Text style={{ color: '#C8C4B8', fontWeight: '700' }}>ANNULLA</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={{ flex: 1, backgroundColor: '#E57373', padding: 12, borderRadius: 8, alignItems: 'center' }} onPress={() => { deleteMessage(deleteTarget); setDeleteTarget(null); }}>
-                                <Text style={{ color: '#FFF', fontWeight: '900' }}>ELIMINA</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </TouchableOpacity>
-            </Modal>
             {selectedImage && (() => {
                 const channelMsgs = messages[activeChannel.id] || [];
                 const allImages = channelMsgs
@@ -593,13 +593,31 @@ export default function HotelChat({
         });
 
         socket.on('channel-message', ({ channelId, message }) => {
-            setMessages(p => ({ ...p, [channelId]: [...(p[channelId] || []), message] }));
+            setMessages(p => {
+                const current = p[channelId] || [];
+                // 1. Direct ID match (already handled by server or other client)
+                if (current.some(m => m.id === message.id)) return p;
+                
+                // 2. Resolve Optimistic Message (Match by sender and content)
+                if (message.sender === user.username) {
+                    const optIndex = current.findIndex(m => 
+                        m.isOptimistic && 
+                        (m.text === message.text && m.imageData === message.imageData && m.gifUrl === message.gifUrl)
+                    );
+                    if (optIndex !== -1) {
+                        const updated = [...current];
+                        updated[optIndex] = message; // Replace temp with real server-confirmed message
+                        return { ...p, [channelId]: updated };
+                    }
+                }
+                
+                return { ...p, [channelId]: [...current, message] };
+            });
+
             // Push notification when sender is not current user
             if (message.sender !== user.username) {
                 const ch = ALL_CHANNELS.find(c => c.id === channelId);
                 const hotel = HOTELS.find(h => channelId.startsWith(h.id));
-                // Force notification even if tab is visible if it's a direct mention or important?
-                // For now, let's just make it more reliable.
                 showMessageNotification(message.sender, ch?.name || channelId, hotel?.name || '', message.text || '🎵 Vocale');
             }
         });
@@ -733,11 +751,34 @@ export default function HotelChat({
         if (!socket || !activeChannel) return;
 
         if (editingMsg) {
+            const oldText = editingMsg.text;
+            // Optimistic update for edit
+            setMessages(p => ({
+                ...p,
+                [activeChannel.id]: (p[activeChannel.id] || []).map(m => m.id === editingMsg.id ? { ...m, text, edited: true } : m)
+            }));
+            
             socket.emit('edit-message', { channelId: activeChannel.id, messageId: editingMsg.id, text });
             setEditingMsg(null);
             setDraft('');
             return;
         }
+
+        const tempId = `temp-${Date.now()}`;
+        const optimisticMsg = {
+            id: tempId,
+            sender: user.username,
+            text, imageData, gifUrl, poll, voiceData, voiceDuration,
+            timestamp: Date.now(),
+            replyTo: replyingTo ? replyingTo.id : null,
+            isOptimistic: true // marker if needed
+        };
+
+        // Optimistic update for new message
+        setMessages(p => ({
+            ...p,
+            [activeChannel.id]: [...(p[activeChannel.id] || []), optimisticMsg]
+        }));
 
         socket.emit('channel-message', {
             channelId: activeChannel.id,
@@ -878,17 +919,28 @@ export default function HotelChat({
 
             {!!deleteTarget && (
                 <Modal visible transparent animationType="fade" onRequestClose={() => setDeleteTarget(null)}>
-                    <TouchableOpacity style={styles.modalOverlay} onPress={() => setDeleteTarget(null)}>
+                    <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setDeleteTarget(null)}>
                         <TouchableOpacity activeOpacity={1} style={styles.infoModalBox}>
-                            <Icon name="trash" size={28} color="#E57373" style={{ alignSelf: 'center', marginBottom: 12 }} />
+                            <Icon name="trash-2" size={28} color="#E57373" style={{ alignSelf: 'center', marginBottom: 12 }} />
                             <Text style={[styles.infoTitle, { textAlign: 'center', color: '#E57373' }]}>Elimina Messaggio</Text>
                             <Text style={[styles.hotelDesc, { textAlign: 'center' }]}>Vuoi eliminare questo messaggio? L'azione è irreversibile.</Text>
                             <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
-                                <TouchableOpacity style={[styles.createBtn, { flex: 1, backgroundColor: '#2A2217' }]} onPress={() => setDeleteTarget(null)}>
+                                <TouchableOpacity style={[styles.createBtn, { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)' }]} onPress={() => setDeleteTarget(null)}>
                                     <Text style={[styles.createBtnTxt, { color: '#C8C4B8' }]}>Annulla</Text>
                                 </TouchableOpacity>
-                                <TouchableOpacity style={[styles.createBtn, { flex: 1, backgroundColor: '#ED4245' }]} onPress={() => {
-                                    socket.emit('delete-message', { channelId: activeChannel.id, messageId: deleteTarget });
+                                <TouchableOpacity style={[styles.createBtn, { flex: 1, backgroundColor: '#E57373' }]} onPress={() => {
+                                    // Use target from object if available, otherwise fallback to target itself if it's an ID
+                                    const channelId = deleteTarget.channelId || activeChannel.id;
+                                    const messageId = deleteTarget.messageId || (typeof deleteTarget === 'string' ? deleteTarget : null);
+                                    
+                                    if (messageId) {
+                                        socket.emit('delete-message', { channelId, messageId });
+                                        // Optimistic delete
+                                        setMessages(p => ({
+                                            ...p,
+                                            [channelId]: (p[channelId] || []).filter(m => m.id !== messageId)
+                                        }));
+                                    }
                                     setDeleteTarget(null);
                                 }}>
                                     <Text style={styles.createBtnTxt}>Elimina</Text>
@@ -1009,8 +1061,8 @@ export default function HotelChat({
                                                     <Icon name="speaker" size={14} color="#6E6960" />
                                                 </TouchableOpacity>
                                             </View>
-                                            <TouchableOpacity 
-                                                style={styles.voiceDisconnectBtn} 
+                                            <TouchableOpacity
+                                                style={styles.voiceDisconnectBtn}
                                                 onPress={() => socket.emit('leave-room', { roomId: currentRoomId })}
                                             >
                                                 <Icon name="phone-off" size={18} color="#ED4245" />
@@ -1021,14 +1073,14 @@ export default function HotelChat({
 
                                 {inCall && (
                                     <View style={styles.actionButtonsBar}>
-                                        <TouchableOpacity 
-                                            style={[styles.userActionBtn, camOn && styles.userActionBtnActive]} 
+                                        <TouchableOpacity
+                                            style={[styles.userActionBtn, camOn && styles.userActionBtnActive]}
                                             onPress={() => setCamOn(!camOn)}
                                         >
                                             <Icon name={camOn ? "video-filled" : "video-off"} size={18} color={camOn ? "#23A559" : "#B5BAC1"} />
                                         </TouchableOpacity>
-                                        <TouchableOpacity 
-                                            style={[styles.userActionBtn, screenShareOn && styles.userActionBtnActive]} 
+                                        <TouchableOpacity
+                                            style={[styles.userActionBtn, screenShareOn && styles.userActionBtnActive]}
                                             onPress={() => setScreenShareOn(!screenShareOn)}
                                         >
                                             <Icon name="screen-share" size={18} color={screenShareOn ? "#23A559" : "#B5BAC1"} />
@@ -1190,7 +1242,7 @@ export default function HotelChat({
                                                     styles.reactionSideBtn,
                                                     isMine ? { left: -42 } : { right: -42 }
                                                 ]}
-                                                onPress={() => onReactionClick(m)}
+                                                onPress={(e) => onReactionClick(m, e)}
                                             >
                                                 <Icon name="smile" size={18} color="#6E6960" />
                                             </TouchableOpacity>
@@ -1198,13 +1250,13 @@ export default function HotelChat({
                                         {/* Caret / Dropdown Arrow (INSIDE BUBBLE) */}
                                         {hoveredMsg === m.id && !isSelectMode && (
                                             <View style={styles.bubbleCaretWrap}>
-                                                <LinearGradient 
-                                                    colors={[isMine ? '#28241C' : '#1C1A16', 'transparent']} 
-                                                    start={{ x: 1, y: 0 }} 
-                                                    end={{ x: 0, y: 1 }} 
-                                                    style={styles.bubbleCaretGradient} 
+                                                <LinearGradient
+                                                    colors={[isMine ? '#28241C' : '#1C1A16', 'transparent']}
+                                                    start={{ x: 1, y: 0 }}
+                                                    end={{ x: 0, y: 1 }}
+                                                    style={styles.bubbleCaretGradient}
                                                 />
-                                                <TouchableOpacity 
+                                                <TouchableOpacity
                                                     style={styles.bubbleCaret}
                                                     onPress={(e) => {
                                                         e.stopPropagation();
@@ -1229,19 +1281,7 @@ export default function HotelChat({
                                                 </TouchableOpacity>
                                             </View>
                                         )}
-                                        {/* EMOJI PICKER (Quick Reactions) */}
-                                        {emojiPickerMsg === m.id && (
-                                            <View style={[styles.msgEmojiPicker, isMine ? styles.msgEmojiPickerLeft : styles.msgEmojiPickerRight]}>
-                                                {['❤️', '👍', '🔥', '👏', '😂', '😮'].map(emo => (
-                                                    <TouchableOpacity key={emo} onPress={() => { reactMessage(m.id, emo); setEmojiPickerMsg(null); }} style={{ padding: 6 }}>
-                                                        <Text style={{ fontSize: 18 }}>{emo}</Text>
-                                                    </TouchableOpacity>
-                                                ))}
-                                                <TouchableOpacity onPress={() => { setFullPickerVisible(m.id); setEmojiPickerMsg(null); }} style={{ padding: 6 }}>
-                                                    <Icon name="plus" size={16} color="#C9A84C" />
-                                                </TouchableOpacity>
-                                            </View>
-                                        )}
+                                        {/* HOVER MENUS MOVED TO TOP-LEVEL ABSOLUTE VIEW */}
                                         {/* END HOVER MENUS */}
                                         {/* Reply bubble — clickable, gold left border */}
                                         {repliedMsg && (
@@ -1446,50 +1486,88 @@ export default function HotelChat({
                 </View>
             </View>
             }
-            {/* ── Message Action Menu (Floating Dropdown) ── */}
-            {msgActionMenu && (
-                <View style={[StyleSheet.absoluteFill, { zIndex: 99999 }]} pointerEvents="box-none">
-                    <TouchableOpacity 
-                        style={StyleSheet.absoluteFill} 
-                        activeOpacity={1} 
-                        onPress={() => setMsgActionMenu(null)} 
-                    />
-                    <View style={[
-                        styles.msgActionMenu, 
-                        { 
-                            position: 'absolute',
-                            left: msgActionMenu.x + 10, 
-                            top: Math.min(msgActionMenu.y, 600) // Basic adaptive positioning
-                        }
-                    ]}>
-                        <TouchableOpacity style={styles.menuItem} onPress={() => { setReplyingTo(msgActionMenu.msg); setMsgActionMenu(null); }}>
-                            <Icon name="corner-up-left" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Rispondi</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.menuItem} onPress={() => { Clipboard.setString(msgActionMenu.msg.text); setMsgActionMenu(null); }}>
-                            <Icon name="copy" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Copia testo</Text>
-                        </TouchableOpacity>
-                        {msgActionMenu.isMine && (
-                            <TouchableOpacity style={styles.menuItem} onPress={() => { setEditingMsg(msgActionMenu.msg); setDraft(msgActionMenu.msg.text); setMsgActionMenu(null); }}>
-                                <Icon name="edit-2" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Modifica</Text>
-                            </TouchableOpacity>
-                        )}
-                        <TouchableOpacity style={styles.menuItem} onPress={() => { setForwardTarget(msgActionMenu.msg); setMsgActionMenu(null); }}>
-                            <Icon name="share" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Inoltra</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.menuItem} onPress={() => { 
-                            socket.emit('pin-message', { channelId: activeChannel.id, messageId: msgActionMenu.id });
-                            setMsgActionMenu(null); 
-                        }}>
-                            <Icon name="pin" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Fissa messaggio</Text>
-                        </TouchableOpacity>
-                        {msgActionMenu.isMine && (
-                            <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => { setDeleteTarget({ channelId: activeChannel.id, messageId: msgActionMenu.id }); setMsgActionMenu(null); }}>
-                                <Icon name="trash-2" size={14} color="#FF4D4D" /><Text style={[styles.menuItemText, { color: '#FF4D4D' }]}>Elimina</Text>
-                            </TouchableOpacity>
-                        )}
+                {/* ── TOP-LEVEL CONTEXT MENUS ── */}
+
+                {/* EMOJI PICKER MENU */}
+                {emojiPickerMsg && (
+                    <View style={StyleSheet.absoluteFill}>
+                        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setEmojiPickerMsg(null)} />
+                        <View style={[
+                            styles.msgEmojiPicker,
+                            {
+                                position: 'absolute',
+                                left: Math.max(10, Math.min(emojiPickerMsg.x - 100, 1000)),
+                                top: Math.max(10, Math.min(emojiPickerMsg.y - 50, 800)),
+                                zIndex: 100000
+                            }
+                        ]}>
+                            {['❤️', '👍', '🔥', '👏', '😂', '😮'].map(emo => (
+                                <TouchableOpacity key={emo} onPress={() => { reactMessage(emojiPickerMsg.id, emo); setEmojiPickerMsg(null); }} style={{ padding: 8 }}>
+                                    <Text style={{ fontSize: 20 }}>{emo}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
                     </View>
-                </View>
-            )}
+                )}
+
+                {/* MESSAGE ACTION MENU */}
+                {msgActionMenu && (
+                    <View style={StyleSheet.absoluteFill}>
+                        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setMsgActionMenu(null)} />
+                        <View style={[
+                            styles.msgActionMenu,
+                            {
+                                position: 'absolute',
+                                left: Math.min(msgActionMenu.x + 10, 1000),
+                                top: Math.min(msgActionMenu.y, 800),
+                                zIndex: 99999
+                            }
+                        ]}>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => { setReplyingTo(msgActionMenu.msg); setMsgActionMenu(null); }}>
+                                <Icon name="corner-up-left" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Rispondi</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => {
+                                try { navigator.clipboard.writeText(msgActionMenu.msg.text || ''); } catch (e) { }
+                                setMsgActionMenu(null);
+                            }}>
+                                <Icon name="copy" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Copia testo</Text>
+                            </TouchableOpacity>
+
+                            <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
+
+                            <TouchableOpacity style={styles.menuItem} onPress={() => { saveMessage(msgActionMenu.msg); setMsgActionMenu(null); }}>
+                                <Icon name="bookmark" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Salva messaggio</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => { setIsSelectMode(true); setSelectedMsgIds([msgActionMenu.id]); setMsgActionMenu(null); }}>
+                                <Icon name="check-square" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Seleziona</Text>
+                            </TouchableOpacity>
+
+                            <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
+
+                            <TouchableOpacity style={styles.menuItem} onPress={() => { setForwardTarget(msgActionMenu.msg); setMsgActionMenu(null); }}>
+                                <Icon name="share" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Inoltra</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => {
+                                socket.emit('pin-message', { channelId: activeChannel.id, messageId: msgActionMenu.id });
+                                setMsgActionMenu(null);
+                            }}>
+                                <Icon name="pin" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Fissa messaggio</Text>
+                            </TouchableOpacity>
+
+                            {msgActionMenu.isMine && (
+                                <>
+                                    <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
+                                    <TouchableOpacity style={styles.menuItem} onPress={() => { setEditingMsg(msgActionMenu.msg); setDraft(msgActionMenu.msg.text); setMsgActionMenu(null); }}>
+                                        <Icon name="edit-2" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Modifica</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => { setDeleteTarget({ channelId: activeChannel.id, messageId: msgActionMenu.id }); setMsgActionMenu(null); }}>
+                                        <Icon name="trash-2" size={14} color="#FF4D4D" /><Text style={[styles.menuItemText, { color: '#FF4D4D' }]}>Elimina</Text>
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                        </View>
+                    </View>
+                )}
 
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
@@ -1638,26 +1716,26 @@ export default function HotelChat({
                                     </View>
                                 )}
 
-                                    <View style={styles.hotelInfoBox}>
-                                        <Text style={styles.hotelInfoTitle}>DIAGNOSTICA</Text>
-                                        <TouchableOpacity style={styles.createBtn} onPress={() => onOpenDebug?.()}>
-                                            <Icon name="activity" size={16} color="#111" />
-                                            <Text style={styles.createBtnTxt}>TEST HANDSHAKE WebRTC</Text>
-                                        </TouchableOpacity>
-                                        <Text style={styles.hotelInfoDesc}>Usa questo strumento per testare la connessione 1v1 se le chiamate normali non funzionano.</Text>
-                                    </View>
+                                <View style={styles.hotelInfoBox}>
+                                    <Text style={styles.hotelInfoTitle}>DIAGNOSTICA</Text>
+                                    <TouchableOpacity style={styles.createBtn} onPress={() => onOpenDebug?.()}>
+                                        <Icon name="activity" size={16} color="#111" />
+                                        <Text style={styles.createBtnTxt}>TEST HANDSHAKE WebRTC</Text>
+                                    </TouchableOpacity>
+                                    <Text style={styles.hotelInfoDesc}>Usa questo strumento per testare la connessione 1v1 se le chiamate normali non funzionano.</Text>
+                                </View>
 
-                                    <View style={styles.hotelInfoBox}>
-                                        <Text style={styles.hotelInfoTitle}>INFORMAZIONI HOTEL</Text>
-                                        <Text style={styles.hotelInfoName}>{activeHotel ? activeHotel.name : 'Seleziona un hotel'}</Text>
-                                        <Text style={styles.hotelInfoDesc}>{activeHotel ? activeHotel.desc : ''}</Text>
-                                        {activeHotel && (
-                                            <TouchableOpacity style={styles.contactRow}>
-                                                <Icon name="phone" size={14} color="#C9A84C" />
-                                                <Text style={styles.contactTxt}>{activeHotel.contact}</Text>
-                                            </TouchableOpacity>
-                                        )}
-                                    </View>
+                                <View style={styles.hotelInfoBox}>
+                                    <Text style={styles.hotelInfoTitle}>INFORMAZIONI HOTEL</Text>
+                                    <Text style={styles.hotelInfoName}>{activeHotel ? activeHotel.name : 'Seleziona un hotel'}</Text>
+                                    <Text style={styles.hotelInfoDesc}>{activeHotel ? activeHotel.desc : ''}</Text>
+                                    {activeHotel && (
+                                        <TouchableOpacity style={styles.contactRow}>
+                                            <Icon name="phone" size={14} color="#C9A84C" />
+                                            <Text style={styles.contactTxt}>{activeHotel.contact}</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
                             </ScrollView>
                         </View>
                     </Animated.View>
