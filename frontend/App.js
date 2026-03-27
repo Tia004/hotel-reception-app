@@ -5,6 +5,7 @@ import LoginScreen from './components/LoginScreen';
 import CallScreen from './components/CallScreen';
 import HotelChat from './components/HotelChat';
 import CallDebug from './components/CallDebug';
+import MediaSettings from './components/MediaSettings';
 import io from 'socket.io-client';
 import { Icon } from './components/Icons';
 import SplashScreen from './components/SplashScreen';
@@ -35,6 +36,7 @@ export default function App() {
   const [camOn, setCamOn] = useState(true);
   const [deafenOn, setDeafenOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
 
   const socketRef = useRef(null);
   const [socketReady, setSocketReady] = useState(false);
@@ -355,6 +357,8 @@ export default function App() {
               sidebarVisible={sidebarVisible}
               onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
               availableRooms={availableRooms}
+              settingsVisible={settingsVisible}
+              setSettingsVisible={setSettingsVisible}
               onJoinRoom={(roomId) => {
                 socketRef.current?.emit('join-room', { roomId });
                 setCurrentRoom(roomId);
@@ -391,6 +395,7 @@ export default function App() {
                 onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
                 onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
                 onMinimize={() => setCallPiP(true)}
+                onOpenSettings={() => setSettingsVisible(true)}
                 micOn={micOn}
                 setMicOn={setMicOn}
                 camOn={camOn}
@@ -420,6 +425,7 @@ export default function App() {
                 onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
                 isPiP={true}
                 onExpand={() => setCallPiP(false)}
+                onOpenSettings={() => setSettingsVisible(true)}
                 micOn={micOn}
                 setMicOn={setMicOn}
                 camOn={camOn}
@@ -442,6 +448,11 @@ export default function App() {
               />
            </View>
         )}
+         <MediaSettings 
+            visible={settingsVisible} 
+            onClose={() => setSettingsVisible(false)} 
+            user={user} 
+         />
       </Animated.View>
     </ErrorBoundary>
   );

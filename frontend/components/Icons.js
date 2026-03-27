@@ -35,6 +35,7 @@ const ICON_MAP = {
     'phone-forward': { pack: 'ionicons', name: 'call-sharp' },
     // UI Navigation
     'chevron-down': { pack: 'feather', name: 'chevron-down' },
+    'chevron-up': { pack: 'feather', name: 'chevron-up' },
     'chevron-right': { pack: 'feather', name: 'chevron-right' },
     'chevron-left': { pack: 'feather', name: 'chevron-left' },
     'arrow-down': { pack: 'feather', name: 'chevron-down' },

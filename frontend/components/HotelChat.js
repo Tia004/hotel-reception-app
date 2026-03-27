@@ -12,12 +12,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
-    TextInput, Image, Dimensions, Platform, Modal, Animated, FlatList, LayoutAnimation
+    TextInput, Image, Dimensions, Platform, Modal, Animated, FlatList, LayoutAnimation, Clipboard
 } from 'react-native';
 import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from './Icons';
-import MediaSettings from './MediaSettings';
+import io from 'socket.io-client';
 import UserProfileCard, { statusColor } from './UserProfileCard';
 import ImageLightbox from './ImageLightbox';
 import { VoiceRecorderButton, VoiceMessageBubble } from './VoiceMessage';
@@ -137,7 +137,8 @@ const PollMessage = ({ msg, onVote, user }) => {
 // ─── Main Component ───────────────────────────────────────────────────────
 export default function HotelChat({ 
     socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId, onOpenDebug,
-    micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn, screenShareOn, setScreenShareOn
+    micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn, screenShareOn, setScreenShareOn,
+    settingsVisible, setSettingsVisible
 }) {
     // Definizione locale dei dati emoji per evitare ReferenceError
     const GSA_EMOJI_DATA = [
@@ -338,6 +339,17 @@ export default function HotelChat({
         }));
     }, [draft, replyingTo, activeChannel?.id]);
 
+    const onMsgAction = (m, e) => {
+        if (e) {
+            e.preventDefault?.();
+            e.stopPropagation?.();
+        }
+        const x = e?.nativeEvent?.pageX || 400; // Fallback
+        const y = e?.nativeEvent?.pageY || 200;
+        setMsgActionMenu({ id: m.id, x, y, isMine: m.sender === user.username, msg: m });
+        setHoveredMsg(m.id);
+    };
+
     // Forward message function
     const forwardMessage = (targetChannel) => {
         if (!forwardTarget || !socket) return;
@@ -395,7 +407,7 @@ export default function HotelChat({
 
             {/* Profile & Settings Modals */}
             <UserProfileCard visible={profileVisible} onClose={() => setProfileVisible(false)} user={user} socket={socket} onLogout={onLogout} />
-            <MediaSettings visible={settingsVisible} onClose={() => setSettingsVisible(false)} user={user} />
+
 
             {/* Poll Creator */}
             <Modal visible={pollVisible} transparent animationType="slide">
@@ -1158,6 +1170,12 @@ export default function HotelChat({
                                             setSelectedMsgIds(prev => prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]);
                                         }
                                     }}
+                                    {...(Platform.OS === 'web' ? {
+                                        onMouseEnter: () => setHoveredMsg(m.id),
+                                        onMouseLeave: () => { if (emojiPickerMsg !== m.id && msgActionMenu?.id !== m.id) setHoveredMsg(null); },
+                                        onContextMenu: (e) => onMsgAction(m, e),
+                                        onDoubleClick: () => setReplyingTo(m)
+                                    } : {})}
                                 >
 
                                     <View
@@ -1165,16 +1183,6 @@ export default function HotelChat({
                                             styles.bubbleWrap,
                                             isMine ? styles.bubbleWrapMine : styles.bubbleWrapOther
                                         ]}
-                                        {...(Platform.OS === 'web' ? {
-                                            onMouseEnter: () => setHoveredMsg(m.id),
-                                            onMouseLeave: () => { if (emojiPickerMsg !== m.id && msgActionMenu !== m.id) setHoveredMsg(null); },
-                                            onContextMenu: (e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                setEmojiPickerMsg(m.id);
-                                            },
-                                            onDoubleClick: () => setReplyingTo(m)
-                                        } : {})}
                                     >
                                         {/* Lateral Reaction Trigger (WhatsApp Style) - Moved inside Wrap for stability */}
                                         {hoveredMsg === m.id && !isSelectMode && (
@@ -1185,7 +1193,7 @@ export default function HotelChat({
                                                 ]}
                                                 onPress={() => onReactionClick(m)}
                                             >
-                                                <Icon name="emoji" size={18} color="#6E6960" />
+                                                <Icon name="smile" size={18} color="#6E6960" />
                                             </TouchableOpacity>
                                         )}
                                         {/* Caret / Dropdown Arrow (INSIDE BUBBLE) */}
@@ -1266,7 +1274,7 @@ export default function HotelChat({
                                                 if (isSelectMode) {
                                                     setSelectedMsgIds(p => p.includes(msgId) ? p.filter(id => id !== msgId) : [...p, msgId]);
                                                 } else {
-                                                    socket.emit('vote-poll', { channelId: activeChannel.id, messageId: msgId, optionIndex: optIdx });
+                                                    socket.emit('channel-poll-vote', { channelId: activeChannel.id, messageId: msgId, optionIndex: optIdx });
                                                 }
                                             }} />}
                                             {m.imageData && (
@@ -1439,6 +1447,51 @@ export default function HotelChat({
                 </View>
             </View>
             }
+            {/* ── Message Action Menu (Floating Dropdown) ── */}
+            {msgActionMenu && (
+                <View style={[StyleSheet.absoluteFill, { zIndex: 99999 }]} pointerEvents="box-none">
+                    <TouchableOpacity 
+                        style={StyleSheet.absoluteFill} 
+                        activeOpacity={1} 
+                        onPress={() => setMsgActionMenu(null)} 
+                    />
+                    <View style={[
+                        styles.msgActionMenu, 
+                        { 
+                            position: 'absolute',
+                            left: msgActionMenu.x + 10, 
+                            top: Math.min(msgActionMenu.y, 600) // Basic adaptive positioning
+                        }
+                    ]}>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => { setReplyingTo(msgActionMenu.msg); setMsgActionMenu(null); }}>
+                            <Icon name="corner-up-left" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Rispondi</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => { Clipboard.setString(msgActionMenu.msg.text); setMsgActionMenu(null); }}>
+                            <Icon name="copy" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Copia testo</Text>
+                        </TouchableOpacity>
+                        {msgActionMenu.isMine && (
+                            <TouchableOpacity style={styles.menuItem} onPress={() => { setEditingMsg(msgActionMenu.msg); setDraft(msgActionMenu.msg.text); setMsgActionMenu(null); }}>
+                                <Icon name="edit-2" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Modifica</Text>
+                            </TouchableOpacity>
+                        )}
+                        <TouchableOpacity style={styles.menuItem} onPress={() => { setForwardTarget(msgActionMenu.msg); setMsgActionMenu(null); }}>
+                            <Icon name="share" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Inoltra</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => { 
+                            socket.emit('pin-message', { channelId: activeChannel.id, messageId: msgActionMenu.id });
+                            setMsgActionMenu(null); 
+                        }}>
+                            <Icon name="pin" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Fissa messaggio</Text>
+                        </TouchableOpacity>
+                        {msgActionMenu.isMine && (
+                            <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={() => { setDeleteTarget({ channelId: activeChannel.id, messageId: msgActionMenu.id }); setMsgActionMenu(null); }}>
+                                <Icon name="trash-2" size={14} color="#FF4D4D" /><Text style={[styles.menuItemText, { color: '#FF4D4D' }]}>Elimina</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </View>
+            )}
+
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
             {!hideChatColumn && (
@@ -1745,10 +1798,7 @@ export default function HotelChat({
                 socket={socket}
                 onLogout={onLogout}
             />
-            <MediaSettings
-                visible={settingsVisible}
-                onClose={() => setSettingsVisible(false)}
-            />
+
         </View>
     );
 }
@@ -1763,7 +1813,9 @@ const styles = StyleSheet.create({
     signalBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 2, marginRight: 6 },
     signalBar: { width: 3, borderRadius: 1 },
 
-    msgActionMenu: { position: 'absolute', top: 28, right: 0, backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 12, zIndex: 99999, width: 180, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 20, overflow: 'hidden' },
+    msgActionMenu: { position: 'absolute', backgroundColor: '#1C1A12', borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', borderRadius: 12, zIndex: 99999, width: 180, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.6, shadowRadius: 20, overflow: 'hidden' },
+    menuItem: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+    menuItemText: { color: '#E8E4D8', fontSize: 13, fontWeight: '500' },
     msgActionMenuLeft: { right: 'auto', left: 0 },
     msgActionMenuRight: { right: 0, left: 'auto' },
 

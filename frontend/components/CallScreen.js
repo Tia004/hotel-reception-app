@@ -50,12 +50,13 @@ function FloatingEmoji({ emoji, onComplete }) {
 export default function CallScreen({ 
     socket, roomId, user, onMinimize, onClose, 
     micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn,
-    screenShareOn, setScreenShareOn
+    screenShareOn, setScreenShareOn, onOpenSettings
 }) {
     // ── UI States ────────────────────────────────────────────────────────
     const [loading, setLoading] = useState(true);
     // micOn, camOn, deafenOn, screenShareOn moved to props
     const [handRaised, setHandRaised] = useState(false);
+    const [handsRaised, setHandsRaised] = useState({}); // identity -> boolean
     const [activeTab, setActiveTab] = useState('video'); // 'video' | 'participants'
     const [chatVisible, setChatVisible] = useState(false);
     const [chatMessages, setChatMessages] = useState([]);
@@ -189,6 +190,8 @@ export default function CallScreen({
                 const data = JSON.parse(new TextDecoder().decode(payload));
                 if (data.type === 'reaction') {
                     onEmojiReaction({ emoji: data.emoji });
+                } else if (data.type === 'hand-raise') {
+                    setHandsRaised(prev => ({ ...prev, [participant.identity]: data.raised }));
                 }
             });
 
@@ -298,6 +301,11 @@ export default function CallScreen({
         addLog("ABBANDONO CHIAMATA...");
         if (lkRoom) {
             try {
+                // Publish hand-raise off before leaving
+                if (isHandRaised) {
+                    const data = JSON.stringify({ type: 'hand-raise', raised: false });
+                    lkRoom.localParticipant.publishData(new TextEncoder().encode(data));
+                }
                 await lkRoom.disconnect();
             } catch (e) {}
             setLkRoom(null);
@@ -341,6 +349,17 @@ export default function CallScreen({
 
     const toggleScreenShare = () => {
         setScreenShareOn(!screenShareOn);
+    };
+
+    const toggleHandRaise = () => {
+        const next = !handRaised;
+        setHandRaised(next);
+        if (lkRoom) {
+            const data = JSON.stringify({ type: 'hand-raise', raised: next });
+            lkRoom.localParticipant.publishData(new TextEncoder().encode(data));
+            // Update local state map so UI shows the icon immediately on my tile
+            setHandsRaised(prev => ({ ...prev, [lkRoom.localParticipant.identity]: next }));
+        }
     };
 
     const refreshDevices = async () => {
@@ -434,6 +453,11 @@ export default function CallScreen({
                                 {isScreen ? " (Schermo)" : ""}
                             </Text>
                         </View>
+                        {handsRaised[participant?.identity] && (
+                            <View style={[styles.statusIconRed, { backgroundColor: '#C9A84C', marginRight: 4 }]}>
+                                <Icon name="hand" size={10} color="#111" />
+                            </View>
+                        )}
                         {isMuted && !isScreen && (
                             <View style={styles.statusIconRed}>
                                 <Icon name="mic-off" size={10} color="#fff" />
@@ -607,7 +631,12 @@ export default function CallScreen({
                             <Icon name={micOn ? "mic" : "mic-off"} size={20} color="#fff" />
                         </TouchableOpacity>
                         <TouchableOpacity 
-                            onPress={() => { setShowMicMenu(!showMicMenu); setShowCamMenu(false); }} 
+                            onPress={() => { 
+                                const next = !showMicMenu;
+                                setShowMicMenu(next); 
+                                setShowCamMenu(false); 
+                                if (next) refreshDevices();
+                            }} 
                             style={[styles.ctrlBtnChevron, !micOn && styles.ctrlBtnOff]}
                         >
                             <Icon name="chevron-up" size={12} color="#fff" />
@@ -619,7 +648,12 @@ export default function CallScreen({
                             <Icon name={camOn ? "video" : "video-off"} size={20} color="#fff" />
                         </TouchableOpacity>
                         <TouchableOpacity 
-                            onPress={() => { setShowCamMenu(!showCamMenu); setShowMicMenu(false); }} 
+                            onPress={() => { 
+                                const next = !showCamMenu;
+                                setShowCamMenu(next); 
+                                setShowMicMenu(false); 
+                                if (next) refreshDevices();
+                            }} 
                             style={[styles.ctrlBtnChevron, !camOn && styles.ctrlBtnOff]}
                         >
                             <Icon name="chevron-up" size={12} color="#fff" />
@@ -628,6 +662,13 @@ export default function CallScreen({
 
                     <TouchableOpacity onPress={toggleScreenShare} style={[styles.ctrlBtn, screenShareOn && styles.ctrlBtnActive]}>
                         <Icon name="monitor" size={20} color="#fff" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                        style={[styles.ctrlBtn, handRaised && styles.ctrlBtnActive]} 
+                        onPress={toggleHandRaise}
+                    >
+                        <Icon name="hand" size={20} color={handRaised ? "#fff" : "#fff"} />
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={() => setShowReactions(!showReactions)} style={styles.ctrlBtn}>
@@ -706,7 +747,14 @@ export default function CallScreen({
                             )}
                         </ScrollView>
                         <View style={styles.menuDivider} />
-                        <TouchableOpacity style={styles.menuSettingsBtn} onPress={onMinimize}>
+                        <TouchableOpacity 
+                            style={styles.menuSettingsBtn} 
+                            onPress={() => {
+                                setShowMicMenu(false);
+                                setShowCamMenu(false);
+                                onOpenSettings && onOpenSettings();
+                            }}
+                        >
                             <Text style={styles.menuSettingsText}>Impostazioni</Text>
                             <Icon name="settings" size={14} color="#B9BBBE" />
                         </TouchableOpacity>
@@ -765,8 +813,12 @@ const styles = StyleSheet.create({
         borderColor: '#C9A84C'
     },
     showOthersTxt: { color: '#C9A84C', fontWeight: 'bold', fontSize: 12 },
-    tile: { backgroundColor: '#2B2D31', borderRadius: 16, overflow: 'hidden', position: 'relative', borderWidth: 2, borderColor: 'transparent' },
-    tileGrid: { width: Platform.OS === 'web' ? '18%' : 150, aspectRatio: 1, margin: 5 },
+    tile: { backgroundColor: '#2B2D31', borderRadius: 12, overflow: 'hidden', position: 'relative', borderWidth: 2, borderColor: 'transparent' },
+    tileGrid: { 
+        width: Platform.OS === 'web' ? '31.5%' : '47.5%', 
+        aspectRatio: 1.3, // Discord-style rectangles
+        margin: 5 
+    },
     tileSmall: { width: 140, height: 90 },
     tileLarge: { flex: 1 },
     exitFullScreenBtn: {
