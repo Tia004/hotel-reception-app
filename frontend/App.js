@@ -279,6 +279,12 @@ export default function App() {
                 onChannelClick={null}
                 currentRoomId={currentRoom}
                 onOpenDebug={() => setShowDebugCall(true)}
+                onLeaveRoom={() => {
+                  socketRef.current?.emit('leave-room', { roomId: currentRoom });
+                  setCurrentRoom(null);
+                  setCallPiP(false);
+                  setMobileView('chat');
+                }}
                 micOn={micOn}
                 setMicOn={setMicOn}
                 camOn={camOn}
@@ -372,6 +378,12 @@ export default function App() {
               onChannelClick={handleChannelClick}
               currentRoomId={currentRoom}
               onOpenDebug={() => setShowDebugCall(true)}
+              onLeaveRoom={() => {
+                socketRef.current?.emit('leave-room', { roomId: currentRoom });
+                setCurrentRoom(null);
+                setCallPiP(false);
+                setMobileView('chat');
+              }}
               micOn={micOn}
               setMicOn={setMicOn}
               camOn={camOn}

@@ -13,29 +13,32 @@ const EMOJI_REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏', '🙌
 function FloatingEmoji({ emoji, onComplete }) {
     const yAnim = useRef(new Animated.Value(0)).current;
     const opacity = useRef(new Animated.Value(1)).current;
+    const { width, height } = Dimensions.get('window');
 
     useEffect(() => {
         Animated.parallel([
             Animated.timing(yAnim, {
-                toValue: -300 - Math.random() * 100,
-                duration: 2500,
+                toValue: -height * 0.6,
+                duration: 3000,
                 useNativeDriver: true
             }),
             Animated.timing(opacity, {
                 toValue: 0,
-                duration: 2500,
+                duration: 3000,
                 useNativeDriver: true
             })
         ]).start(onComplete);
     }, []);
 
-    const xPos = useRef(Math.random() * (Dimensions.get('window').width - 100) + 50).current;
+    const xPos = useRef(width / 2 - 20 + (Math.random() * 60 - 30)).current; // Center with slight variance
 
     return (
         <Animated.Text 
             style={[
                 styles.floatingEmoji, 
                 { 
+                    position: 'absolute',
+                    bottom: 120,
                     left: xPos,
                     transform: [{ translateY: yAnim }], 
                     opacity 
@@ -57,10 +60,6 @@ export default function CallScreen({
     // micOn, camOn, deafenOn, screenShareOn moved to props
     const [handRaised, setHandRaised] = useState(false);
     const [handsRaised, setHandsRaised] = useState({}); // identity -> boolean
-    const [activeTab, setActiveTab] = useState('video'); // 'video' | 'participants'
-    const [chatVisible, setChatVisible] = useState(false);
-    const [chatMessages, setChatMessages] = useState([]);
-    const [chatDraft, setChatDraft] = useState('');
     const [showReactions, setShowReactions] = useState(false);
     const [floatingReactions, setFloatingReactions] = useState([]);
     const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
@@ -81,6 +80,10 @@ export default function CallScreen({
     const [selectedAudioInput, setSelectedAudioInput] = useState(null);
     const [selectedAudioOutput, setSelectedAudioOutput] = useState(null);
     const [selectedVideoInput, setSelectedVideoInput] = useState(null);
+    const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+
+    const micBtnRef = useRef(null);
+    const camBtnRef = useRef(null);
 
     const getParticipantColor = (identity) => {
         const colors = [
@@ -272,29 +275,28 @@ export default function CallScreen({
         if (!socket || !roomId) return;
         fetchTokenAndConnect();
 
-        const onChatMsg = (msg) => {
-            setChatMessages(prev => [...prev, msg]);
-            setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
-        };
         const onEmoji = ({ emoji }) => onEmojiReaction({ emoji });
 
-        socket.on('chat-message', onChatMsg);
         socket.on('emoji-reaction', onEmoji);
-        socket.emit('room-chat-history', { roomId });
-        socket.on('room-chat-history', ({ messages: hist }) => {
-            if (hist) setChatMessages(hist);
-        });
+
+        const handleBeforeUnload = () => {
+            if (lkRoom) lkRoom.disconnect();
+        };
+        if (Platform.OS === 'web') {
+            window.addEventListener('beforeunload', handleBeforeUnload);
+        }
 
         return () => {
+            if (Platform.OS === 'web') {
+                window.removeEventListener('beforeunload', handleBeforeUnload);
+            }
             if (lkRoom) {
                 lkRoom.disconnect();
                 setLkRoom(null);
             }
-            socket.off('chat-message', onChatMsg);
             socket.off('emoji-reaction', onEmoji);
-            socket.off('room-chat-history');
         };
-    }, [roomId, socket, fetchTokenAndConnect]);
+    }, [roomId, socket, fetchTokenAndConnect, lkRoom]);
 
     // ── Actions ──────────────────────────────────────────────────────────
     const leaveCall = useCallback(async () => {
@@ -390,12 +392,6 @@ export default function CallScreen({
 
 
 
-    const sendChatMessage = () => {
-        if (!chatDraft.trim()) return;
-        const msg = { sender: user.username, text: chatDraft, time: new Date() };
-        socket.emit('chat-message', { roomId, ...msg });
-        setChatDraft('');
-    };
 
     // ── Helper ───────────────────────────────────────────────────────────
     const getParticipantStream = (p) => {
@@ -428,14 +424,14 @@ export default function CallScreen({
                 style={[
                     styles.tile, 
                     size === 'grid' ? styles.tileGrid : (size === 'focus' ? styles.tileLarge : styles.tileSmall),
-                    { backgroundColor: bgColor }
+                    { backgroundColor: bgColor, borderRadius: 12 }
                 ]}
             >
                 {hasVideo && stream ? (
                     <RTCView 
                         streamURL={stream.toURL?.() || (Platform.OS === 'web' ? stream : '')} 
                         style={styles.rtc} 
-                        objectFit="contain"
+                        objectFit="cover"
                         mirror={isLocal && !isScreen}
                     />
                 ) : (
@@ -454,8 +450,8 @@ export default function CallScreen({
                             </Text>
                         </View>
                         {handsRaised[participant?.identity] && (
-                            <View style={[styles.statusIconRed, { backgroundColor: '#C9A84C', marginRight: 4 }]}>
-                                <Icon name="hand" size={10} color="#111" />
+                            <View style={[styles.statusIconRed, { backgroundColor: '#C9A84C', marginRight: 4, padding: 3 }]}>
+                                <Icon name="hand" size={14} color="#111" />
                             </View>
                         )}
                         {isMuted && !isScreen && (
@@ -507,9 +503,6 @@ export default function CallScreen({
                     </View>
                     <TouchableOpacity onPress={() => setShowDebug(!showDebug)} style={{ marginRight: 10 }}>
                         <Icon name="terminal" size={18} color={showDebug ? "#C9A84C" : "#E8E4D8"} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setChatVisible(!chatVisible)} style={styles.reactionBtn}>
-                        <Icon name="message-square" size={18} color={chatVisible ? "#C9A84C" : "#E8E4D8"} />
                     </TouchableOpacity>
                 </View>
             )}
@@ -586,31 +579,6 @@ export default function CallScreen({
                 )}
             </View>
 
-            {/* Chat Panel */}
-            {chatVisible && !fullScreen && (
-                <View style={styles.chatPanel}>
-                    <ScrollView ref={chatScrollRef} style={styles.chatScroll}>
-                        {(chatMessages || []).map((msg, i) => (
-                            <View key={i} style={[styles.chatMsg, msg?.sender === user.username && styles.chatMsgMine]}>
-                                <Text style={styles.chatMsgSender}>{msg?.sender || '?'}</Text>
-                                <Text style={styles.chatMsgText}>{msg?.text || ''}</Text>
-                            </View>
-                        ))}
-                    </ScrollView>
-                    <View style={styles.chatInputRow}>
-                        <TextInput
-                            style={styles.chatInput}
-                            placeholder="Messaggio..."
-                            value={chatDraft}
-                            onChangeText={setChatDraft}
-                        />
-                        <TouchableOpacity onPress={sendChatMessage} style={styles.chatSendBtn}>
-                            <Icon name="send" size={16} color="#111" />
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            )}
-
             {/* Debug Panel */}
             {showDebug && (
                 <View style={styles.debugPanel}>
@@ -627,15 +595,25 @@ export default function CallScreen({
             {!fullScreen ? (
                 <View style={styles.controls}>
                     <View style={styles.controlGroup}>
-                        <TouchableOpacity onPress={toggleMic} style={[styles.ctrlBtn, !micOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}>
+                        <TouchableOpacity 
+                            ref={micBtnRef}
+                            onPress={toggleMic} 
+                            style={[styles.ctrlBtn, !micOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}
+                        >
                             <Icon name={micOn ? "mic" : "mic-off"} size={20} color="#fff" />
                         </TouchableOpacity>
                         <TouchableOpacity 
                             onPress={() => { 
-                                const next = !showMicMenu;
-                                setShowMicMenu(next); 
-                                setShowCamMenu(false); 
-                                if (next) refreshDevices();
+                                if (showMicMenu) {
+                                    setShowMicMenu(false);
+                                } else {
+                                    micBtnRef.current?.measure((x, y, width, height, pageX, pageY) => {
+                                        setMenuPos({ x: pageX + width / 2, y: pageY });
+                                        setShowMicMenu(true);
+                                        setShowCamMenu(false);
+                                        refreshDevices();
+                                    });
+                                }
                             }} 
                             style={[styles.ctrlBtnChevron, !micOn && styles.ctrlBtnOff]}
                         >
@@ -644,15 +622,25 @@ export default function CallScreen({
                     </View>
 
                     <View style={styles.controlGroup}>
-                        <TouchableOpacity onPress={toggleCam} style={[styles.ctrlBtn, !camOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}>
+                        <TouchableOpacity 
+                            ref={camBtnRef}
+                            onPress={toggleCam} 
+                            style={[styles.ctrlBtn, !camOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}
+                        >
                             <Icon name={camOn ? "video" : "video-off"} size={20} color="#fff" />
                         </TouchableOpacity>
                         <TouchableOpacity 
                             onPress={() => { 
-                                const next = !showCamMenu;
-                                setShowCamMenu(next); 
-                                setShowMicMenu(false); 
-                                if (next) refreshDevices();
+                                if (showCamMenu) {
+                                    setShowCamMenu(false);
+                                } else {
+                                    camBtnRef.current?.measure((x, y, width, height, pageX, pageY) => {
+                                        setMenuPos({ x: pageX + width / 2, y: pageY });
+                                        setShowCamMenu(true);
+                                        setShowMicMenu(false);
+                                        refreshDevices();
+                                    });
+                                }
                             }} 
                             style={[styles.ctrlBtnChevron, !camOn && styles.ctrlBtnOff]}
                         >
@@ -701,9 +689,39 @@ export default function CallScreen({
                                 <Text style={{ fontSize: 24 }}>{e}</Text>
                             </TouchableOpacity>
                         ))}
+                        <TouchableOpacity 
+                            onPress={() => {
+                                setShowReactions(false);
+                                setEmojiPickerVisible(true);
+                            }} 
+                            style={[styles.ctrlBtn, { width: 32, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' }]}
+                        >
+                            <Icon name="plus" size={16} color="#fff" />
+                        </TouchableOpacity>
                     </View>
                 </View>
             )}
+
+            {/* Full Emoji Picker Modal */}
+            <Modal visible={emojiPickerVisible} transparent animationType="fade" onRequestClose={() => setEmojiPickerVisible(false)}>
+                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setEmojiPickerVisible(false)}>
+                    <TouchableOpacity activeOpacity={1} style={styles.fullEmojiBox}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                            <Text style={styles.menuLabel}>SELEZIONA EMOJI</Text>
+                            <TouchableOpacity onPress={() => setEmojiPickerVisible(false)}>
+                                <Icon name="x" size={18} color="#B9BBBE" />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                            {['❤️','😂','😮','😢','🔥','👏','🙌','👍','🎉','✨','💯','🚀','⭐','✅','❌','🤔','👀','🤝','🙏','💪'].map(e => (
+                                <TouchableOpacity key={e} onPress={() => { sendReaction(e); setEmojiPickerVisible(false); }}>
+                                    <Text style={{ fontSize: 28 }}>{e}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
 
             {/* Device Menus (Discord Style) */}
             {(showMicMenu || showCamMenu) && (
@@ -712,7 +730,10 @@ export default function CallScreen({
                         style={StyleSheet.absoluteFill} 
                         onPress={() => { setShowMicMenu(false); setShowCamMenu(false); }} 
                     />
-                    <View style={[styles.deviceMenu, showMicMenu ? styles.micMenuPos : styles.camMenuPos]}>
+                    <View style={[
+                        styles.deviceMenu, 
+                        { left: menuPos.x - 110, bottom: (Dimensions.get('window').height - menuPos.y) + 10 }
+                    ]}>
                         <Text style={styles.menuLabel}>{showMicMenu ? "INPUT AUDIO" : "CAMERA"}</Text>
                         <ScrollView style={styles.menuScroll}>
                             {(showMicMenu ? audioInputs : videoInputs).map(d => (
@@ -771,7 +792,14 @@ const styles = StyleSheet.create({
     minimizeBtn: { padding: 8 },
     roomBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 },
     roomName: { color: '#C9A84C', fontWeight: '800', fontSize: 13 },
-    videoGrid: { padding: 10, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10 },
+    videoGrid: { 
+        padding: 10, 
+        flexDirection: 'row', 
+        flexWrap: 'wrap', 
+        justifyContent: 'center', 
+        gap: 10,
+        paddingBottom: 100 // Space for controls
+    },
     gridContainer: { flex: 1, backgroundColor: '#12110F' },
     focusedLayout: { flex: 1, position: 'relative' },
     focusedTileWrapper: { flex: 1 },
@@ -815,8 +843,8 @@ const styles = StyleSheet.create({
     showOthersTxt: { color: '#C9A84C', fontWeight: 'bold', fontSize: 12 },
     tile: { backgroundColor: '#2B2D31', borderRadius: 12, overflow: 'hidden', position: 'relative', borderWidth: 2, borderColor: 'transparent' },
     tileGrid: { 
-        width: Platform.OS === 'web' ? '31.5%' : '47.5%', 
-        aspectRatio: 1.3, // Discord-style rectangles
+        width: Platform.OS === 'web' ? '48%' : '47.5%', 
+        aspectRatio: 16/9, 
         margin: 5 
     },
     tileSmall: { width: 140, height: 90 },
@@ -854,7 +882,7 @@ const styles = StyleSheet.create({
     
     // Device Menu
     deviceMenuContainer: { ...StyleSheet.absoluteFillObject, zIndex: 3000 },
-    deviceMenu: { position: 'absolute', bottom: 110, width: 220, backgroundColor: '#18191C', borderRadius: 8, paddingVertical: 8, borderContent: 'none', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 },
+    deviceMenu: { position: 'absolute', bottom: 110, width: 220, backgroundColor: '#18191C', borderRadius: 8, paddingVertical: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 },
     micMenuPos: { left: Dimensions.get('window').width / 2 - 180 },
     camMenuPos: { left: Dimensions.get('window').width / 2 - 110 },
     menuLabel: { color: '#B9BBBE', fontSize: 10, fontWeight: 'bold', paddingHorizontal: 12, paddingVertical: 6 },

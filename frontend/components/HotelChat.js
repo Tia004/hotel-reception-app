@@ -136,9 +136,9 @@ const PollMessage = ({ msg, onVote, user }) => {
 
 // ─── Main Component ───────────────────────────────────────────────────────
 export default function HotelChat({
-    socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId, onOpenDebug,
+    socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId, onOpenDebug, onLeaveRoom,
     micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn, screenShareOn, setScreenShareOn,
-    settingsVisible, setSettingsVisible
+    settingsVisible, setSettingsVisible, activeChannel: initialActiveChannel, // for prop name sync
 }) {
     // Definizione locale dei dati emoji per evitare ReferenceError
     const GSA_EMOJI_DATA = [
@@ -248,6 +248,7 @@ export default function HotelChat({
     const leftCollapsed = useRef(false); // local ref to track since state is async? Or just keep state
     const [leftCollapsedState, setLeftCollapsed] = useState(IS_MOBILE);
     const [rightCollapsedState, setRightCollapsed] = useState(IS_MOBILE);
+    const [hoverBtn, setHoverBtn] = useState(null); // For general button hover states
 
     const toggleLeft = () => {
         const next = !leftCollapsedState;
@@ -280,6 +281,7 @@ export default function HotelChat({
     const rightRotate = rightCollapsedState ? '180deg' : '0deg';
 
     const [hoveredMsg, setHoveredMsg] = useState(null);
+    const [hoveredBtn, setHoveredBtn] = useState(null); // {id, type: 'REACTION'|'CARET'}
     const [msgActionMenu, setMsgActionMenu] = useState(null); // The chevron-down menu
     const [emojiPickerMsg, setEmojiPickerMsg] = useState(null); // Quick reactions (+)
     const [reactionPickerMsg, setReactionPickerMsg] = useState(null); // Used for Emojis
@@ -287,9 +289,8 @@ export default function HotelChat({
     const [forwardTarget, setForwardTarget] = useState(null);
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedMsgIds, setSelectedMsgIds] = useState([]);
-    const [roomArchives, setRoomArchives] = useState([]); // { roomId, mtime }
-    const [viewingArchive, setViewingArchive] = useState(null); // { roomId, messages }
     const prevRoomsCount = useRef(0);
+    const lastClickRef = useRef({ id: null, time: 0 });
 
     const playSound = async (type) => {
         try {
@@ -523,30 +524,6 @@ export default function HotelChat({
                 </TouchableOpacity>
             </Modal>
 
-            {/* Archive Viewer Modal */}
-            <Modal visible={!!viewingArchive} transparent animationType="slide">
-                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setViewingArchive(null)}>
-                    <View style={styles.infoModalBox} onStartShouldSetResponder={() => true}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <Text style={styles.infoTitle}>ARCHIVIO ROOM #{viewingArchive?.roomId}</Text>
-                            <TouchableOpacity onPress={() => setViewingArchive(null)}>
-                                <Icon name="x" size={18} color="#554E40" />
-                            </TouchableOpacity>
-                        </View>
-                        <ScrollView style={{ maxHeight: 400 }}>
-                            {viewingArchive?.messages?.length > 0 ? viewingArchive.messages.map((m, i) => (
-                                <View key={i} style={styles.archiveMsgRow}>
-                                    <Text style={styles.archiveMsgSender}>{m.sender}:</Text>
-                                    <Text style={styles.archiveMsgTxt}>{m.text}</Text>
-                                    <Text style={styles.archiveMsgTime}>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                                </View>
-                            )) : (
-                                <Text style={styles.emptyArchiveTxt}>Nessun messaggio in questa sessione.</Text>
-                            )}
-                        </ScrollView>
-                    </View>
-                </TouchableOpacity>
-            </Modal>
 
             {selectedImage && (() => {
                 const channelMsgs = messages[activeChannel.id] || [];
@@ -696,12 +673,6 @@ export default function HotelChat({
             }));
         });
 
-        socket.on('voice-archives', (list) => {
-            setRoomArchives(list);
-        });
-
-        // Request voice archives on mount
-        socket.emit('get-voice-archives');
 
         const checkPing = () => {
             const t = Date.now();
@@ -1217,6 +1188,13 @@ export default function HotelChat({
                                         isSelectMode && selectedMsgIds.includes(m.id) && { backgroundColor: 'rgba(201,168,76,0.12)' }
                                     ]}
                                     onPress={() => {
+                                        const now = Date.now();
+                                        if (lastClickRef.current.id === m.id && now - lastClickRef.current.time < 300) {
+                                            // Double Click detected
+                                            if (!isSelectMode) setReplyingTo(m);
+                                        }
+                                        lastClickRef.current = { id: m.id, time: now };
+
                                         if (isSelectMode) {
                                             setSelectedMsgIds(prev => prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]);
                                         }
@@ -1235,16 +1213,21 @@ export default function HotelChat({
                                             isMine ? styles.bubbleWrapMine : styles.bubbleWrapOther
                                         ]}
                                     >
-                                        {/* Lateral Reaction Trigger (WhatsApp Style) - Moved inside Wrap for stability */}
+                                        {/* Lateral Reaction Trigger (WhatsApp Style) */}
                                         {hoveredMsg === m.id && !isSelectMode && (
                                             <TouchableOpacity
                                                 style={[
                                                     styles.reactionSideBtn,
-                                                    isMine ? { left: -42 } : { right: -42 }
+                                                    isMine ? { left: -42 } : { right: -42 },
+                                                    hoveredBtn?.id === m.id && hoveredBtn?.type === 'REACTION' && { borderColor: '#C9A84C', backgroundColor: 'rgba(201,168,76,0.1)' }
                                                 ]}
                                                 onPress={(e) => onReactionClick(m, e)}
+                                                {...(Platform.OS === 'web' ? {
+                                                    onMouseEnter: () => setHoveredBtn({ id: m.id, type: 'REACTION' }),
+                                                    onMouseLeave: () => setHoveredBtn(null)
+                                                } : {})}
                                             >
-                                                <Icon name="smile" size={18} color="#6E6960" />
+                                                <Icon name="smile" size={18} color={hoveredBtn?.id === m.id && hoveredBtn?.type === 'REACTION' ? "#C9A84C" : "#6E6960"} />
                                             </TouchableOpacity>
                                         )}
                                         {/* Caret / Dropdown Arrow (INSIDE BUBBLE) */}
@@ -1257,13 +1240,20 @@ export default function HotelChat({
                                                     style={styles.bubbleCaretGradient}
                                                 />
                                                 <TouchableOpacity
-                                                    style={styles.bubbleCaret}
+                                                    style={[
+                                                        styles.bubbleCaret,
+                                                        hoveredBtn?.id === m.id && hoveredBtn?.type === 'CARET' && { transform: [{ scale: 1.15 }] }
+                                                    ]}
                                                     onPress={(e) => {
                                                         e.stopPropagation();
                                                         onMsgAction(m, e);
                                                     }}
+                                                    {...(Platform.OS === 'web' ? {
+                                                        onMouseEnter: () => setHoveredBtn({ id: m.id, type: 'CARET' }),
+                                                        onMouseLeave: () => setHoveredBtn(null)
+                                                    } : {})}
                                                 >
-                                                    <Icon name="chevron-down" size={16} color="rgba(200,200,200,0.8)" />
+                                                    <Icon name="chevron-down" size={20} color={hoveredBtn?.id === m.id && hoveredBtn?.type === 'CARET' ? "#C9A84C" : "rgba(200,200,200,0.8)"} />
                                                 </TouchableOpacity>
                                             </View>
                                         )}
@@ -1496,8 +1486,9 @@ export default function HotelChat({
                             styles.msgEmojiPicker,
                             {
                                 position: 'absolute',
-                                left: Math.max(10, Math.min(emojiPickerMsg.x - 100, 1000)),
-                                top: Math.max(10, Math.min(emojiPickerMsg.y - 50, 800)),
+                                // Centering: Bar is ~260px wide, so subtract 130px from click position
+                                left: Math.max(10, Math.min(emojiPickerMsg.x - 130, 1000)),
+                                top: Math.max(10, Math.min(emojiPickerMsg.y - 60, 800)),
                                 zIndex: 100000
                             }
                         ]}>
@@ -1506,6 +1497,10 @@ export default function HotelChat({
                                     <Text style={{ fontSize: 20 }}>{emo}</Text>
                                 </TouchableOpacity>
                             ))}
+                            <View style={{ width: 1, backgroundColor: 'rgba(201,168,76,0.2)', marginHorizontal: 4, height: 24, alignSelf: 'center' }} />
+                            <TouchableOpacity onPress={() => { setFullPickerVisible(emojiPickerMsg.id); setEmojiPickerMsg(null); }} style={{ padding: 8 }}>
+                                <Icon name="plus" size={18} color="#C9A84C" />
+                            </TouchableOpacity>
                         </View>
                     </View>
                 )}
@@ -1518,7 +1513,8 @@ export default function HotelChat({
                             styles.msgActionMenu,
                             {
                                 position: 'absolute',
-                                left: Math.min(msgActionMenu.x + 10, 1000),
+                                // Alignment: Align top-right of menu with source point
+                                left: Math.max(10, Math.min(msgActionMenu.x - 180, 1000)),
                                 top: Math.min(msgActionMenu.y, 800),
                                 zIndex: 99999
                             }
@@ -1658,31 +1654,6 @@ export default function HotelChat({
                                     </View>
                                 )}
 
-                                {/* Temp Chat Archive Section */}
-                                <TouchableOpacity style={styles.navHotelRow} onPress={() => {
-                                    setExpanded(p => ({ ...p, voice: !p.voice }));
-                                    if (!expanded.voice) socket.emit('get-voice-archives');
-                                }}>
-                                    <Icon name="archive" size={15} color="#C9A84C" />
-                                    <Text style={styles.hotelLbl}>ARCHIVIO CHAT VOCALI</Text>
-                                    <Icon name={expanded.voice ? 'chevron-down' : 'chevron-right'} size={12} color="#554E40" />
-                                </TouchableOpacity>
-                                {expanded.voice && (
-                                    <View style={styles.savedList}>
-                                        {roomArchives.length === 0 && <Text style={styles.emptyArchiveTxt}>Nessun archivio disponibile</Text>}
-                                        {roomArchives.map((arc, idx) => (
-                                            <TouchableOpacity key={idx} style={styles.archiveRow} onPress={() => setViewingArchive(arc)}>
-                                                <View style={styles.archiveIcon}>
-                                                    <Icon name="message-square" size={12} color="#C9A84C" />
-                                                </View>
-                                                <View style={{ flex: 1 }}>
-                                                    <Text style={styles.archiveTitle}>{arc.name || `Room #${arc.roomId}`}</Text>
-                                                    <Text style={styles.archiveDate}>{new Date(arc.closedAt).toLocaleDateString()} {new Date(arc.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                                                </View>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                )}
 
                                 {/* Team Section */}
                                 <TouchableOpacity style={styles.navHotelRow} onPress={() => setExpanded(p => ({ ...p, users: !p.users }))}>
