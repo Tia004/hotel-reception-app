@@ -6,7 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from './Icons';
 import { RTCView } from '../utils/webrtc';
-import { Room, RoomEvent, Track, RemoteParticipant, LocalParticipant, ParticipantEvent } from 'livekit-client';
+import { Room, RoomEvent, Track, RemoteParticipant, LocalParticipant, ParticipantEvent, VideoPresets } from 'livekit-client';
 
 const EMOJI_REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏', '🙌', '👍'];
 
@@ -33,15 +33,15 @@ function FloatingEmoji({ emoji, onComplete }) {
     const xPos = useRef(width / 2 - 20 + (Math.random() * 60 - 30)).current; // Center with slight variance
 
     return (
-        <Animated.Text 
+        <Animated.Text
             style={[
-                styles.floatingEmoji, 
-                { 
+                styles.floatingEmoji,
+                {
                     position: 'absolute',
                     bottom: 120,
                     left: xPos,
-                    transform: [{ translateY: yAnim }], 
-                    opacity 
+                    transform: [{ translateY: yAnim }],
+                    opacity
                 }
             ]}
         >
@@ -64,8 +64,8 @@ const GSA_EMOJI_DATA = [
     { name: 'Simboli', emoji: ['✅', '❌', '⭕', '🚫', '💯', '🔔', '🔕', '📢', '📣', '🔊', '🔇', '🔈', '🔉', '🎵', '🎶', '💬', '💭', '🗨️', '🗯️', 'ℹ️', '🆕', '🆙', '🆒', '🆓', '🆖', '🆗', '🆘', '🔝', '🔛', '🔜', '🔚', '🆚', '🉐', '㊙️', '㊗️', '🈴', '🈵', '🈹', '🈲', '🈷️', '🈶', '🈯', '🉑', '🈸', '🈺', '🈳', '🈻', '🚾', '#️⃣', '*️⃣', '0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '⚫', '⚪', '🟤', '🔶', '🔷', '🔸', '🔹', '🔺', '🔻', '💠', '🔘', '🔲', '🔳', '▪️', '▫️', '◾', '◽', '◼️', '◻️', '✔️', '➕', '➖', '➗', '✖️', '♾️', '💲', '💱', '™️', '©️', '®️', '🔃', '🔄'] }
 ];
 
-export default function CallScreen({ 
-    socket, roomId, user, onMinimize, onClose, 
+export default function CallScreen({
+    socket, roomId, user, onMinimize, onClose,
     micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn,
     screenShareOn, setScreenShareOn, onOpenSettings
 }) {
@@ -84,7 +84,7 @@ export default function CallScreen({
     const [focusedId, setFocusedId] = useState(null);
     const [showOthers, setShowOthers] = useState(true);
     const [fullScreen, setFullScreen] = useState(false);
-    
+
     // Device States
     const [audioInputs, setAudioInputs] = useState([]);
     const [audioOutputs, setAudioOutputs] = useState([]);
@@ -103,7 +103,7 @@ export default function CallScreen({
 
     const getParticipantColor = (identity) => {
         const colors = [
-            '#C9A84C', '#3BA55C', '#FAA61A', '#ED4245', '#EB459E', 
+            '#C9A84C', '#3BA55C', '#FAA61A', '#ED4245', '#EB459E',
             '#FF73FA', '#00AFF4', '#57F287', '#FEE75C', '#95A5A6'
         ];
         let hash = 0;
@@ -174,6 +174,14 @@ export default function CallScreen({
             const room = new Room({
                 adaptiveStream: true,
                 dynacast: true,
+                videoCaptureDefaults: {
+                    resolution: VideoPresets.h1080.resolution,
+                },
+                publishDefaults: {
+                    videoSimulcast: true,
+                    videoEncoding: VideoPresets.h1080.encoding,
+                    screenShareEncoding: VideoPresets.h1080.encoding,
+                }
             });
 
             // 3. Event Listeners
@@ -201,7 +209,7 @@ export default function CallScreen({
                     }));
                 }
             });
-            
+
             room.on(RoomEvent.ConnectionStateChanged, (state) => {
                 addLog(`Stato connessione: ${state}`);
             });
@@ -225,7 +233,7 @@ export default function CallScreen({
             try {
                 await room.localParticipant.enableCameraAndMicrophone();
                 addLog("Camera e Microfono attivati.");
-                
+
                 // Get the video track media stream
                 const videoPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
                 if (videoPub && videoPub.videoTrack) {
@@ -244,12 +252,12 @@ export default function CallScreen({
                 addLog(`❌ Errore Media: ${mediaErr.message}`);
                 console.error("Media Error:", mediaErr);
             }
-            
+
             lkRoomRef.current = room;
             setLkRoom(room);
             updateParticipants();
             setConnecting(false);
-            
+
             // Fetch initial devices and select currently used ones
             refreshDevices().then(() => {
                 const audioTrack = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
@@ -288,7 +296,7 @@ export default function CallScreen({
     useEffect(() => {
         const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
         if (!lp) return;
-        
+
         const handleTrackUnpublished = (pub) => {
             if (pub.source === Track.Source.ScreenShare) setScreenShareOn(false);
             if (pub.source === Track.Source.ScreenShare) {
@@ -304,7 +312,7 @@ export default function CallScreen({
 
     useEffect(() => {
         if (!lkRoom) return;
-        
+
         // Listen for device changes
         if (navigator.mediaDevices) {
             const handleDeviceChange = () => refreshDevices();
@@ -370,7 +378,7 @@ export default function CallScreen({
                     room.localParticipant.publishData(new TextEncoder().encode(data));
                 }
                 await room.disconnect();
-            } catch (e) {}
+            } catch (e) { }
             lkRoomRef.current = null;
             setLkRoom(null);
         }
@@ -397,7 +405,7 @@ export default function CallScreen({
         const id = Date.now() + Math.random();
         setFloatingReactions(prev => [...prev, { id, emoji }]);
         setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2500);
-        
+
         const room = lkRoomRef.current || lkRoom;
         if (room?.localParticipant) {
             const data = JSON.stringify({ type: 'reaction', emoji });
@@ -476,31 +484,31 @@ export default function CallScreen({
         const isScreen = source === Track.Source.ScreenShare;
         const tileId = `${participant.identity}-${source}`;
         const isFocused = tileId === focusedId;
-        
+
         const pub = participant.getTrackPublication(source);
         const micPub = participant.getTrackPublication(Track.Source.Microphone);
-        
+
         const stream = pub?.videoTrack?.mediaStream || (isLocal && !isScreen && localStream);
         const hasVideo = isLocal ? (isScreen ? screenShareOn : camOn) : (pub?.isSubscribed && !pub?.isMuted);
         const isMuted = isLocal ? !micOn : (micPub?.isMuted || !micPub?.isSubscribed);
-        
+
         const bgColor = isScreen ? '#000' : getParticipantColor(participant.identity);
 
         return (
-            <TouchableOpacity 
-                key={tileId} 
+            <TouchableOpacity
+                key={tileId}
                 activeOpacity={0.9}
                 onPress={() => setFocusedId(isFocused ? null : tileId)}
                 style={[
-                    styles.tile, 
+                    styles.tile,
                     size === 'grid' ? styles.tileGrid : (size === 'focus' ? styles.tileLarge : styles.tileSmall),
                     { backgroundColor: bgColor, borderRadius: 12 }
                 ]}
             >
                 {hasVideo && stream ? (
-                    <RTCView 
-                        streamURL={stream.toURL?.() || (Platform.OS === 'web' ? stream : '')} 
-                        style={styles.rtc} 
+                    <RTCView
+                        streamURL={stream.toURL?.() || (Platform.OS === 'web' ? stream : '')}
+                        style={styles.rtc}
                         objectFit="cover"
                         mirror={isLocal && !isScreen}
                     />
@@ -551,10 +559,10 @@ export default function CallScreen({
             {/* Reactions Layer */}
             <View style={styles.floatingEmojiContainer} pointerEvents="none">
                 {floatingReactions.map(r => (
-                    <FloatingEmoji 
-                        key={r.id} 
-                        emoji={r.emoji} 
-                        onComplete={() => setFloatingReactions(prev => prev.filter(x => x.id !== r.id))} 
+                    <FloatingEmoji
+                        key={r.id}
+                        emoji={r.emoji}
+                        onComplete={() => setFloatingReactions(prev => prev.filter(x => x.id !== r.id))}
                     />
                 ))}
             </View>
@@ -591,18 +599,18 @@ export default function CallScreen({
                                 return renderTile(p, source, 'focus');
                             })()}
                         </View>
-                        
+
                         {/* Others Row */}
                         {!fullScreen && showOthers && (
                             <View style={styles.othersRowWrapper}>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={styles.hideOthersBtn}
                                     onPress={() => setShowOthers(false)}
                                 >
                                     <Icon name="chevron-down" size={14} color="#fff" />
                                 </TouchableOpacity>
-                                <ScrollView 
-                                    horizontal 
+                                <ScrollView
+                                    horizontal
                                     showsHorizontalScrollIndicator={false}
                                     contentContainerStyle={styles.othersScroll}
                                 >
@@ -610,23 +618,23 @@ export default function CallScreen({
                                         const cameraTileId = `${p.identity}-${Track.Source.Camera}`;
                                         const screenTileId = `${p.identity}-${Track.Source.ScreenShare}`;
                                         const tiles = [];
-                                        
+
                                         if (cameraTileId !== focusedId) {
                                             tiles.push(renderTile(p, Track.Source.Camera, 'small'));
                                         }
-                                        
+
                                         const screenPub = p.getTrackPublication(Track.Source.ScreenShare);
                                         if (screenPub && screenPub.isSubscribed && screenTileId !== focusedId) {
                                             tiles.push(renderTile(p, Track.Source.ScreenShare, 'small'));
                                         }
-                                        
+
                                         return tiles;
                                     })}
                                 </ScrollView>
                             </View>
                         )}
                         {!fullScreen && !showOthers && (
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.showOthersBtn}
                                 onPress={() => setShowOthers(true)}
                             >
@@ -665,14 +673,14 @@ export default function CallScreen({
             {!fullScreen ? (
                 <View style={styles.controls}>
                     <View style={styles.controlGroup}>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             ref={micBtnRef}
-                            onPress={toggleMic} 
+                            onPress={toggleMic}
                             style={[styles.ctrlBtn, !micOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}
                         >
                             <Icon name={micOn ? "mic" : "mic-off"} size={20} color="#fff" />
                         </TouchableOpacity>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             onPress={(e) => {
                                 if (showMicMenu) {
                                     setShowMicMenu(false);
@@ -689,7 +697,7 @@ export default function CallScreen({
                                     setEmojiPickerVisible(false);
                                     refreshDevices();
                                 }
-                            }} 
+                            }}
                             style={[styles.ctrlBtnChevron, !micOn && styles.ctrlBtnOff]}
                         >
                             <Icon name="chevron-up" size={12} color="#fff" />
@@ -697,15 +705,15 @@ export default function CallScreen({
                     </View>
 
                     <View style={styles.controlGroup}>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             ref={camBtnRef}
-                            onPress={toggleCam} 
+                            onPress={toggleCam}
                             style={[styles.ctrlBtn, !camOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}
                         >
                             <Icon name={camOn ? "video" : "video-off"} size={20} color="#fff" />
                         </TouchableOpacity>
-                        <TouchableOpacity 
-                            onPress={(e) => { 
+                        <TouchableOpacity
+                            onPress={(e) => {
                                 if (showCamMenu) {
                                     setShowCamMenu(false);
                                     setMainMenuType(null);
@@ -721,7 +729,7 @@ export default function CallScreen({
                                     setEmojiPickerVisible(false);
                                     refreshDevices();
                                 }
-                            }} 
+                            }}
                             style={[styles.ctrlBtnChevron, !camOn && styles.ctrlBtnOff]}
                         >
                             <Icon name="chevron-up" size={12} color="#fff" />
@@ -732,14 +740,14 @@ export default function CallScreen({
                         <Icon name="monitor" size={20} color="#fff" />
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
-                        style={[styles.ctrlBtn, handRaised && styles.ctrlBtnActive]} 
+                    <TouchableOpacity
+                        style={[styles.ctrlBtn, handRaised && styles.ctrlBtnActive]}
                         onPress={toggleHandRaise}
                     >
                         <Icon name="hand" size={20} color={handRaised ? "#fff" : "#fff"} />
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         onPress={(e) => {
                             if (showReactions) {
                                 setShowReactions(false);
@@ -751,23 +759,23 @@ export default function CallScreen({
                                 setShowCamMenu(false);
                                 setEmojiPickerVisible(false);
                             }
-                        }} 
+                        }}
                         style={[styles.ctrlBtn, showReactions && styles.ctrlBtnActive]}
                     >
                         <Icon name="smile" size={20} color="#fff" />
                     </TouchableOpacity>
-                    
+
                     <TouchableOpacity onPress={toggleFullScreen} style={styles.ctrlBtn}>
                         <Icon name="maximize" size={20} color="#fff" />
                     </TouchableOpacity>
-                    
+
                     <TouchableOpacity onPress={() => leaveCall()} style={styles.hangupBtn}>
                         <Icon name="phone-off" size={20} color="#fff" />
                     </TouchableOpacity>
                 </View>
             ) : (
-                <TouchableOpacity 
-                    onPress={toggleFullScreen} 
+                <TouchableOpacity
+                    onPress={toggleFullScreen}
                     style={styles.exitFullScreenBtn}
                 >
                     <Icon name="minimize-2" size={20} color="#fff" />
@@ -779,25 +787,25 @@ export default function CallScreen({
             {/* TOP-LEVEL MENUS PORTAL */}
             {(showMicMenu || showCamMenu || showReactions || emojiPickerVisible) && (
                 <View style={styles.deviceMenuContainer}>
-                    <TouchableOpacity 
-                        style={StyleSheet.absoluteFill} 
+                    <TouchableOpacity
+                        style={StyleSheet.absoluteFill}
                         activeOpacity={1}
-                        onPress={() => { 
-                            setShowMicMenu(false); 
-                            setShowCamMenu(false); 
+                        onPress={() => {
+                            setShowMicMenu(false);
+                            setShowCamMenu(false);
                             setShowReactions(false);
                             setEmojiPickerVisible(false);
-                        }} 
+                        }}
                     />
-                    
+
                     {/* Reactions Bar Contextual */}
                     {showReactions && (
                         <View style={[
                             styles.reactionsPopup,
-                            { 
+                            {
                                 // Centering: width is 260
-                                left: Math.max(10, Math.min(menuPos.x - 180, Dimensions.get('window').width - 270)),
-                                bottom: (Dimensions.get('window').height - menuPos.y) + 12 
+                                left: Math.max(10, Math.min(menuPos.x - 230, Dimensions.get('window').width - 270)),
+                                bottom: (Dimensions.get('window').height - menuPos.y) + 12
                             }
                         ]}>
                             <View style={styles.reactionsRow}>
@@ -806,14 +814,14 @@ export default function CallScreen({
                                         <Text style={{ fontSize: 24 }}>{e}</Text>
                                     </TouchableOpacity>
                                 ))}
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     onPress={(e) => {
                                         // Position the next picker relative to the plus button
                                         const rect = e.currentTarget.getBoundingClientRect();
                                         setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
                                         setShowReactions(false);
                                         setEmojiPickerVisible(true);
-                                    }} 
+                                    }}
                                     style={[styles.ctrlBtn, { width: 32, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' }]}
                                 >
                                     <Icon name="plus" size={16} color="#fff" />
@@ -866,9 +874,9 @@ export default function CallScreen({
                     {/* Mic/Camera Device Menus - Discord Style Nested */}
                     {(showMicMenu || showCamMenu) && (
                         <View style={[
-                            styles.deviceMenu, 
-                            { 
-                                left: Math.max(10, Math.min(menuPos.x - (activeSubMenu ? 320 : 160), Dimensions.get('window').width - (activeSubMenu ? 450 : 230))), 
+                            styles.deviceMenu,
+                            {
+                                left: Math.max(10, Math.min(menuPos.x - (activeSubMenu ? 320 : 160), Dimensions.get('window').width - (activeSubMenu ? 450 : 230))),
                                 bottom: (Dimensions.get('window').height - menuPos.y) + 12,
                                 width: activeSubMenu ? 440 : 220,
                                 flexDirection: 'row'
@@ -880,8 +888,8 @@ export default function CallScreen({
                                 <ScrollView style={styles.menuScroll}>
                                     {mainMenuType === 'mic' ? (
                                         <>
-                                            <TouchableOpacity 
-                                                style={[styles.menuItem, activeSubMenu === 'input' && styles.menuItemActive]} 
+                                            <TouchableOpacity
+                                                style={[styles.menuItem, activeSubMenu === 'input' && styles.menuItemActive]}
                                                 onPress={() => setActiveSubMenu('input')}
                                             >
                                                 <View style={{ flex: 1 }}>
@@ -893,8 +901,8 @@ export default function CallScreen({
                                                 <Icon name="chevron-right" size={14} color="#B9BBBE" />
                                             </TouchableOpacity>
 
-                                            <TouchableOpacity 
-                                                style={[styles.menuItem, activeSubMenu === 'output' && styles.menuItemActive]} 
+                                            <TouchableOpacity
+                                                style={[styles.menuItem, activeSubMenu === 'output' && styles.menuItemActive]}
                                                 onPress={() => setActiveSubMenu('output')}
                                             >
                                                 <View style={{ flex: 1 }}>
@@ -907,8 +915,8 @@ export default function CallScreen({
                                             </TouchableOpacity>
                                         </>
                                     ) : (
-                                        <TouchableOpacity 
-                                            style={[styles.menuItem, activeSubMenu === 'video' && styles.menuItemActive]} 
+                                        <TouchableOpacity
+                                            style={[styles.menuItem, activeSubMenu === 'video' && styles.menuItemActive]}
                                             onPress={() => setActiveSubMenu('video')}
                                         >
                                             <View style={{ flex: 1 }}>
@@ -922,8 +930,8 @@ export default function CallScreen({
                                     )}
                                 </ScrollView>
                                 <View style={styles.menuDivider} />
-                                <TouchableOpacity 
-                                    style={styles.menuSettingsBtn} 
+                                <TouchableOpacity
+                                    style={styles.menuSettingsBtn}
                                     onPress={() => {
                                         setShowMicMenu(false);
                                         setShowCamMenu(false);
@@ -941,29 +949,29 @@ export default function CallScreen({
                             {activeSubMenu && (
                                 <View style={{ width: 220, borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.05)' }}>
                                     <Text style={styles.menuLabel}>
-                                        {activeSubMenu === 'input' ? "SELEZIONA INPUT" : 
-                                         activeSubMenu === 'output' ? "SELEZIONA OUTPUT" : "SELEZIONA CAMERA"}
+                                        {activeSubMenu === 'input' ? "SELEZIONA INPUT" :
+                                            activeSubMenu === 'output' ? "SELEZIONA OUTPUT" : "SELEZIONA CAMERA"}
                                     </Text>
                                     <ScrollView style={styles.menuScroll}>
-                                        {(activeSubMenu === 'input' ? audioInputs : 
-                                          activeSubMenu === 'output' ? audioOutputs : videoInputs).map(d => (
-                                            <TouchableOpacity 
-                                                key={d.deviceId} 
-                                                style={styles.menuItem}
-                                                onPress={() => {
-                                                    const kind = activeSubMenu === 'input' ? 'audioinput' : 
-                                                                 activeSubMenu === 'output' ? 'audiooutput' : 'videoinput';
-                                                    switchDevice(kind, d.deviceId);
-                                                    // Keep menu open but update state? Discord keeps it open but updates selection.
-                                                }}
-                                            >
-                                                <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
-                                                {(d.deviceId === (activeSubMenu === 'input' ? selectedAudioInput : 
-                                                                  activeSubMenu === 'output' ? selectedAudioOutput : selectedVideoInput)) && (
-                                                    <View style={styles.selectionCircle} />
-                                                )}
-                                            </TouchableOpacity>
-                                        ))}
+                                        {(activeSubMenu === 'input' ? audioInputs :
+                                            activeSubMenu === 'output' ? audioOutputs : videoInputs).map(d => (
+                                                <TouchableOpacity
+                                                    key={d.deviceId}
+                                                    style={styles.menuItem}
+                                                    onPress={() => {
+                                                        const kind = activeSubMenu === 'input' ? 'audioinput' :
+                                                            activeSubMenu === 'output' ? 'audiooutput' : 'videoinput';
+                                                        switchDevice(kind, d.deviceId);
+                                                        // Keep menu open but update state? Discord keeps it open but updates selection.
+                                                    }}
+                                                >
+                                                    <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
+                                                    {(d.deviceId === (activeSubMenu === 'input' ? selectedAudioInput :
+                                                        activeSubMenu === 'output' ? selectedAudioOutput : selectedVideoInput)) && (
+                                                            <View style={styles.selectionCircle} />
+                                                        )}
+                                                </TouchableOpacity>
+                                            ))}
                                     </ScrollView>
                                 </View>
                             )}
@@ -981,37 +989,37 @@ const styles = StyleSheet.create({
     minimizeBtn: { padding: 8 },
     roomBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 },
     roomName: { color: '#C9A84C', fontWeight: '800', fontSize: 13 },
-    videoGrid: { 
-        padding: 10, 
-        flexDirection: 'row', 
-        flexWrap: 'wrap', 
-        justifyContent: 'center', 
+    videoGrid: {
+        padding: 10,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
         gap: 10,
         paddingBottom: 100 // Space for controls
     },
     gridContainer: { flex: 1, backgroundColor: '#12110F' },
     focusedLayout: { flex: 1, position: 'relative' },
     focusedTileWrapper: { flex: 1 },
-    othersRowWrapper: { 
-        height: 120, 
-        backgroundColor: 'rgba(0,0,0,0.4)', 
-        borderTopWidth: 1, 
+    othersRowWrapper: {
+        height: 120,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        borderTopWidth: 1,
         borderTopColor: 'rgba(255,255,255,0.05)',
         paddingTop: 10,
         position: 'relative'
     },
     othersScroll: { paddingHorizontal: 10, gap: 10 },
-    hideOthersBtn: { 
-        position: 'absolute', 
-        top: -20, 
-        left: '50%', 
+    hideOthersBtn: {
+        position: 'absolute',
+        top: -20,
+        left: '50%',
         marginLeft: -15,
-        width: 30, 
-        height: 20, 
-        backgroundColor: 'rgba(0,0,0,0.6)', 
+        width: 30,
+        height: 20,
+        backgroundColor: 'rgba(0,0,0,0.6)',
         borderTopLeftRadius: 10,
         borderTopRightRadius: 10,
-        justifyContent: 'center', 
+        justifyContent: 'center',
         alignItems: 'center',
         zIndex: 10
     },
@@ -1031,10 +1039,10 @@ const styles = StyleSheet.create({
     },
     showOthersTxt: { color: '#C9A84C', fontWeight: 'bold', fontSize: 12 },
     tile: { backgroundColor: '#2B2D31', borderRadius: 12, overflow: 'hidden', position: 'relative', borderWidth: 2, borderColor: 'transparent' },
-    tileGrid: { 
-        width: Platform.OS === 'web' ? '48%' : '47.5%', 
-        aspectRatio: 16/9, 
-        margin: 5 
+    tileGrid: {
+        width: Platform.OS === 'web' ? '48%' : '47.5%',
+        aspectRatio: 16 / 9,
+        margin: 5
     },
     tileSmall: { width: 140, height: 90 },
     tileLarge: { flex: 1 },
@@ -1068,7 +1076,7 @@ const styles = StyleSheet.create({
     ctrlBtnOff: { backgroundColor: '#ED4245' },
     ctrlBtnActive: { backgroundColor: '#C9A84C' },
     hangupBtn: { width: 64, height: 44, borderRadius: 22, backgroundColor: '#ED4245', justifyContent: 'center', alignItems: 'center' },
-    
+
     // Device Menu
     deviceMenuContainer: { ...StyleSheet.absoluteFillObject, zIndex: 3000 },
     deviceMenu: { position: 'absolute', bottom: 110, backgroundColor: '#18191C', borderRadius: 12, paddingVertical: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10, overflow: 'hidden' },
@@ -1091,10 +1099,10 @@ const styles = StyleSheet.create({
     chatInputRow: { height: 60, flexDirection: 'row', padding: 10, gap: 10 },
     chatInput: { flex: 1, backgroundColor: '#1C1A16', borderRadius: 10, paddingHorizontal: 15, color: '#fff' },
     chatSendBtn: { width: 40, height: 40, backgroundColor: '#C9A84C', borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-    reactionsPopup: { 
-        position: 'absolute', 
-        backgroundColor: '#2B2D31', 
-        padding: 12, 
+    reactionsPopup: {
+        position: 'absolute',
+        backgroundColor: '#2B2D31',
+        padding: 12,
         borderRadius: 24,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
