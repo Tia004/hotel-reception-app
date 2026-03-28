@@ -796,7 +796,7 @@ export default function CallScreen({
                             styles.reactionsPopup,
                             { 
                                 // Centering: width is 260
-                                left: Math.max(10, Math.min(menuPos.x - 130, Dimensions.get('window').width - 270)),
+                                left: Math.max(10, Math.min(menuPos.x - 180, Dimensions.get('window').width - 270)),
                                 bottom: (Dimensions.get('window').height - menuPos.y) + 12 
                             }
                         ]}>
@@ -828,7 +828,7 @@ export default function CallScreen({
                             styles.fullEmojiBox,
                             {
                                 // Centering: width is 340
-                                left: Math.max(10, Math.min(menuPos.x - 170, Dimensions.get('window').width - 350)),
+                                left: Math.max(10, Math.min(menuPos.x - 240, Dimensions.get('window').width - 350)),
                                 bottom: (Dimensions.get('window').height - menuPos.y) + 12,
                                 width: 340,
                                 height: 400,
@@ -868,7 +868,7 @@ export default function CallScreen({
                         <View style={[
                             styles.deviceMenu, 
                             { 
-                                left: Math.max(10, Math.min(menuPos.x - (activeSubMenu ? 220 : 110), Dimensions.get('window').width - (activeSubMenu ? 450 : 230))), 
+                                left: Math.max(10, Math.min(menuPos.x - (activeSubMenu ? 320 : 160), Dimensions.get('window').width - (activeSubMenu ? 450 : 230))), 
                                 bottom: (Dimensions.get('window').height - menuPos.y) + 12,
                                 width: activeSubMenu ? 440 : 220,
                                 flexDirection: 'row'

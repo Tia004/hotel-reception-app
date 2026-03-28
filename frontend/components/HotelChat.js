@@ -1129,7 +1129,7 @@ export default function HotelChat({
                             transform: [{ translateX: leftAnim }]
                         } : {
                             position: 'absolute',
-                            left: '100%',
+                            left: 260,
                             marginLeft: leftAnim
                         }
                     ]}>
@@ -1685,7 +1685,7 @@ export default function HotelChat({
                             transform: [{ translateX: Animated.multiply(rightAnim, -1) }]
                         } : {
                             position: 'absolute',
-                            right: '100%',
+                            right: 280,
                             marginRight: rightAnim
                         }
                     ]}>
