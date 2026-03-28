@@ -50,6 +50,20 @@ function FloatingEmoji({ emoji, onComplete }) {
     );
 }
 
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const IS_MOBILE = SCREEN_W < 768;
+
+const GSA_EMOJI_DATA = [
+    { name: 'Smileys', emoji: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙', '🥲', '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '🤥', '😌', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🤧', '🥵', '🥶', '🥴', '😵', '🤯', '🤠', '🥳', '🥸', '😎', '🤓', '🧐', '😕', '😟', '🙁', '☹️', '😮', '😯', '😲', '😳', '🥺', '😦', '😧', '😨', '😰', '😥', '😢', '😭', '😱', '😖', '😣', '😞', '😓', '😩', '😫', '🥱', '😤', '😡', '😠', '🤬', '😈', '👿', '💀', '☠️', '💩', '🤡', '👹', '👺', '👻', '👽', '👾', '🤖'] },
+    { name: 'Gesti', emoji: ['👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '🫶', '👐', '🤲', '🙏', '✍️', '💅', '💪', '🫀', '🧠', '👁️', '👀', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'] },
+    { name: 'Animali', emoji: ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🙈', '🙉', '🙊', '🐔', '🐧', '🐦', '🐤', '🦆', '🦅', '🦉', '🦇', '🐺', '🐗', '🐴', '🦄', '🐝', '🐛', '🦋', '🐌', '🐞', '🐜', '🦟', '🦗', '🐢', '🐍', '🦎', '🐊', '🦓', '🦍', '🐘', '🦏', '🦛', '🐪', '🐫', '🦒', '🦘', '🐃', '🐄', '🐎', '🐖', '🐏', '🐑', '🦙', '🐐', '🦌', '🐕', '🐩', '🐈', '🐓', '🦃', '🦚', '🦜', '🦢', '🕊️', '🐇', '🦝', '🦔', '🐉', '🐲', '🌵', '🌲', '🌴', '🍄', '🌊', '🌈', '⭐', '🌟', '☀️', '🌙', '⛅', '🌩️', '❄️', '🔥', '💧', '🌬️'] },
+    { name: 'Cibo', emoji: ['🍎', '🍏', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍒', '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦', '🥬', '🥒', '🌽', '🥕', '🧄', '🧅', '🥔', '🍠', '🥐', '🥯', '🍞', '🥖', '🥨', '🧀', '🥚', '🍳', '🥞', '🧇', '🥓', '🥩', '🍗', '🍖', '🌭', '🍔', '🍟', '🍕', '🥙', '🧆', '🍿', '🍱', '🍣', '🍜', '🍝', '🍛', '🥟', '🦀', '🦞', '🦐', '🦑', '🪸', '🍦', '🍧', '🍨', '🍩', '🍪', '🎂', '🍰', '🧁', '🍫', '🍬', '🍭', '🍼', '🥛', '☕', '🍵', '🧃', '🥤', '🧋', '🍺', '🍻', '🥂', '🍷', '🥃', '🍸', '🍹', '🧉', '🍾'] },
+    { name: 'Attività', emoji: ['⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🥏', '🎱', '🏓', '🏸', '🏒', '🥍', '🏏', '🪃', '⛳', '🪁', '🎣', '🤿', '🎽', '🎿', '🛷', '🥌', '🎯', '🎮', '🎰', '🎲', '♟️', '🧩', '🎭', '🎨', '🎬', '🎤', '🎧', '🎼', '🎹', '🥁', '🎷', '🎺', '🎸', '🎻', '🎵', '🎶', '🎙️', '🏆', '🥇', '🥈', '🥉', '🎖️', '🏅', '🎪', '🎠', '🎡', '🎢'] },
+    { name: 'Viaggio', emoji: ['🚗', '🚕', '🚙', '🚌', '🚎', '🏎️', '🚓', '🚑', '🚒', '🚐', '🛻', '🚚', '🚛', '🚜', '🛵', '🏍️', '🚲', '🛴', '🛺', '🚁', '🛸', '⛵', '🚢', '🛥️', '⛽', '🚦', '🚧', '⚓', '✈️', '🛫', '🛬', '💺', '🛰️', '🚀', '🌍', '🌎', '🌏', '🗺️', '🏔️', '⛰️', '🌋', '🏕️', '🏖️', '🏗️', '🏘️', '🏚️', '🏛️', '🏟️', '🏠', '🏡', '🏢', '🏣', '🏤', '🏥', '🏦', '🏧', '🏨', '🏩', '🏪', '🏫', '🏬', '🗼', '🗽', '⛪', 'Ẩ', '🕍', '⛩️', '🕋', '🌃', '🌆', '🌇', '🌉', '🌌', '🌠'] },
+    { name: 'Oggetti', emoji: ['📱', '💻', '🖥️', '🖨️', '⌨️', '🖱️', '💾', '💿', '📀', '📷', '📸', '📹', '🎥', '📞', '☎️', '📺', '📻', '🧭', '⏱️', '⏲️', '⏰', '⌚', '🔋', '🔌', '💡', '🔦', '🕯️', '🔑', '🗝️', '🔒', '🔓', '🔨', '⚒️', '🛠️', '🔧', '🔩', '⚙️', '⚖️', '🔗', '🧲', '🪜', '🧪', '🔬', '🔭', '💉', '💊', '🩹', '📧', '📦', '📫', '📮', '✏️', '📝', '📁', '📂', '📅', '📆', '📈', '📉', '📊', '📋', '📌', '📍', '📎', '✂️', '💰', '💳', '🪙', '📚', '📖', '🔖', '🏷️', '📰', '🗞️', '📃'] },
+    { name: 'Simboli', emoji: ['✅', '❌', '⭕', '🚫', '💯', '🔔', '🔕', '📢', '📣', '🔊', '🔇', '🔈', '🔉', '🎵', '🎶', '💬', '💭', '🗨️', '🗯️', 'ℹ️', '🆕', '🆙', '🆒', '🆓', '🆖', '🆗', '🆘', '🔝', '🔛', '🔜', '🔚', '🆚', '🉐', '㊙️', '㊗️', '🈴', '🈵', '🈹', '🈲', '🈷️', '🈶', '🈯', '🉑', '🈸', '🈺', '🈳', '🈻', '🚾', '#️⃣', '*️⃣', '0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '⚫', '⚪', '🟤', '🔶', '🔷', '🔸', '🔹', '🔺', '🔻', '💠', '🔘', '🔲', '🔳', '▪️', '▫️', '◾', '◽', '◼️', '◻️', '✔️', '➕', '➖', '➗', '✖️', '♾️', '💲', '💱', '™️', '©️', '®️', '🔃', '🔄'] }
+];
+
 export default function CallScreen({ 
     socket, roomId, user, onMinimize, onClose, 
     micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn,
@@ -265,6 +279,16 @@ export default function CallScreen({
 
     useEffect(() => {
         if (!lkRoom) return;
+        
+        // Listen for device changes
+        if (navigator.mediaDevices) {
+            const handleDeviceChange = () => refreshDevices();
+            navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+            return () => navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+        }
+    }, [lkRoom]);
+
+    useEffect(() => {
         participants.forEach(p => {
             if (p.identity === user.username) return;
             p.getTrackPublications().forEach(pub => {
@@ -274,7 +298,7 @@ export default function CallScreen({
                 }
             });
         });
-    }, [deafenOn, participants, lkRoom]);
+    }, [deafenOn, participants]);
 
     useEffect(() => {
         const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
@@ -377,10 +401,15 @@ export default function CallScreen({
 
     const refreshDevices = async () => {
         try {
-            const devices = await Room.getDevices();
+            if (!navigator.mediaDevices?.enumerateDevices) {
+                addLog("⚠️ enumerateDevices non supportato");
+                return;
+            }
+            const devices = await navigator.mediaDevices.enumerateDevices();
             setAudioInputs(devices.filter(d => d.kind === 'audioinput'));
             setAudioOutputs(devices.filter(d => d.kind === 'audiooutput'));
             setVideoInputs(devices.filter(d => d.kind === 'videoinput'));
+            addLog(`Dispositivi aggiornati: ${devices.length}`);
         } catch (err) {
             addLog(`Errore nel recupero dispositivi: ${err.message}`);
         }
@@ -705,7 +734,7 @@ export default function CallScreen({
                     onPress={toggleFullScreen} 
                     style={styles.exitFullScreenBtn}
                 >
-                    <Icon name="minimize" size={20} color="#fff" />
+                    <Icon name="minimize-2" size={20} color="#fff" />
                 </TouchableOpacity>
             )}
 
@@ -756,29 +785,41 @@ export default function CallScreen({
                         </View>
                     )}
 
-                    {/* Contextual Emoji Picker (Replaces Modal) */}
+                    {/* Contextual Emoji Picker (Replaces Modal) - Tiered */}
                     {emojiPickerVisible && (
                         <View style={[
                             styles.fullEmojiBox,
                             {
-                                left: menuPos.x - 125,
+                                left: Math.max(10, Math.min(menuPos.x - 170, Dimensions.get('window').width - 350)),
                                 bottom: (Dimensions.get('window').height - menuPos.y) + 12,
-                                width: 250,
-                                maxHeight: 300,
+                                width: 340,
+                                height: 400,
                                 zIndex: 1000000
                             }
                         ]}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                                <Text style={styles.menuLabel}>SELEZIONA EMOJI</Text>
-                                <TouchableOpacity onPress={() => setEmojiPickerVisible(false)}>
-                                    <Icon name="x" size={18} color="#B9BBBE" />
-                                </TouchableOpacity>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                                <Icon name="smile" size={16} color="#C9A84C" />
+                                <Text style={{ color: '#C9A84C', fontSize: 13, fontWeight: '900', marginLeft: 8, letterSpacing: 1 }}>REAZIONI</Text>
                             </View>
-                            <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                                {['❤️','😂','😮','😢','🔥','👏','🙌','👍','🎉','✨','💯','🚀','⭐','✅','❌','🤔','👀','🤝','🙏','💪'].map(e => (
-                                    <TouchableOpacity key={e} onPress={() => { sendReaction(e); setEmojiPickerVisible(false); }}>
-                                        <Text style={{ fontSize: 28 }}>{e}</Text>
-                                    </TouchableOpacity>
+                            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                                {GSA_EMOJI_DATA.map(cat => (
+                                    <View key={cat.name} style={{ marginBottom: 16 }}>
+                                        <Text style={styles.emojiCategoryTitle}>{cat.name.toUpperCase()}</Text>
+                                        <View style={styles.fullEmojiGrid}>
+                                            {cat.emoji.map(emo => (
+                                                <TouchableOpacity
+                                                    key={emo}
+                                                    style={styles.fullEmojiItem}
+                                                    onPress={() => {
+                                                        onEmojiReaction({ emoji: emo });
+                                                        setEmojiPickerVisible(false);
+                                                    }}
+                                                >
+                                                    <Text style={{ fontSize: 24 }}>{emo}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </View>
                                 ))}
                             </ScrollView>
                         </View>
@@ -789,7 +830,8 @@ export default function CallScreen({
                         <View style={[
                             styles.deviceMenu, 
                             { 
-                                left: menuPos.x - 110, 
+                                // Precise centering: menu width is 220, so offset is 110
+                                left: Math.max(10, Math.min(menuPos.x - 110, Dimensions.get('window').width - 230)), 
                                 bottom: (Dimensions.get('window').height - menuPos.y) + 12 
                             }
                         ]}>
@@ -986,6 +1028,9 @@ const styles = StyleSheet.create({
         elevation: 10,
         zIndex: 1000001
     },
+    fullEmojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 20 },
+    fullEmojiItem: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 8 },
+    emojiCategoryTitle: { color: '#554E40', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 8, marginTop: 4 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
     floatingEmojiContainer: { ...StyleSheet.absoluteFillObject, zIndex: 1000 },
     floatingEmoji: { fontSize: 40, alignSelf: 'center' },

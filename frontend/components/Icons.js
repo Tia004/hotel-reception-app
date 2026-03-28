@@ -86,6 +86,7 @@ const ICON_MAP = {
     'trash-2': { pack: 'feather', name: 'trash-2' },
     'copy': { pack: 'feather', name: 'copy' },
     'check': { pack: 'feather', name: 'check' },
+    'check-square': { pack: 'feather', name: 'check-square' },
     'check-check': { pack: 'ionicons', name: 'checkmark-done-outline' },
     'clock': { pack: 'feather', name: 'clock' },
     // Reply / Forward

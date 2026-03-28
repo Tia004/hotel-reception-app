@@ -1869,7 +1869,7 @@ export default function HotelChat({
                         <View style={{ height: 1, backgroundColor: 'rgba(201,168,76,0.1)', marginVertical: 4 }} />
 
                         <TouchableOpacity style={styles.menuItem} onPress={() => { setForwardTarget(msgActionMenu.msg); setMsgActionMenu(null); }}>
-                            <Icon name="share" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Inoltra</Text>
+                            <Icon name="corner-up-right" size={14} color="#C9A84C" /><Text style={styles.menuItemText}>Inoltra</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.menuItem} onPress={() => {
                             socket.emit('pin-message', { channelId: activeChannel.id, messageId: msgActionMenu.id });
