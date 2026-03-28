@@ -103,7 +103,7 @@ export default function CallScreen({
 
     const getParticipantColor = (identity) => {
         const colors = [
-            '#5865F2', '#3BA55C', '#FAA61A', '#ED4245', '#EB459E', 
+            '#C9A84C', '#3BA55C', '#FAA61A', '#ED4245', '#EB459E', 
             '#FF73FA', '#00AFF4', '#57F287', '#FEE75C', '#95A5A6'
         ];
         let hash = 0;
@@ -290,6 +290,7 @@ export default function CallScreen({
         if (!lp) return;
         
         const handleTrackUnpublished = (pub) => {
+            if (pub.source === Track.Source.ScreenShare) setScreenShareOn(false);
             if (pub.source === Track.Source.ScreenShare) {
                 setScreenShareOn(false);
             }
@@ -680,6 +681,8 @@ export default function CallScreen({
                                 } else {
                                     const rect = e.currentTarget.getBoundingClientRect();
                                     setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+                                    setMainMenuType('mic');
+                                    setActiveSubMenu('input');
                                     setShowMicMenu(true);
                                     setShowCamMenu(false);
                                     setShowReactions(false);
@@ -705,9 +708,13 @@ export default function CallScreen({
                             onPress={(e) => { 
                                 if (showCamMenu) {
                                     setShowCamMenu(false);
+                                    setMainMenuType(null);
+                                    setActiveSubMenu(null);
                                 } else {
                                     const rect = e.currentTarget.getBoundingClientRect();
                                     setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+                                    setMainMenuType('cam');
+                                    setActiveSubMenu('video');
                                     setShowCamMenu(true);
                                     setShowMicMenu(false);
                                     setShowReactions(false);
@@ -861,7 +868,7 @@ export default function CallScreen({
                         <View style={[
                             styles.deviceMenu, 
                             { 
-                                left: Math.max(10, Math.min(menuPos.x - 110, Dimensions.get('window').width - (activeSubMenu ? 450 : 230))), 
+                                left: Math.max(10, Math.min(menuPos.x - (activeSubMenu ? 220 : 110), Dimensions.get('window').width - (activeSubMenu ? 450 : 230))), 
                                 bottom: (Dimensions.get('window').height - menuPos.y) + 12,
                                 width: activeSubMenu ? 440 : 220,
                                 flexDirection: 'row'
@@ -1050,7 +1057,7 @@ const styles = StyleSheet.create({
     participantOverlay: { position: 'absolute', bottom: 10, left: 10, right: 10 },
     participantNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     participantBadge: { backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
-    screenBadge: { backgroundColor: '#5865F2' },
+    screenBadge: { backgroundColor: '#C9A84C' },
     participantName: { color: '#fff', fontSize: 11, fontWeight: '800' },
     statusIconRed: { backgroundColor: '#ED4245', borderRadius: 10, padding: 2 },
     controls: { height: 100, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 15, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
