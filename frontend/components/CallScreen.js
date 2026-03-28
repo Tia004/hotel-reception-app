@@ -203,10 +203,19 @@ export default function CallScreen({
             room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
                 addLog(`Traccia sottoscritta: ${track.kind} da ${participant.identity}`);
                 if (track.kind === Track.Kind.Video || track.kind === Track.Kind.Audio) {
+                    if (track.kind === Track.Kind.Audio) {
+                        track.attach(); // Essential for audio playback on Web/Mobile
+                    }
                     setRemoteStreams(prev => ({
                         ...prev,
                         [participant.identity]: track.mediaStream
                     }));
+                }
+            });
+            room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                addLog(`Traccia rimossa: ${track.kind} da ${participant.identity}`);
+                if (track.kind === Track.Kind.Audio) {
+                    track.detach();
                 }
             });
 
@@ -231,8 +240,12 @@ export default function CallScreen({
             // 5. Start Local Media
             addLog("Tentativo di attivazione Camera e Microfono...");
             try {
-                await room.localParticipant.enableCameraAndMicrophone();
-                addLog("Camera e Microfono attivati.");
+                await room.localParticipant.enableCameraAndMicrophone({
+                    videoCaptureDefaults: {
+                        resolution: VideoPresets.h1080.resolution,
+                    },
+                });
+                addLog("Camera e Microfono attivati (HD).");
 
                 // Get the video track media stream
                 const videoPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
@@ -672,106 +685,112 @@ export default function CallScreen({
             {/* Controls */}
             {!fullScreen ? (
                 <View style={styles.controls}>
-                    <View style={styles.controlGroup}>
-                        <TouchableOpacity
-                            ref={micBtnRef}
-                            onPress={toggleMic}
-                            style={[styles.ctrlBtn, !micOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}
-                        >
-                            <Icon name={micOn ? "mic" : "mic-off"} size={20} color="#fff" />
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.controlsScrollContent}
+                    >
+                        <View style={styles.controlGroup}>
+                            <TouchableOpacity
+                                ref={micBtnRef}
+                                onPress={toggleMic}
+                                style={[styles.ctrlBtn, !micOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}
+                            >
+                                <Icon name={micOn ? "mic" : "mic-off"} size={20} color="#fff" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={(e) => {
+                                    if (showMicMenu) {
+                                        setShowMicMenu(false);
+                                        setMainMenuType(null);
+                                        setActiveSubMenu(null);
+                                    } else {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+                                        setMainMenuType('mic');
+                                        setActiveSubMenu('input');
+                                        setShowMicMenu(true);
+                                        setShowCamMenu(false);
+                                        setShowReactions(false);
+                                        setEmojiPickerVisible(false);
+                                        refreshDevices();
+                                    }
+                                }}
+                                style={[styles.ctrlBtnChevron, !micOn && styles.ctrlBtnOff]}
+                            >
+                                <Icon name="chevron-up" size={12} color="#fff" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.controlGroup}>
+                            <TouchableOpacity
+                                ref={camBtnRef}
+                                onPress={toggleCam}
+                                style={[styles.ctrlBtn, !camOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}
+                            >
+                                <Icon name={camOn ? "video" : "video-off"} size={20} color="#fff" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={(e) => {
+                                    if (showCamMenu) {
+                                        setShowCamMenu(false);
+                                        setMainMenuType(null);
+                                        setActiveSubMenu(null);
+                                    } else {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+                                        setMainMenuType('cam');
+                                        setActiveSubMenu('video');
+                                        setShowCamMenu(true);
+                                        setShowMicMenu(false);
+                                        setShowReactions(false);
+                                        setEmojiPickerVisible(false);
+                                        refreshDevices();
+                                    }
+                                }}
+                                style={[styles.ctrlBtnChevron, !camOn && styles.ctrlBtnOff]}
+                            >
+                                <Icon name="chevron-up" size={12} color="#fff" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity onPress={toggleScreenShare} style={[styles.ctrlBtn, screenShareOn && styles.ctrlBtnActive]}>
+                            <Icon name="monitor" size={20} color="#fff" />
                         </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.ctrlBtn, handRaised && styles.ctrlBtnActive]}
+                            onPress={toggleHandRaise}
+                        >
+                            <Icon name="hand" size={20} color={handRaised ? "#fff" : "#fff"} />
+                        </TouchableOpacity>
+
                         <TouchableOpacity
                             onPress={(e) => {
-                                if (showMicMenu) {
-                                    setShowMicMenu(false);
-                                    setMainMenuType(null);
-                                    setActiveSubMenu(null);
+                                if (showReactions) {
+                                    setShowReactions(false);
                                 } else {
                                     const rect = e.currentTarget.getBoundingClientRect();
                                     setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
-                                    setMainMenuType('mic');
-                                    setActiveSubMenu('input');
-                                    setShowMicMenu(true);
-                                    setShowCamMenu(false);
-                                    setShowReactions(false);
-                                    setEmojiPickerVisible(false);
-                                    refreshDevices();
-                                }
-                            }}
-                            style={[styles.ctrlBtnChevron, !micOn && styles.ctrlBtnOff]}
-                        >
-                            <Icon name="chevron-up" size={12} color="#fff" />
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.controlGroup}>
-                        <TouchableOpacity
-                            ref={camBtnRef}
-                            onPress={toggleCam}
-                            style={[styles.ctrlBtn, !camOn && styles.ctrlBtnOff, styles.ctrlBtnSplit]}
-                        >
-                            <Icon name={camOn ? "video" : "video-off"} size={20} color="#fff" />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            onPress={(e) => {
-                                if (showCamMenu) {
-                                    setShowCamMenu(false);
-                                    setMainMenuType(null);
-                                    setActiveSubMenu(null);
-                                } else {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
-                                    setMainMenuType('cam');
-                                    setActiveSubMenu('video');
-                                    setShowCamMenu(true);
+                                    setShowReactions(true);
                                     setShowMicMenu(false);
-                                    setShowReactions(false);
+                                    setShowCamMenu(false);
                                     setEmojiPickerVisible(false);
-                                    refreshDevices();
                                 }
                             }}
-                            style={[styles.ctrlBtnChevron, !camOn && styles.ctrlBtnOff]}
+                            style={[styles.ctrlBtn, showReactions && styles.ctrlBtnActive]}
                         >
-                            <Icon name="chevron-up" size={12} color="#fff" />
+                            <Icon name="smile" size={20} color="#fff" />
                         </TouchableOpacity>
-                    </View>
 
-                    <TouchableOpacity onPress={toggleScreenShare} style={[styles.ctrlBtn, screenShareOn && styles.ctrlBtnActive]}>
-                        <Icon name="monitor" size={20} color="#fff" />
-                    </TouchableOpacity>
+                        <TouchableOpacity onPress={toggleFullScreen} style={styles.ctrlBtn}>
+                            <Icon name="maximize" size={20} color="#fff" />
+                        </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={[styles.ctrlBtn, handRaised && styles.ctrlBtnActive]}
-                        onPress={toggleHandRaise}
-                    >
-                        <Icon name="hand" size={20} color={handRaised ? "#fff" : "#fff"} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        onPress={(e) => {
-                            if (showReactions) {
-                                setShowReactions(false);
-                            } else {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
-                                setShowReactions(true);
-                                setShowMicMenu(false);
-                                setShowCamMenu(false);
-                                setEmojiPickerVisible(false);
-                            }
-                        }}
-                        style={[styles.ctrlBtn, showReactions && styles.ctrlBtnActive]}
-                    >
-                        <Icon name="smile" size={20} color="#fff" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={toggleFullScreen} style={styles.ctrlBtn}>
-                        <Icon name="maximize" size={20} color="#fff" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={() => leaveCall()} style={styles.hangupBtn}>
-                        <Icon name="phone-off" size={20} color="#fff" />
-                    </TouchableOpacity>
+                        <TouchableOpacity onPress={() => leaveCall()} style={styles.hangupBtn}>
+                            <Icon name="phone-off" size={20} color="#fff" />
+                        </TouchableOpacity>
+                    </ScrollView>
                 </View>
             ) : (
                 <TouchableOpacity
@@ -984,7 +1003,7 @@ export default function CallScreen({
 }
 
 const styles = StyleSheet.create({
-    root: { flex: 1, backgroundColor: '#1A1917' },
+    root: { flex: 1, backgroundColor: '#1A1917', overflow: 'hidden' },
     header: { height: 60, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
     minimizeBtn: { padding: 8 },
     roomBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 },
@@ -1068,7 +1087,8 @@ const styles = StyleSheet.create({
     screenBadge: { backgroundColor: '#C9A84C' },
     participantName: { color: '#fff', fontSize: 11, fontWeight: '800' },
     statusIconRed: { backgroundColor: '#ED4245', borderRadius: 10, padding: 2 },
-    controls: { height: 100, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 15, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
+    controls: { height: 100, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', backgroundColor: '#12110F' },
+    controlsScrollContent: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 15, paddingHorizontal: 20, flexGrow: 1 },
     controlGroup: { flexDirection: 'row', backgroundColor: '#2B2D31', borderRadius: 25, overflow: 'hidden' },
     ctrlBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#2B2D31', justifyContent: 'center', alignItems: 'center' },
     ctrlBtnSplit: { borderTopRightRadius: 0, borderBottomRightRadius: 0, width: 40 },
