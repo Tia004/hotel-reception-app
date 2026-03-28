@@ -6,7 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Icon } from './Icons';
 import { RTCView } from '../utils/webrtc';
-import { Room, RoomEvent, Track, RemoteParticipant, LocalParticipant } from 'livekit-client';
+import { Room, RoomEvent, Track, RemoteParticipant, LocalParticipant, ParticipantEvent } from 'livekit-client';
 
 const EMOJI_REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏', '🙌', '👍'];
 
@@ -95,6 +95,8 @@ export default function CallScreen({
     const [selectedAudioOutput, setSelectedAudioOutput] = useState(null);
     const [selectedVideoInput, setSelectedVideoInput] = useState(null);
     const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+    const [activeSubMenu, setActiveSubMenu] = useState(null); // 'input', 'output', 'video'
+    const [mainMenuType, setMainMenuType] = useState(null); // 'mic', 'cam'
 
     const micBtnRef = useRef(null);
     const camBtnRef = useRef(null);
@@ -278,6 +280,28 @@ export default function CallScreen({
     }, [camOn, lkRoom]);
 
     useEffect(() => {
+        const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
+        if (!lp) return;
+        lp.setScreenShareEnabled(screenShareOn);
+    }, [screenShareOn, lkRoom]);
+
+    useEffect(() => {
+        const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
+        if (!lp) return;
+        
+        const handleTrackUnpublished = (pub) => {
+            if (pub.source === Track.Source.ScreenShare) {
+                setScreenShareOn(false);
+            }
+        };
+
+        lp.on(ParticipantEvent.TrackUnpublished, handleTrackUnpublished);
+        return () => {
+            lp.off(ParticipantEvent.TrackUnpublished, handleTrackUnpublished);
+        };
+    }, [lkRoom]);
+
+    useEffect(() => {
         if (!lkRoom) return;
         
         // Listen for device changes
@@ -385,7 +409,11 @@ export default function CallScreen({
     };
 
     const toggleScreenShare = () => {
-        setScreenShareOn(!screenShareOn);
+        if (screenShareOn) {
+            setScreenShareOn(false);
+        } else {
+            setScreenShareOn(true);
+        }
     };
 
     const toggleHandRaise = () => {
@@ -644,14 +672,15 @@ export default function CallScreen({
                             <Icon name={micOn ? "mic" : "mic-off"} size={20} color="#fff" />
                         </TouchableOpacity>
                         <TouchableOpacity 
-                            onPress={(e) => { 
+                            onPress={(e) => {
                                 if (showMicMenu) {
                                     setShowMicMenu(false);
+                                    setMainMenuType(null);
+                                    setActiveSubMenu(null);
                                 } else {
                                     const rect = e.currentTarget.getBoundingClientRect();
                                     setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
                                     setShowMicMenu(true);
-                                    setShowCamMenu(true); // Logic update: ensure others are off
                                     setShowCamMenu(false);
                                     setShowReactions(false);
                                     setEmojiPickerVisible(false);
@@ -716,7 +745,7 @@ export default function CallScreen({
                                 setEmojiPickerVisible(false);
                             }
                         }} 
-                        style={styles.ctrlBtn}
+                        style={[styles.ctrlBtn, showReactions && styles.ctrlBtnActive]}
                     >
                         <Icon name="smile" size={20} color="#fff" />
                     </TouchableOpacity>
@@ -759,7 +788,8 @@ export default function CallScreen({
                         <View style={[
                             styles.reactionsPopup,
                             { 
-                                left: menuPos.x - 130, // 260px width
+                                // Centering: width is 260
+                                left: Math.max(10, Math.min(menuPos.x - 130, Dimensions.get('window').width - 270)),
                                 bottom: (Dimensions.get('window').height - menuPos.y) + 12 
                             }
                         ]}>
@@ -790,6 +820,7 @@ export default function CallScreen({
                         <View style={[
                             styles.fullEmojiBox,
                             {
+                                // Centering: width is 340
                                 left: Math.max(10, Math.min(menuPos.x - 170, Dimensions.get('window').width - 350)),
                                 bottom: (Dimensions.get('window').height - menuPos.y) + 12,
                                 width: 340,
@@ -825,61 +856,110 @@ export default function CallScreen({
                         </View>
                     )}
 
-                    {/* Mic/Camera Device Menus */}
+                    {/* Mic/Camera Device Menus - Discord Style Nested */}
                     {(showMicMenu || showCamMenu) && (
                         <View style={[
                             styles.deviceMenu, 
                             { 
-                                // Precise centering: menu width is 220, so offset is 110
-                                left: Math.max(10, Math.min(menuPos.x - 110, Dimensions.get('window').width - 230)), 
-                                bottom: (Dimensions.get('window').height - menuPos.y) + 12 
+                                left: Math.max(10, Math.min(menuPos.x - 110, Dimensions.get('window').width - (activeSubMenu ? 450 : 230))), 
+                                bottom: (Dimensions.get('window').height - menuPos.y) + 12,
+                                width: activeSubMenu ? 440 : 220,
+                                flexDirection: 'row'
                             }
                         ]}>
-                            <Text style={styles.menuLabel}>{showMicMenu ? "INPUT AUDIO" : "CAMERA"}</Text>
-                            <ScrollView style={styles.menuScroll}>
-                                {(showMicMenu ? audioInputs : videoInputs).map(d => (
-                                    <TouchableOpacity 
-                                        key={d.deviceId} 
-                                        style={styles.menuItem}
-                                        onPress={() => switchDevice(showMicMenu ? 'audioinput' : 'videoinput', d.deviceId)}
-                                    >
-                                        <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
-                                        {(d.deviceId === (showMicMenu ? selectedAudioInput : selectedVideoInput)) && (
-                                            <Icon name="check" size={14} color="#C9A84C" />
-                                        )}
-                                    </TouchableOpacity>
-                                ))}
-                                {showMicMenu && (
-                                    <>
-                                        <View style={styles.menuDivider} />
-                                        <Text style={styles.menuLabel}>OUTPUT AUDIO</Text>
-                                        {audioOutputs.map(d => (
+                            {/* Main Categories column */}
+                            <View style={{ width: 220 }}>
+                                <Text style={styles.menuLabel}>{mainMenuType === 'mic' ? "IMPOSTAZIONI AUDIO" : "IMPOSTAZIONI VIDEO"}</Text>
+                                <ScrollView style={styles.menuScroll}>
+                                    {mainMenuType === 'mic' ? (
+                                        <>
+                                            <TouchableOpacity 
+                                                style={[styles.menuItem, activeSubMenu === 'input' && styles.menuItemActive]} 
+                                                onPress={() => setActiveSubMenu('input')}
+                                            >
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={styles.menuItemText}>Input Device</Text>
+                                                    <Text style={styles.menuItemSubtext} numberOfLines={1}>
+                                                        {audioInputs.find(d => d.deviceId === selectedAudioInput)?.label || 'Predefinito'}
+                                                    </Text>
+                                                </View>
+                                                <Icon name="chevron-right" size={14} color="#B9BBBE" />
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity 
+                                                style={[styles.menuItem, activeSubMenu === 'output' && styles.menuItemActive]} 
+                                                onPress={() => setActiveSubMenu('output')}
+                                            >
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={styles.menuItemText}>Output Device</Text>
+                                                    <Text style={styles.menuItemSubtext} numberOfLines={1}>
+                                                        {audioOutputs.find(d => d.deviceId === selectedAudioOutput)?.label || 'Predefinito'}
+                                                    </Text>
+                                                </View>
+                                                <Icon name="chevron-right" size={14} color="#B9BBBE" />
+                                            </TouchableOpacity>
+                                        </>
+                                    ) : (
+                                        <TouchableOpacity 
+                                            style={[styles.menuItem, activeSubMenu === 'video' && styles.menuItemActive]} 
+                                            onPress={() => setActiveSubMenu('video')}
+                                        >
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.menuItemText}>Camera</Text>
+                                                <Text style={styles.menuItemSubtext} numberOfLines={1}>
+                                                    {videoInputs.find(d => d.deviceId === selectedVideoInput)?.label || 'Predefinito'}
+                                                </Text>
+                                            </View>
+                                            <Icon name="chevron-right" size={14} color="#B9BBBE" />
+                                        </TouchableOpacity>
+                                    )}
+                                </ScrollView>
+                                <View style={styles.menuDivider} />
+                                <TouchableOpacity 
+                                    style={styles.menuSettingsBtn} 
+                                    onPress={() => {
+                                        setShowMicMenu(false);
+                                        setShowCamMenu(false);
+                                        setActiveSubMenu(null);
+                                        setMainMenuType(null);
+                                        onOpenSettings && onOpenSettings();
+                                    }}
+                                >
+                                    <Text style={styles.menuSettingsText}>Voice Settings</Text>
+                                    <Icon name="settings" size={14} color="#B9BBBE" />
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Sub-menu column for devices */}
+                            {activeSubMenu && (
+                                <View style={{ width: 220, borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.05)' }}>
+                                    <Text style={styles.menuLabel}>
+                                        {activeSubMenu === 'input' ? "SELEZIONA INPUT" : 
+                                         activeSubMenu === 'output' ? "SELEZIONA OUTPUT" : "SELEZIONA CAMERA"}
+                                    </Text>
+                                    <ScrollView style={styles.menuScroll}>
+                                        {(activeSubMenu === 'input' ? audioInputs : 
+                                          activeSubMenu === 'output' ? audioOutputs : videoInputs).map(d => (
                                             <TouchableOpacity 
                                                 key={d.deviceId} 
                                                 style={styles.menuItem}
-                                                onPress={() => switchDevice('audiooutput', d.deviceId)}
+                                                onPress={() => {
+                                                    const kind = activeSubMenu === 'input' ? 'audioinput' : 
+                                                                 activeSubMenu === 'output' ? 'audiooutput' : 'videoinput';
+                                                    switchDevice(kind, d.deviceId);
+                                                    // Keep menu open but update state? Discord keeps it open but updates selection.
+                                                }}
                                             >
                                                 <Text style={styles.menuItemText} numberOfLines={1}>{d.label || 'Dispositivo sconosciuto'}</Text>
-                                                {d.deviceId === selectedAudioOutput && (
-                                                    <Icon name="check" size={14} color="#C9A84C" />
+                                                {(d.deviceId === (activeSubMenu === 'input' ? selectedAudioInput : 
+                                                                  activeSubMenu === 'output' ? selectedAudioOutput : selectedVideoInput)) && (
+                                                    <View style={styles.selectionCircle} />
                                                 )}
                                             </TouchableOpacity>
                                         ))}
-                                    </>
-                                )}
-                            </ScrollView>
-                            <View style={styles.menuDivider} />
-                            <TouchableOpacity 
-                                style={styles.menuSettingsBtn} 
-                                onPress={() => {
-                                    setShowMicMenu(false);
-                                    setShowCamMenu(false);
-                                    onOpenSettings && onOpenSettings();
-                                }}
-                            >
-                                <Text style={styles.menuSettingsText}>Impostazioni</Text>
-                                <Icon name="settings" size={14} color="#B9BBBE" />
-                            </TouchableOpacity>
+                                    </ScrollView>
+                                </View>
+                            )}
                         </View>
                     )}
                 </View>
@@ -979,21 +1059,22 @@ const styles = StyleSheet.create({
     ctrlBtnSplit: { borderTopRightRadius: 0, borderBottomRightRadius: 0, width: 40 },
     ctrlBtnChevron: { width: 22, height: 44, borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
     ctrlBtnOff: { backgroundColor: '#ED4245' },
-    ctrlBtnActive: { backgroundColor: '#5865F2' },
+    ctrlBtnActive: { backgroundColor: '#C9A84C' },
     hangupBtn: { width: 64, height: 44, borderRadius: 22, backgroundColor: '#ED4245', justifyContent: 'center', alignItems: 'center' },
     
     // Device Menu
     deviceMenuContainer: { ...StyleSheet.absoluteFillObject, zIndex: 3000 },
-    deviceMenu: { position: 'absolute', bottom: 110, width: 220, backgroundColor: '#18191C', borderRadius: 8, paddingVertical: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 },
-    micMenuPos: { left: Dimensions.get('window').width / 2 - 180 },
-    camMenuPos: { left: Dimensions.get('window').width / 2 - 110 },
-    menuLabel: { color: '#B9BBBE', fontSize: 10, fontWeight: 'bold', paddingHorizontal: 12, paddingVertical: 6 },
-    menuScroll: { maxHeight: 200 },
-    menuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8 },
-    menuItemText: { color: '#DCDDDE', fontSize: 12, flex: 1, marginRight: 8 },
+    deviceMenu: { position: 'absolute', bottom: 110, backgroundColor: '#18191C', borderRadius: 12, paddingVertical: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10, overflow: 'hidden' },
+    menuLabel: { color: '#B9BBBE', fontSize: 10, fontWeight: '800', paddingHorizontal: 12, paddingVertical: 8, letterSpacing: 0.5 },
+    menuScroll: { maxHeight: 300 },
+    menuItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, gap: 10 },
+    menuItemActive: { backgroundColor: 'rgba(201,168,76,0.1)' },
+    menuItemText: { color: '#DCDDDE', fontSize: 13, flex: 1 },
+    menuItemSubtext: { color: '#8E9297', fontSize: 11, marginTop: 2 },
+    selectionCircle: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#C9A84C', borderWidth: 3, borderColor: '#18191C' },
     menuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginVertical: 4 },
-    menuSettingsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
-    menuSettingsText: { color: '#DCDDDE', fontSize: 12 },
+    menuSettingsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 12, backgroundColor: 'rgba(255,255,255,0.02)' },
+    menuSettingsText: { color: '#DCDDDE', fontSize: 13, fontWeight: '600' },
     chatPanel: { height: 300, backgroundColor: '#12110F', borderTopWidth: 1, borderTopColor: '#C9A84C' },
     chatScroll: { flex: 1, padding: 15 },
     chatMsg: { marginBottom: 10, backgroundColor: 'rgba(255,255,255,0.05)', padding: 10, borderRadius: 10, maxWidth: '80%' },

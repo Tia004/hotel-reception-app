@@ -1119,11 +1119,19 @@ export default function HotelChat({
                         </View>
                     </Animated.View>
 
-                    {/* Unified Rhombus Tab (Left) - Always visible because its parent isn't absolute overflow hidden! */}
-                    <View style={[
+                    {/* Unified Rhombus Tab (Left) */}
+                    <Animated.View style={[
                         styles.externalTab,
                         styles.leftExternalTab,
-                        { left: '100%', position: 'absolute', marginLeft: leftAnim }
+                        IS_MOBILE ? { 
+                            position: 'absolute', 
+                            left: 260, 
+                            transform: [{ translateX: leftAnim }]
+                        } : {
+                            position: 'absolute',
+                            left: '100%',
+                            marginLeft: leftAnim
+                        }
                     ]}>
                         <TouchableOpacity
                             onPress={toggleLeft}
@@ -1134,7 +1142,7 @@ export default function HotelChat({
                                 <Icon name="chevron-left" size={16} color="#C9A84C" />
                             </View>
                         </TouchableOpacity>
-                    </View>
+                    </Animated.View>
                 </View>
             )}
 
@@ -1507,10 +1515,10 @@ export default function HotelChat({
                                 <Icon name="send" size={16} color="#111" />
                             </TouchableOpacity>
                         ) : null}
+                    </View>
                 </View>
             </View>
-        </View>
-        }
+            }
 
 
             {/* ── RIGHT PANEL ─────────────────────────────────────────── */}
@@ -1520,7 +1528,16 @@ export default function HotelChat({
                         styles.column,
                         styles.rightPanel,
                         { width: 280, marginRight: rightAnim },
-                        IS_MOBILE && { position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 100, backgroundColor: '#141210' }
+                        IS_MOBILE && { 
+                            position: 'absolute', 
+                            right: 0, 
+                            top: 0, 
+                            bottom: 0, 
+                            zIndex: 100, 
+                            backgroundColor: '#141210',
+                            marginRight: 0,
+                            transform: [{ translateX: Animated.multiply(rightAnim, -1) }]
+                        }
                     ]}>
                         <View style={{ width: 280, height: '100%', padding: 16, position: 'absolute', left: 0, top: 0 }}>
                             <View style={styles.rightHeader}>
@@ -1658,11 +1675,19 @@ export default function HotelChat({
                         </View>
                     </Animated.View>
 
-                    {/* Unified Rhombus Tab (Right) - Sibling and moving with rightAnim */}
-                    <View style={[
+                    {/* Unified Rhombus Tab (Right) */}
+                    <Animated.View style={[
                         styles.externalTab,
                         styles.rightExternalTab,
-                        { right: '100%', position: 'absolute', marginRight: rightAnim }
+                        IS_MOBILE ? { 
+                            position: 'absolute', 
+                            right: 280, 
+                            transform: [{ translateX: Animated.multiply(rightAnim, -1) }]
+                        } : {
+                            position: 'absolute',
+                            right: '100%',
+                            marginRight: rightAnim
+                        }
                     ]}>
                         <TouchableOpacity
                             onPress={toggleRight}
@@ -1673,7 +1698,7 @@ export default function HotelChat({
                                 <Icon name="chevron-right" size={16} color="#C9A84C" />
                             </View>
                         </TouchableOpacity>
-                    </View>
+                    </Animated.View>
                 </View>
             )}
 
@@ -1804,9 +1829,8 @@ export default function HotelChat({
                         styles.msgEmojiPicker,
                         {
                             position: 'absolute',
-                            // Centering: Bar is ~260px wide, so subtract 130px from click position (which is now the button center)
-                            left: Math.max(10, Math.min(emojiPickerMsg.x - 130, 2000)),
-                            top: Math.max(10, Math.min(emojiPickerMsg.y - 65, 2000)),
+                            left: Math.max(10, Math.min(emojiPickerMsg.x - 130, Dimensions.get('window').width - 270)),
+                            top: Math.max(10, Math.min(emojiPickerMsg.y - 65, Dimensions.get('window').height - 60)),
                             zIndex: 1000000
                         }
                     ]}>
@@ -1839,11 +1863,8 @@ export default function HotelChat({
                         styles.msgActionMenu,
                         {
                             position: 'absolute',
-                            // If Right Click: top-right corner from X,Y -> menu is ~180px wide. 
-                            // So left is X - 180.
-                            // If Chevron Click: left of arrow -> left is X - 185 approx.
-                            left: Math.max(10, Math.min(msgActionMenu.isRightClick ? msgActionMenu.x - 180 : msgActionMenu.x - 185, 2000)),
-                            top: Math.min(msgActionMenu.y, 2000),
+                            left: Math.max(10, Math.min(msgActionMenu.isRightClick ? msgActionMenu.x - 180 : msgActionMenu.x - 185, Dimensions.get('window').width - 190)),
+                            top: Math.max(10, Math.min(msgActionMenu.y, Dimensions.get('window').height - 350)), // Safe room for ~340px menu
                             zIndex: 1000000
                         }
                     ]}>
@@ -1898,7 +1919,7 @@ export default function HotelChat({
 }
 
 const styles = StyleSheet.create({
-    root: { flex: 1, flexDirection: 'row', backgroundColor: 'transparent', ...NO_SELECT, position: 'relative' },
+    root: { flex: 1, flexDirection: 'row', backgroundColor: 'transparent', ...NO_SELECT, position: 'relative', overflow: 'hidden', height: Platform.OS === 'web' ? '100vh' : '100%' },
     column: { height: '100%' },
 
     // Message context menu & reactions
@@ -1941,8 +1962,8 @@ const styles = StyleSheet.create({
     pinnedItemText: { flex: 1, color: '#C8C4B8', fontSize: 12 },
 
     // Pull tabs (linguette)
-    leftTrapezoid: { position: 'absolute', top: '50%', left: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopRightRadius: 8, borderBottomRightRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderRightWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
-    rightTrapezoid: { position: 'absolute', top: '50%', right: 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopLeftRadius: 8, borderBottomLeftRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderLeftWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
+    leftTrapezoid: { position: 'absolute', top: '50%', left: IS_MOBILE ? -1 : 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopRightRadius: 8, borderBottomRightRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderRightWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
+    rightTrapezoid: { position: 'absolute', top: '50%', right: IS_MOBILE ? -1 : 0, width: 24, height: 60, marginTop: -30, backgroundColor: '#1C1A12', borderTopLeftRadius: 8, borderBottomLeftRadius: 8, justifyContent: 'center', alignItems: 'center', zIndex: 100, borderLeftWidth: 1, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(201,168,76,0.3)' },
 
     externalTab: {
         position: 'absolute',
@@ -1959,6 +1980,7 @@ const styles = StyleSheet.create({
     leftExternalTab: {
         position: 'absolute',
         top: '45%',
+        left: IS_MOBILE ? 0 : 0,
         borderTopRightRadius: 14,
         borderBottomRightRadius: 14,
         zIndex: 1000,
@@ -1968,7 +1990,7 @@ const styles = StyleSheet.create({
         borderWidth: 0,
         borderLeftWidth: 0
     },
-    rightExternalTab: { position: 'absolute', top: '45%', borderTopLeftRadius: 14, borderBottomLeftRadius: 14, zIndex: 1000, width: 28, height: 60, backgroundColor: '#141210', borderWidth: 0 },
+    rightExternalTab: { position: 'absolute', top: '45%', right: IS_MOBILE ? 0 : 0, borderTopLeftRadius: 14, borderBottomLeftRadius: 14, zIndex: 1000, width: 28, height: 60, backgroundColor: '#141210', borderWidth: 0 },
     collapseTabInternal: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
 
     // Sidebar
