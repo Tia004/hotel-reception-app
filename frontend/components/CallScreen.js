@@ -94,6 +94,8 @@ export default function CallScreen({
     const [selectedAudioInput, setSelectedAudioInput] = useState(null);
     const [selectedAudioOutput, setSelectedAudioOutput] = useState(null);
     const [selectedVideoInput, setSelectedVideoInput] = useState(null);
+    const [message, setMessage] = useState('');
+    const [speakingParticipants, setSpeakingParticipants] = useState(new Set());
     const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
     const [activeSubMenu, setActiveSubMenu] = useState(null); // 'input', 'output', 'video'
     const [mainMenuType, setMainMenuType] = useState(null); // 'mic', 'cam'
@@ -221,6 +223,10 @@ export default function CallScreen({
 
             room.on(RoomEvent.ConnectionStateChanged, (state) => {
                 addLog(`Stato connessione: ${state}`);
+            });
+
+            room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+                setSpeakingParticipants(new Set(speakers.map(s => s.identity)));
             });
 
             room.on(RoomEvent.DataReceived, (payload, participant) => {
@@ -507,6 +513,8 @@ export default function CallScreen({
 
         const bgColor = isScreen ? '#000' : getParticipantColor(participant.identity);
 
+        const isSpeaking = speakingParticipants.has(participant.identity);
+
         return (
             <TouchableOpacity
                 key={tileId}
@@ -515,7 +523,7 @@ export default function CallScreen({
                 style={[
                     styles.tile,
                     size === 'grid' ? styles.tileGrid : (size === 'focus' ? styles.tileLarge : styles.tileSmall),
-                    { backgroundColor: bgColor, borderRadius: 12 }
+                    isSpeaking && styles.tileSpeaking
                 ]}
             >
                 {hasVideo && stream ? (
@@ -1057,14 +1065,24 @@ const styles = StyleSheet.create({
         borderColor: '#C9A84C'
     },
     showOthersTxt: { color: '#C9A84C', fontWeight: 'bold', fontSize: 12 },
-    tile: { backgroundColor: '#2B2D31', borderRadius: 12, overflow: 'hidden', position: 'relative', borderWidth: 2, borderColor: 'transparent' },
+    tile: { backgroundColor: '#2B2D31', borderRadius: 12, overflow: 'hidden', position: 'relative', borderWidth: 2, borderColor: '#C9A84C' },
     tileGrid: {
-        width: Platform.OS === 'web' ? '48%' : '47.5%',
+        width: Platform.OS === 'web' ? '95vw' : '95%',
         aspectRatio: 16 / 9,
-        margin: 5
+        marginVertical: 10,
+        alignSelf: 'center'
     },
     tileSmall: { width: 140, height: 90 },
     tileLarge: { flex: 1 },
+    tileSpeaking: {
+        borderColor: '#FFF',
+        shadowColor: '#C9A84C',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 15,
+        elevation: 15,
+        borderWidth: 3
+    },
     exitFullScreenBtn: {
         position: 'absolute',
         bottom: 30,

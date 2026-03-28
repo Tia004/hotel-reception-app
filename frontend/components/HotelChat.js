@@ -718,9 +718,10 @@ export default function HotelChat({
             socket.off('message-deleted');
             socket.off('message-reacted');
             socket.off('read-receipt-update');
+            socket.off('connect', joinAll);
             clearInterval(i);
         };
-    }, [socket]);
+    }, [socket, user]);
 
     // Auto mark messages as read when channel is viewed
     useEffect(() => {
