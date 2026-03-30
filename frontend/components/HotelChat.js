@@ -316,6 +316,8 @@ export default function HotelChat({
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
     const isAtBottom = useRef(true);
+    const prevMsgCount = useRef(0);
+    const prevLastMsgId = useRef(null);
 
     useEffect(() => {
         // Clear cross-chat states when switching channels
@@ -758,14 +760,30 @@ export default function HotelChat({
     }, [messages[activeChannel?.id], activeChannel, socket]);
 
     useEffect(() => {
-        // Only auto-scroll on new messages/updates if the user is already at the bottom
-        if (isAtBottom.current) {
-            setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+        const channelMsgs = messages[activeChannel?.id] || [];
+        const count = channelMsgs.length;
+        const lastMsg = channelMsgs[count - 1];
+        const lastId = lastMsg?.id;
+
+        // Only scroll if:
+        // 1. A NEW message was actually added (count increased)
+        // 2. AND the user was already at the bottom (or it's the very first load)
+        if (count > prevMsgCount.current) {
+            if (isAtBottom.current) {
+                setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+            }
         }
+
+        prevMsgCount.current = count;
+        prevLastMsgId.current = lastId;
     }, [messages[activeChannel?.id]]);
 
     useEffect(() => {
-        // When activeChannel changes, always scroll down immediately
+        // When activeChannel changes, reset counters and scroll down immediately
+        const channelMsgs = messages[activeChannel?.id] || [];
+        prevMsgCount.current = channelMsgs.length;
+        prevLastMsgId.current = channelMsgs[channelMsgs.length - 1]?.id;
+        
         isAtBottom.current = true;
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
     }, [activeChannel?.id]);
@@ -1232,8 +1250,16 @@ export default function HotelChat({
                         contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}
                         onScroll={(e) => {
                             const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-                            // Consider "at bottom" if within 150px of the actual bottom
-                            isAtBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 150;
+                            // Consider "at bottom" if within 100px of the actual bottom
+                            // Using a slightly more strict threshold (100 instead of 150)
+                            const paddingToBottom = 100;
+                            isAtBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+                        }}
+                        onContentSizeChange={() => {
+                            // If we were at the bottom before content changed, stay at the bottom
+                            if (isAtBottom.current) {
+                                scrollRef.current?.scrollToEnd({ animated: true });
+                            }
                         }}
                         scrollEventThrottle={16}
                     >

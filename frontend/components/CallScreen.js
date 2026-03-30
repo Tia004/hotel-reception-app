@@ -1018,10 +1018,12 @@ const styles = StyleSheet.create({
     roomBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 },
     roomName: { color: '#C9A84C', fontWeight: '800', fontSize: 13 },
     videoGrid: {
+        width: '100%',
         padding: 10,
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'center',
+        alignItems: 'center',
         gap: 10,
         paddingBottom: 100 // Space for controls
     },
@@ -1068,9 +1070,12 @@ const styles = StyleSheet.create({
     showOthersTxt: { color: '#C9A84C', fontWeight: 'bold', fontSize: 12 },
     tile: { backgroundColor: '#2B2D31', borderRadius: 12, overflow: 'hidden', position: 'relative', borderWidth: 2, borderColor: '#C9A84C' },
     tileGrid: {
-        width: Platform.OS === 'web' ? '98vw' : '98%',
-        aspectRatio: IS_MOBILE ? 1 : 16 / 9,
-        marginVertical: 10,
+        flexGrow: 1,
+        flexBasis: IS_MOBILE ? '45%' : '30%',
+        minWidth: IS_MOBILE ? 150 : 300,
+        maxWidth: IS_MOBILE ? '100%' : 800,
+        aspectRatio: IS_MOBILE ? 4 / 3 : 16 / 9,
+        marginVertical: 5,
         alignSelf: 'center'
     },
     tileSmall: { width: 140, height: 90 },
