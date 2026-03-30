@@ -507,33 +507,53 @@ io.on('connection', (socket) => {
             created_at: new Date().toISOString()
         };
 
-        const finalMsg = { ...data, sender: user.username, timestamp: Date.now() };
-
-        // Emit to channel (real-time)
-        io.to(`channel:${channelId}`).emit('channel-message', { 
-            channelId, 
-            message: finalMsg 
-        });
-
-        // Save to Supabase
+        // Save to Supabase AND retrieve the final ID
         try {
-            const { error } = await supabase.from('messages').insert([msgObj]);
-            if (error) console.error('[Supabase] Channel save error:', error.message);
-        } catch (e) { console.error('[Supabase] Channel network error:', e.message); }
+            const { data: inserted, error } = await supabase.from('messages').insert([msgObj]).select();
+            if (error) {
+                console.error('[Supabase] Channel save error:', error.message);
+                return;
+            }
+            
+            const dbMsg = inserted && inserted[0] ? inserted[0] : null;
+            if (!dbMsg || !dbMsg.id) return;
+
+            const finalMsg = { 
+                ...data, 
+                id: dbMsg.id, // True Supabase ID attached!
+                sender: user.username, 
+                timestamp: new Date(dbMsg.created_at).getTime() 
+            };
+
+            // Emit to channel (real-time) with the exact ID so clients don't drop it due to collision
+            io.to(`channel:${channelId}`).emit('channel-message', { 
+                channelId, 
+                message: finalMsg 
+            });
+
+        } catch (e) { 
+            console.error('[Supabase] Channel network error:', e.message); 
+        }
     });
+
 
     socket.on('get-channel-history', async ({ channelId }) => {
         if (!channelId) return;
         try {
+            // Must fetch DESC to get the newest, then reverse in memory to show chronologically
             const { data: messages, error } = await supabase
                 .from('messages')
                 .select('*')
                 .eq('room_id', `channel:${channelId}`)
-                .order('created_at', { ascending: true })
+                .order('created_at', { ascending: false })
                 .limit(LIMIT_HISTORY);
 
             if (error) throw error;
-            const history = (messages || []).map(m => ({
+            
+            // Reverse so oldest is first in the array again
+            const sortedMessages = (messages || []).reverse();
+
+            const history = sortedMessages.map(m => ({
                 id: m.id, // Supabase ID
                 sender: m.sender,
                 station: m.station,
