@@ -8,12 +8,16 @@ import CallDebug from './components/CallDebug';
 import MediaSettings from './components/MediaSettings';
 import io from 'socket.io-client';
 import { Icon } from './components/Icons';
-import SplashScreen from './components/SplashScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 
-import versionData from './version.json';
+let versionData = { version: '5.2.5' };
+try {
+  versionData = require('./version.json');
+} catch (e) {
+  console.warn('version.json not found, using fallback');
+}
 
-const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'http://192.168.1.46:3000';
+const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'https://hotel-reception-app.onrender.com/';
 const APP_VERSION = versionData.version;
 const SESSION_KEY = 'gsa_session';
 const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
@@ -33,7 +37,7 @@ export default function App() {
   // On mobile: flip between "call view" and "chat view"
   const [mobileView, setMobileView] = useState('chat'); // 'chat' | 'call'
   const [showDebugCall, setShowDebugCall] = useState(false);
-  
+
   // Hoisted call media states for syncing with User Bar
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
@@ -163,7 +167,7 @@ export default function App() {
   };
 
   // ── PiP Dragging & Magnetic Snapping ──────────────────────────────────
-  const [pipPos, setPipPos] = useState({ x: 0, y: 0 }); 
+  const [pipPos, setPipPos] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
   const startPos = useRef({ x: 0, y: 0 });
 
@@ -184,7 +188,7 @@ export default function App() {
     isDragging.current = false;
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
-    
+
     // Magnetic Snap Logic
     const { width: winW, height: winH } = Dimensions.get('window');
     const pipW = 340;
@@ -238,22 +242,16 @@ export default function App() {
     transition: isDragging.current ? 'none' : 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
   };
 
-  if (loading) {
-    return (
-      <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
-        <SplashScreen onDone={() => setLoading(false)} />
-      </Animated.View>
-    );
-  }
-
-  if (!user) {
-    return (
-      <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
-        <StatusBar style="light" />
-        <LoginScreen onLogin={(userData) => handleLogin(userData)} />
-      </Animated.View>
-    );
-  }
+  if (loading) return (
+    <ErrorBoundary>
+      <SplashScreen onDone={() => setLoading(false)} />
+    </ErrorBoundary>
+  );
+  if (!user) return (
+    <ErrorBoundary>
+      <LoginScreen onLogin={(userData) => handleLogin(userData)} />
+    </ErrorBoundary>
+  );
 
   const inCall = !!currentRoom;
   const showCallFull = inCall && !callPiP;
@@ -345,10 +343,10 @@ export default function App() {
 
           {showDebugCall && (
             <View style={StyleSheet.absoluteFillObject}>
-              <CallDebug 
-                socket={socketRef.current} 
-                user={user} 
-                onClose={() => setShowDebugCall(false)} 
+              <CallDebug
+                socket={socketRef.current}
+                user={user}
+                onClose={() => setShowDebugCall(false)}
               />
             </View>
           )}
@@ -431,7 +429,7 @@ export default function App() {
           )}
 
           {inCall && callPiP && (
-            <View 
+            <View
               style={pipContainerStyle}
               {...(Platform.OS === 'web' ? { onMouseDown: onDragStart } : {})}
             >
@@ -462,50 +460,50 @@ export default function App() {
         </View>
 
         {showDebugCall && (
-           <View style={[StyleSheet.absoluteFillObject, { zIndex: 10000 }]}>
-              <CallDebug 
-                socket={socketRef.current} 
-                user={user} 
-                onClose={() => setShowDebugCall(false)} 
-              />
-           </View>
+          <View style={[StyleSheet.absoluteFillObject, { zIndex: 10000 }]}>
+            <CallDebug
+              socket={socketRef.current}
+              user={user}
+              onClose={() => setShowDebugCall(false)}
+            />
+          </View>
         )}
-         <MediaSettings 
-            visible={settingsVisible} 
-            onClose={() => setSettingsVisible(false)} 
-            user={user} 
-         />
+        <MediaSettings
+          visible={settingsVisible}
+          onClose={() => setSettingsVisible(false)}
+          user={user}
+        />
 
-         {/* Update Prompt Modal */}
-         <Modal
-            visible={showUpdatePrompt}
-            transparent={true}
-            animationType="fade"
-         >
-            <View style={styles.updateOverlay}>
-                <View style={styles.updateCard}>
-                    <Icon name="refresh" size={40} color="#C9A84C" />
-                    <Text style={styles.updateTitle}>NUOVA VERSIONE</Text>
-                    <Text style={styles.updateMsg}>
-                        È disponibile una nuova versione del sito. Ricarica la pagina per applicare gli aggiornamenti.
-                    </Text>
-                    <TouchableOpacity 
-                        style={styles.updateBtn}
-                        onPress={() => Platform.OS === 'web' && window.location.reload()}
-                    >
-                        <Text style={styles.updateBtnTxt}>RICARICA ORA</Text>
-                    </TouchableOpacity>
-                </View>
+        {/* Update Prompt Modal */}
+        <Modal
+          visible={showUpdatePrompt}
+          transparent={true}
+          animationType="fade"
+        >
+          <View style={styles.updateOverlay}>
+            <View style={styles.updateCard}>
+              <Icon name="refresh" size={40} color="#C9A84C" />
+              <Text style={styles.updateTitle}>NUOVA VERSIONE</Text>
+              <Text style={styles.updateMsg}>
+                È disponibile una nuova versione del sito. Ricarica la pagina per applicare gli aggiornamenti.
+              </Text>
+              <TouchableOpacity
+                style={styles.updateBtn}
+                onPress={() => Platform.OS === 'web' && window.location.reload()}
+              >
+                <Text style={styles.updateBtnTxt}>RICARICA ORA</Text>
+              </TouchableOpacity>
             </View>
-         </Modal>
+          </View>
+        </Modal>
       </Animated.View>
     </ErrorBoundary>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { 
-    flex: 1, 
+  root: {
+    flex: 1,
     backgroundColor: '#0C0B09',
   },
   content: { flex: 1, flexDirection: 'row', position: 'relative', backgroundColor: '#0C0B09' },

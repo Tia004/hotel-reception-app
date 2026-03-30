@@ -6,7 +6,13 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import versionData from '../version.json';
+
+let versionData = { version: '5.2.5' };
+try {
+  versionData = require('../version.json');
+} catch (e) {
+  console.warn('version.json not found in SplashScreen');
+}
 
 const { width: W, height: H } = Dimensions.get('window');
 
