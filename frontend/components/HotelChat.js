@@ -315,6 +315,7 @@ export default function HotelChat({
     }, [availableRooms.length]);
     const scrollRef = useRef(null);
     const inputRef = useRef(null);
+    const isAtBottom = useRef(true);
 
     useEffect(() => {
         // Clear cross-chat states when switching channels
@@ -757,8 +758,17 @@ export default function HotelChat({
     }, [messages[activeChannel?.id], activeChannel, socket]);
 
     useEffect(() => {
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-    }, [messages[activeChannel?.id], activeChannel]);
+        // Only auto-scroll on new messages/updates if the user is already at the bottom
+        if (isAtBottom.current) {
+            setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+        }
+    }, [messages[activeChannel?.id]]);
+
+    useEffect(() => {
+        // When activeChannel changes, always scroll down immediately
+        isAtBottom.current = true;
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
+    }, [activeChannel?.id]);
 
     // Note: click-outside and right-click handling is done above in the first useEffect
 
@@ -802,6 +812,8 @@ export default function HotelChat({
         });
         setDraft('');
         setReplyingTo(null);
+        isAtBottom.current = true;
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     };
 
     const reactMessage = (messageId, emoji) => {
@@ -1214,7 +1226,17 @@ export default function HotelChat({
 
 
                 <LinearGradient colors={['rgba(12, 11, 9, 0.6)', 'rgba(20, 18, 14, 0.7)']} style={{ flex: 1 }}>
-                    <ScrollView ref={scrollRef} style={styles.messagesScroll} contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}>
+                    <ScrollView 
+                        ref={scrollRef} 
+                        style={styles.messagesScroll} 
+                        contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}
+                        onScroll={(e) => {
+                            const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+                            // Consider "at bottom" if within 150px of the actual bottom
+                            isAtBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 150;
+                        }}
+                        scrollEventThrottle={16}
+                    >
                         {(messages[activeChannel.id] || []).length === 0 && (
                             <View style={styles.emptyChat}>
                                 <View style={styles.emptyChatIcon}>
