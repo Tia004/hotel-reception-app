@@ -11,7 +11,10 @@ import { Icon } from './components/Icons';
 import SplashScreen from './components/SplashScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 
+import versionData from './version.json';
+
 const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'http://192.168.1.46:3000';
+const APP_VERSION = versionData.version;
 const SESSION_KEY = 'gsa_session';
 const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -40,6 +43,7 @@ export default function App() {
 
   const socketRef = useRef(null);
   const [socketReady, setSocketReady] = useState(false);
+  const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -92,6 +96,12 @@ export default function App() {
     s.on('connect', () => {
       s.emit('join', { ...userData, profilePic: userData.profilePic || null });
       setSocketReady(true);
+    });
+
+    s.on('app-version', ({ version }) => {
+      if (version !== APP_VERSION) {
+        setShowUpdatePrompt(true);
+      }
     });
 
     s.on('room-created', ({ roomId, isTemp, peers }) => {
@@ -465,6 +475,29 @@ export default function App() {
             onClose={() => setSettingsVisible(false)} 
             user={user} 
          />
+
+         {/* Update Prompt Modal */}
+         <Modal
+            visible={showUpdatePrompt}
+            transparent={true}
+            animationType="fade"
+         >
+            <View style={styles.updateOverlay}>
+                <View style={styles.updateCard}>
+                    <Icon name="refresh" size={40} color="#C9A84C" />
+                    <Text style={styles.updateTitle}>NUOVA VERSIONE</Text>
+                    <Text style={styles.updateMsg}>
+                        È disponibile una nuova versione del sito. Ricarica la pagina per applicare gli aggiornamenti.
+                    </Text>
+                    <TouchableOpacity 
+                        style={styles.updateBtn}
+                        onPress={() => Platform.OS === 'web' && window.location.reload()}
+                    >
+                        <Text style={styles.updateBtnTxt}>RICARICA ORA</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+         </Modal>
       </Animated.View>
     </ErrorBoundary>
   );
@@ -514,5 +547,59 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 13,
     letterSpacing: 0.3,
+  },
+
+  // Update Prompt Styles
+  updateOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  updateCard: {
+    backgroundColor: '#16140F',
+    borderRadius: 20,
+    padding: 40,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.2)',
+    shadowColor: '#C9A84C',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  updateTitle: {
+    color: '#C9A84C',
+    fontSize: 22,
+    fontWeight: '900',
+    marginTop: 20,
+    letterSpacing: 2,
+  },
+  updateMsg: {
+    color: '#A8A090',
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 22,
+    marginBottom: 30,
+  },
+  updateBtn: {
+    backgroundColor: '#C9A84C',
+    paddingHorizontal: 40,
+    paddingVertical: 14,
+    borderRadius: 12,
+    shadowColor: '#C9A84C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  updateBtnTxt: {
+    color: '#111',
+    fontWeight: '900',
+    fontSize: 14,
+    letterSpacing: 1,
   },
 });

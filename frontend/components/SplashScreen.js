@@ -6,6 +6,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Dimensions, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import versionData from '../version.json';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -80,7 +81,7 @@ export default function SplashScreen({ onDone }) {
 
             {/* Brand text */}
             <Animated.View style={[styles.brandBlock, { opacity: fadeAnim }]}>
-                <Text style={styles.brandTitle}>Chat v5.0.7</Text>
+                <Text style={styles.brandTitle}>App Videochiamate di GSA Hotels</Text>
             </Animated.View>
 
             {/* Loading dots */}
@@ -91,7 +92,7 @@ export default function SplashScreen({ onDone }) {
             </View>
 
             {/* Version watermark */}
-            <Text style={styles.version}>v5.0.7</Text>
+            <Text style={styles.version}>v{versionData.version}</Text>
         </Animated.View>
     );
 }

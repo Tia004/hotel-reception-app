@@ -181,6 +181,10 @@ export default function HotelChat({
     const [onlineUsers, setOnlineUsers] = useState([]);
     const [expanded, setExpanded] = useState({ voice: true, saved: false, users: true, rooms: true, pinned: false });
     const [expandedHotels, setExpandedHotels] = useState({ duchessa: true, blumen: false, santorsola: false });
+    
+    // Stable user reference for socket listeners to avoid stale closures
+    const userRef = useRef(user);
+    useEffect(() => { userRef.current = user; }, [user]);
 
     // Per-channel state isolation
     const [channelDrafts, setChannelDrafts] = useState({}); // { channelId: { text: string, replyingTo: object } }
@@ -581,10 +585,17 @@ export default function HotelChat({
         loadProfile();
         requestPermission(); // Ask for push notification permission
 
-        ALL_CHANNELS.forEach(ch => {
-            socket.emit('join-channel', { channelId: ch.id });
-            socket.emit('get-channel-history', { channelId: ch.id });
-        });
+        const joinAll = () => {
+            ALL_CHANNELS.forEach(ch => {
+                socket.emit('join-channel', { channelId: ch.id });
+                socket.emit('get-channel-history', { channelId: ch.id });
+            });
+        };
+
+        // Re-join on every connection (essential for mobile network drops)
+        if (socket.connected) joinAll();
+        socket.on('connect', joinAll);
+        socket.on('reconnect', joinAll);
 
         socket.on('channel-history', ({ channelId, messages: msgs, pinned: pins }) => {
             setMessages(p => ({ ...p, [channelId]: msgs }));
@@ -598,7 +609,7 @@ export default function HotelChat({
                 if (current.some(m => m.id === message.id)) return p;
                 
                 // 2. Resolve Optimistic Message (Match by sender and content)
-                if (message.sender === user.username) {
+                if (message.sender === userRef.current?.username) {
                     const optIndex = current.findIndex(m => 
                         m.isOptimistic && 
                         (m.text === message.text && m.imageData === message.imageData && m.gifUrl === message.gifUrl)
@@ -614,7 +625,7 @@ export default function HotelChat({
             });
 
             // Push notification when sender is not current user
-            if (message.sender !== user.username) {
+            if (message.sender !== userRef.current?.username) {
                 const ch = ALL_CHANNELS.find(c => c.id === channelId);
                 const hotel = HOTELS.find(h => channelId.startsWith(h.id));
                 showMessageNotification(message.sender, ch?.name || channelId, hotel?.name || '', message.text || '🎵 Vocale');
@@ -622,7 +633,7 @@ export default function HotelChat({
         });
 
         socket.on('user-joined-room', ({ username }) => {
-            if (username !== user.username) {
+            if (username !== userRef.current?.username) {
                 showRoomNotification('joined', username, 'nella stanza vocale');
             }
         });
@@ -719,9 +730,10 @@ export default function HotelChat({
             socket.off('message-reacted');
             socket.off('read-receipt-update');
             socket.off('connect', joinAll);
+            socket.off('reconnect', joinAll);
             clearInterval(i);
         };
-    }, [socket, user]);
+    }, [socket]); // user removed from deps, using userRef now
 
     // Auto mark messages as read when channel is viewed
     useEffect(() => {

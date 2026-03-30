@@ -7,6 +7,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
+const { version: APP_VERSION } = require('./version.json');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -226,6 +227,9 @@ function scheduleRoomDelete(roomId) {
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
     console.log(`Connected: ${socket.id}`);
+    
+    // Send current app version to client to check for stale builds
+    socket.emit('app-version', { version: APP_VERSION });
 
     // ── Auth ────────────────────────────────────────────────────────────────
     socket.on('get-voice-archives', () => {

@@ -523,6 +523,7 @@ export default function CallScreen({
                 style={[
                     styles.tile,
                     size === 'grid' ? styles.tileGrid : (size === 'focus' ? styles.tileLarge : styles.tileSmall),
+                    { borderColor: '#C9A84C', borderWidth: 2 }, // Force GOLD
                     isSpeaking && styles.tileSpeaking
                 ]}
             >
@@ -1067,21 +1068,21 @@ const styles = StyleSheet.create({
     showOthersTxt: { color: '#C9A84C', fontWeight: 'bold', fontSize: 12 },
     tile: { backgroundColor: '#2B2D31', borderRadius: 12, overflow: 'hidden', position: 'relative', borderWidth: 2, borderColor: '#C9A84C' },
     tileGrid: {
-        width: Platform.OS === 'web' ? '95vw' : '95%',
-        aspectRatio: 16 / 9,
+        width: Platform.OS === 'web' ? '98vw' : '98%',
+        aspectRatio: IS_MOBILE ? 1 : 16 / 9,
         marginVertical: 10,
         alignSelf: 'center'
     },
     tileSmall: { width: 140, height: 90 },
     tileLarge: { flex: 1 },
     tileSpeaking: {
-        borderColor: '#FFF',
+        borderColor: '#C9A84C',
         shadowColor: '#C9A84C',
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 1,
-        shadowRadius: 15,
-        elevation: 15,
-        borderWidth: 3
+        shadowRadius: 20,
+        elevation: 20,
+        borderWidth: 4
     },
     exitFullScreenBtn: {
         position: 'absolute',
