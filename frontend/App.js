@@ -11,6 +11,52 @@ import io from 'socket.io-client';
 import { Icon } from './components/Icons';
 import ErrorBoundary from './components/ErrorBoundary';
 
+// --- GLOBAL DEBUG OVERLAY ---
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  const showGlobalError = (msg, source, lineno, colno, error) => {
+    try {
+      const errDiv = document.createElement('div');
+      errDiv.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:#16140F;color:#A8A090;z-index:999999;padding:40px;box-sizing:border-box;font-family:monospace;overflow-y:auto;';
+      
+      const title = document.createElement('h1');
+      title.innerText = 'CRITICAL INIT ERROR';
+      title.style.color = '#C9A84C';
+      errDiv.appendChild(title);
+      
+      const details = document.createElement('pre');
+      details.innerText = `Message: ${msg}\nSource: ${source}:${lineno}:${colno}\n\nStack:\n${error?.stack || 'N/A'}`;
+      details.style.cssText = 'background:rgba(237, 66, 69, 0.1);color:#ED4245;padding:20px;border-radius:8px;white-space:pre-wrap;word-wrap:break-word; border:1px solid rgba(237, 66, 69, 0.3);';
+      errDiv.appendChild(details);
+      
+      const btn = document.createElement('button');
+      btn.innerText = 'RELAOD';
+      btn.style.cssText = 'margin-top:20px;padding:12px 24px;background:#C9A84C;color:#111;border:none;border-radius:8px;font-weight:bold;cursor:pointer;';
+      btn.onclick = () => window.location.reload();
+      errDiv.appendChild(btn);
+      
+      // Make sure document.body exists, though it might not if this runs extremely early
+      if (document.body) {
+         document.body.appendChild(errDiv);
+      } else {
+         window.addEventListener('DOMContentLoaded', () => document.body.appendChild(errDiv));
+      }
+    } catch(e) {
+      console.error("Failed to render global error overlay", e);
+    }
+  };
+
+  window.onerror = function(message, source, lineno, colno, error) {
+    showGlobalError(message, source, lineno, colno, error);
+  };
+  window.addEventListener('unhandledrejection', function(event) {
+    showGlobalError(
+      event.reason?.message || 'Unhandled Promise Rejection',
+      'Promise', 0, 0, event.reason
+    );
+  });
+}
+// ----------------------------
+
 let versionData = { version: '5.2.5' };
 try {
   versionData = require('./version.json');
