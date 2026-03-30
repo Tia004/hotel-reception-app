@@ -150,6 +150,7 @@ export default function App() {
     });
 
     s.on('app-version', ({ version }) => {
+      // Compare semver or exact string. If server is newer, prompt.
       if (version !== APP_VERSION) {
         setShowUpdatePrompt(true);
       }
@@ -291,6 +292,29 @@ export default function App() {
 
   const inCall = !!currentRoom;
   const showCallFull = inCall && !callPiP;
+
+  const handleUpdateReload = async () => {
+    if (Platform.OS !== 'web') return;
+    try {
+      // 1. Unregister all service workers that might be caching the old index.html
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      }
+      // 2. Clear local storage caches just in case (optional, but safe)
+      // Array.from(document.querySelectorAll('link[rel="manifest"]')).forEach(link => link.remove());
+      
+      // 3. Force a hard reload bypassing the HTTP cache using a unique query parameter
+      const url = new URL(window.location.href);
+      url.searchParams.set('v', new Date().getTime().toString());
+      window.location.href = url.toString();
+    } catch (e) {
+      console.warn('Advanced reload failed, falling back', e);
+      window.location.reload();
+    }
+  };
 
   return (
     <ErrorBoundary>
@@ -516,7 +540,7 @@ export default function App() {
               </Text>
               <TouchableOpacity
                 style={styles.updateBtn}
-                onPress={() => Platform.OS === 'web' && window.location.reload()}
+                onPress={handleUpdateReload}
               >
                 <Text style={styles.updateBtnTxt}>RICARICA ORA</Text>
               </TouchableOpacity>
