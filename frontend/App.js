@@ -136,6 +136,23 @@ export default function App() {
     document.head.appendChild(style);
   }, []);
 
+  // ── Helper: Semver Comparison ──────────────────────────────────────────
+  const isServerNewer = (serverVersion, clientVersion) => {
+    try {
+      const v1 = serverVersion.split('.').map(Number);
+      const v2 = clientVersion.split('.').map(Number);
+      for (let i = 0; i < Math.max(v1.length, v2.length); i++) {
+        const num1 = v1[i] || 0;
+        const num2 = v2[i] || 0;
+        if (num1 > num2) return true; // Server is newer
+        if (num1 < num2) return false; // Client is newer or same
+      }
+      return false; // Exactly equal
+    } catch(e) {
+      return serverVersion !== clientVersion; // Fallback to simple mismatch
+    }
+  };
+
   // ── Socket Management ──────────────────────────────────────────────────
   const initSocket = (userData) => {
     if (socketRef.current) {
@@ -150,8 +167,10 @@ export default function App() {
     });
 
     s.on('app-version', ({ version }) => {
-      // Compare semver or exact string. If server is newer, prompt.
-      if (version !== APP_VERSION) {
+      // Only prompt if the server's version is mathematically greater.
+      // E.g., Client: 5.2.5, Server: 5.2.6 -> Prompts update
+      // Client: 5.2.6, Server: 5.2.5 (server lagging) -> Ignored
+      if (isServerNewer(version, APP_VERSION)) {
         setShowUpdatePrompt(true);
       }
     });
