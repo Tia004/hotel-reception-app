@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Platform, Dimensions, TouchableOpacity, Text, Animated } from 'react-native';
+import { StyleSheet, View, Platform, Dimensions, TouchableOpacity, Text, Animated, Modal } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import LoginScreen from './components/LoginScreen';
+import SplashScreen from './components/SplashScreen';
 import CallScreen from './components/CallScreen';
 import HotelChat from './components/HotelChat';
 import CallDebug from './components/CallDebug';
@@ -242,49 +243,123 @@ export default function App() {
     transition: isDragging.current ? 'none' : 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
   };
 
-  if (loading) return (
+  return (
     <ErrorBoundary>
-      <SplashScreen onDone={() => setLoading(false)} />
-    </ErrorBoundary>
-  );
-  if (!user) return (
-    <ErrorBoundary>
-      <LoginScreen onLogin={(userData) => handleLogin(userData)} />
-    </ErrorBoundary>
-  );
+      <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
+        <StatusBar style="light" />
 
-  const inCall = !!currentRoom;
-  const showCallFull = inCall && !callPiP;
+        {loading ? (
+          <SplashScreen onDone={() => setLoading(false)} />
+        ) : !user ? (
+          <LoginScreen onLogin={(userData) => handleLogin(userData)} />
+        ) : IS_MOBILE ? (
+          <>
+            {/* Chat view */}
+            {(!inCall || mobileView === 'chat') && (
+              <View style={StyleSheet.absoluteFillObject}>
+                <HotelChat
+                  socket={socketRef.current}
+                  user={user}
+                  sidebarVisible={sidebarVisible}
+                  onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
+                  availableRooms={availableRooms}
+                  onJoinRoom={(roomId) => {
+                    socketRef.current?.emit('join-room', { roomId });
+                    setCurrentRoom(roomId);
+                    setIsTemp(false);
+                    setCallPiP(false);
+                    setMobileView('call');
+                  }}
+                  onLogout={handleLogout}
+                  inCall={inCall}
+                  hideChatColumn={false}
+                  onChannelClick={null}
+                  currentRoomId={currentRoom}
+                  onOpenDebug={() => setShowDebugCall(true)}
+                  onLeaveRoom={() => {
+                    socketRef.current?.emit('leave-room', { roomId: currentRoom });
+                    setCurrentRoom(null);
+                    setCallPiP(false);
+                    setMobileView('chat');
+                  }}
+                  micOn={micOn}
+                  setMicOn={setMicOn}
+                  camOn={camOn}
+                  setCamOn={setCamOn}
+                  deafenOn={deafenOn}
+                  setDeafenOn={setDeafenOn}
+                  screenShareOn={screenShareOn}
+                  setScreenShareOn={setScreenShareOn}
+                />
+                {inCall && mobileView === 'chat' && (
+                  <TouchableOpacity
+                    style={styles.mobileReturnToCall}
+                    onPress={() => setMobileView('call')}
+                  >
+                    <Icon name="video-filled" size={14} color="#111" />
+                    <Text style={styles.mobileReturnTxt}>Torna alla chiamata</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // MOBILE layout — only one view at a time
-  // ────────────────────────────────────────────────────────────────────────────
-  if (IS_MOBILE) {
-    return (
-      <ErrorBoundary>
-        <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
-          <StatusBar style="light" />
+            {/* Full-screen call view on mobile */}
+            {inCall && mobileView === 'call' && (
+              <View style={StyleSheet.absoluteFillObject}>
+                <CallScreen
+                  user={user}
+                  socket={socketRef.current}
+                  onLogout={handleLogout}
+                  onRoomsUpdate={setAvailableRooms}
+                  roomId={currentRoom}
+                  initialPeers={initialPeers}
+                  onClose={() => { setCurrentRoom(null); setMobileView('chat'); }}
+                  isTempProp={isTemp}
+                  onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
+                  onMinimize={() => setMobileView('chat')}
+                  micOn={micOn}
+                  setMicOn={setMicOn}
+                  camOn={camOn}
+                  setCamOn={setCamOn}
+                  deafenOn={deafenOn}
+                  setDeafenOn={setDeafenOn}
+                  screenShareOn={screenShareOn}
+                  setScreenShareOn={setScreenShareOn}
+                />
+              </View>
+            )}
 
-          {/* Chat view */}
-          {(!inCall || mobileView === 'chat') && (
-            <View style={StyleSheet.absoluteFillObject}>
+            {showDebugCall && (
+              <View style={StyleSheet.absoluteFillObject}>
+                <CallDebug
+                  socket={socketRef.current}
+                  user={user}
+                  onClose={() => setShowDebugCall(false)}
+                />
+              </View>
+            )}
+          </>
+        ) : (
+          <View style={styles.content}>
+            <View style={showCallFull ? styles.chatPaneShrunk : styles.chatPane}>
               <HotelChat
                 socket={socketRef.current}
                 user={user}
                 sidebarVisible={sidebarVisible}
                 onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
                 availableRooms={availableRooms}
+                settingsVisible={settingsVisible}
+                setSettingsVisible={setSettingsVisible}
                 onJoinRoom={(roomId) => {
                   socketRef.current?.emit('join-room', { roomId });
                   setCurrentRoom(roomId);
                   setIsTemp(false);
                   setCallPiP(false);
-                  if (IS_MOBILE) setMobileView('call');
                 }}
                 onLogout={handleLogout}
                 inCall={inCall}
-                hideChatColumn={false}
-                onChannelClick={null}
+                hideChatColumn={showCallFull}
+                onChannelClick={handleChannelClick}
                 currentRoomId={currentRoom}
                 onOpenDebug={() => setShowDebugCall(true)}
                 onLeaveRoom={() => {
@@ -302,172 +377,75 @@ export default function App() {
                 screenShareOn={screenShareOn}
                 setScreenShareOn={setScreenShareOn}
               />
-              {/* Floating "return to call" button when in a call */}
-              {inCall && mobileView === 'chat' && (
-                <TouchableOpacity
-                  style={styles.mobileReturnToCall}
-                  onPress={() => setMobileView('call')}
-                >
-                  <Icon name="video-filled" size={14} color="#111" />
-                  <Text style={styles.mobileReturnTxt}>Torna alla chiamata</Text>
-                </TouchableOpacity>
-              )}
             </View>
-          )}
 
-          {/* Full-screen call view on mobile */}
-          {inCall && mobileView === 'call' && (
-            <View style={StyleSheet.absoluteFillObject}>
-              <CallScreen
-                user={user}
-                socket={socketRef.current}
-                onLogout={handleLogout}
-                onRoomsUpdate={setAvailableRooms}
-                roomId={currentRoom}
-                initialPeers={initialPeers}
-                onClose={() => { setCurrentRoom(null); setMobileView('chat'); }}
-                isTempProp={isTemp}
-                onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
-                onMinimize={() => setMobileView('chat')} // "minimize" = go to chat on mobile
-                micOn={micOn}
-                setMicOn={setMicOn}
-                camOn={camOn}
-                setCamOn={setCamOn}
-                deafenOn={deafenOn}
-                setDeafenOn={setDeafenOn}
-                screenShareOn={screenShareOn}
-                setScreenShareOn={setScreenShareOn}
-              />
-            </View>
-          )}
+            {inCall && !callPiP && (
+              <View style={styles.callPane}>
+                <CallScreen
+                  user={user}
+                  socket={socketRef.current}
+                  onLogout={handleLogout}
+                  onRoomsUpdate={setAvailableRooms}
+                  roomId={currentRoom}
+                  initialPeers={initialPeers}
+                  onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
+                  onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
+                  onMinimize={() => setCallPiP(true)}
+                  onOpenSettings={() => setSettingsVisible(true)}
+                  micOn={micOn}
+                  setMicOn={setMicOn}
+                  camOn={camOn}
+                  setCamOn={setCamOn}
+                  deafenOn={deafenOn}
+                  setDeafenOn={setDeafenOn}
+                  screenShareOn={screenShareOn}
+                  setScreenShareOn={setScreenShareOn}
+                />
+              </View>
+            )}
 
-          {showDebugCall && (
-            <View style={StyleSheet.absoluteFillObject}>
-              <CallDebug
-                socket={socketRef.current}
-                user={user}
-                onClose={() => setShowDebugCall(false)}
-              />
-            </View>
-          )}
-        </Animated.View>
-      </ErrorBoundary>
-    );
-  }
+            {inCall && callPiP && (
+              <View
+                style={pipContainerStyle}
+                {...(Platform.OS === 'web' ? { onMouseDown: onDragStart } : {})}
+              >
+                <CallScreen
+                  user={user}
+                  socket={socketRef.current}
+                  onLogout={handleLogout}
+                  onRoomsUpdate={setAvailableRooms}
+                  roomId={currentRoom}
+                  initialPeers={initialPeers}
+                  onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
+                  isTempProp={isTemp}
+                  onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
+                  isPiP={true}
+                  onExpand={() => setCallPiP(false)}
+                  onOpenSettings={() => setSettingsVisible(true)}
+                  micOn={micOn}
+                  setMicOn={setMicOn}
+                  camOn={camOn}
+                  setCamOn={setCamOn}
+                  deafenOn={deafenOn}
+                  setDeafenOn={setDeafenOn}
+                  screenShareOn={screenShareOn}
+                  setScreenShareOn={setScreenShareOn}
+                />
+              </View>
+            )}
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // DESKTOP layout — side-by-side
-  // ────────────────────────────────────────────────────────────────────────────
-  return (
-    <ErrorBoundary>
-      <Animated.View style={[styles.root, { opacity: fadeAnim }]}>
-        <StatusBar style="light" />
-
-        <View style={styles.content}>
-          <View style={showCallFull ? styles.chatPaneShrunk : styles.chatPane}>
-            <HotelChat
-              socket={socketRef.current}
-              user={user}
-              sidebarVisible={sidebarVisible}
-              onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
-              availableRooms={availableRooms}
-              settingsVisible={settingsVisible}
-              setSettingsVisible={setSettingsVisible}
-              onJoinRoom={(roomId) => {
-                socketRef.current?.emit('join-room', { roomId });
-                setCurrentRoom(roomId);
-                setIsTemp(false);
-                setCallPiP(false);
-                if (IS_MOBILE) setMobileView('call');
-              }}
-              onLogout={handleLogout}
-              inCall={inCall}
-              hideChatColumn={showCallFull}
-              onChannelClick={handleChannelClick}
-              currentRoomId={currentRoom}
-              onOpenDebug={() => setShowDebugCall(true)}
-              onLeaveRoom={() => {
-                socketRef.current?.emit('leave-room', { roomId: currentRoom });
-                setCurrentRoom(null);
-                setCallPiP(false);
-                setMobileView('chat');
-              }}
-              micOn={micOn}
-              setMicOn={setMicOn}
-              camOn={camOn}
-              setCamOn={setCamOn}
-              deafenOn={deafenOn}
-              setDeafenOn={setDeafenOn}
-              screenShareOn={screenShareOn}
-              setScreenShareOn={setScreenShareOn}
-            />
-          </View>
-
-          {inCall && !callPiP && (
-            <View style={styles.callPane}>
-              <CallScreen
-                user={user}
-                socket={socketRef.current}
-                onLogout={handleLogout}
-                onRoomsUpdate={setAvailableRooms}
-                roomId={currentRoom}
-                initialPeers={initialPeers}
-                onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
-                onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
-                onMinimize={() => setCallPiP(true)}
-                onOpenSettings={() => setSettingsVisible(true)}
-                micOn={micOn}
-                setMicOn={setMicOn}
-                camOn={camOn}
-                setCamOn={setCamOn}
-                deafenOn={deafenOn}
-                setDeafenOn={setDeafenOn}
-                screenShareOn={screenShareOn}
-                setScreenShareOn={setScreenShareOn}
-              />
-            </View>
-          )}
-
-          {inCall && callPiP && (
-            <View
-              style={pipContainerStyle}
-              {...(Platform.OS === 'web' ? { onMouseDown: onDragStart } : {})}
-            >
-              <CallScreen
-                user={user}
-                socket={socketRef.current}
-                onLogout={handleLogout}
-                onRoomsUpdate={setAvailableRooms}
-                roomId={currentRoom}
-                initialPeers={initialPeers}
-                onClose={() => { setCurrentRoom(null); setCallPiP(false); }}
-                isTempProp={isTemp}
-                onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
-                isPiP={true}
-                onExpand={() => setCallPiP(false)}
-                onOpenSettings={() => setSettingsVisible(true)}
-                micOn={micOn}
-                setMicOn={setMicOn}
-                camOn={camOn}
-                setCamOn={setCamOn}
-                deafenOn={deafenOn}
-                setDeafenOn={setDeafenOn}
-                screenShareOn={screenShareOn}
-                setScreenShareOn={setScreenShareOn}
-              />
-            </View>
-          )}
-        </View>
-
-        {showDebugCall && (
-          <View style={[StyleSheet.absoluteFillObject, { zIndex: 10000 }]}>
-            <CallDebug
-              socket={socketRef.current}
-              user={user}
-              onClose={() => setShowDebugCall(false)}
-            />
+            {showDebugCall && (
+              <View style={[StyleSheet.absoluteFillObject, { zIndex: 10000 }]}>
+                <CallDebug
+                  socket={socketRef.current}
+                  user={user}
+                  onClose={() => setShowDebugCall(false)}
+                />
+              </View>
+            )}
           </View>
         )}
+
         <MediaSettings
           visible={settingsVisible}
           onClose={() => setSettingsVisible(false)}
