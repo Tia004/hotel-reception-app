@@ -649,6 +649,14 @@ export default function HotelChat({
             }));
         });
 
+        socket.on('message-id-update', ({ channelId, oldId, newId }) => {
+            setMessages(p => ({
+                ...p, [channelId]: (p[channelId] || []).map(m => 
+                    m.id === oldId ? { ...m, id: newId, isOptimistic: false } : m
+                )
+            }));
+        });
+
         socket.on('message-edited', ({ channelId, messageId, text }) => {
             setMessages(p => ({
                 ...p, [channelId]: (p[channelId] || []).map(m => m.id === messageId ? { ...m, text, edited: true } : m)
@@ -725,6 +733,7 @@ export default function HotelChat({
             socket.off('channel-message');
             socket.off('online-users');
             socket.off('channel-poll-update');
+            socket.off('message-id-update');
             socket.off('message-edited');
             socket.off('message-deleted');
             socket.off('message-reacted');

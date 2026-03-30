@@ -507,7 +507,22 @@ io.on('connection', (socket) => {
             created_at: new Date().toISOString()
         };
 
-        // Save to Supabase AND retrieve the final ID
+        const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+        const finalMsg = { 
+            ...data, 
+            id: tempId, 
+            sender: user.username, 
+            timestamp: Date.now() 
+        };
+
+        // Emit to channel (real-time) instantly, absolutely zero latency!
+        io.to(`channel:${channelId}`).emit('channel-message', { 
+            channelId, 
+            message: finalMsg 
+        });
+
+        // Save to Supabase in the background
         try {
             const { data: inserted, error } = await supabase.from('messages').insert([msgObj]).select();
             if (error) {
@@ -516,21 +531,14 @@ io.on('connection', (socket) => {
             }
             
             const dbMsg = inserted && inserted[0] ? inserted[0] : null;
-            if (!dbMsg || !dbMsg.id) return;
-
-            const finalMsg = { 
-                ...data, 
-                id: dbMsg.id, // True Supabase ID attached!
-                sender: user.username, 
-                timestamp: new Date(dbMsg.created_at).getTime() 
-            };
-
-            // Emit to channel (real-time) with the exact ID so clients don't drop it due to collision
-            io.to(`channel:${channelId}`).emit('channel-message', { 
-                channelId, 
-                message: finalMsg 
-            });
-
+            if (dbMsg && dbMsg.id) {
+                // Broadcast the real ID update so that edits/deletes map correctly to the DB
+                io.to(`channel:${channelId}`).emit('message-id-update', {
+                    channelId,
+                    oldId: tempId,
+                    newId: dbMsg.id
+                });
+            }
         } catch (e) { 
             console.error('[Supabase] Channel network error:', e.message); 
         }
