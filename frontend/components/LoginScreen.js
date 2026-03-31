@@ -5,7 +5,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
-const API_BASE = "https://hotel-reception-app.onrender.com";
+const API_BASE = (process.env.EXPO_PUBLIC_SIGNALING_URL || "https://hotel-reception-app.onrender.com").replace(/\/$/, "");
+
 
 export default function LoginScreen({ onLogin }) {
     const [username, setUsername] = useState('');
@@ -22,35 +23,60 @@ export default function LoginScreen({ onLogin }) {
         setLoading(true);
         setError('');
 
-        try {
-            const response = await fetch(`${API_BASE}/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    username: username.toLowerCase().trim(), 
-                    password 
-                })
-            });
+        let attempts = 0;
+        const maxAttempts = 3;
+        let lastError = null;
 
-            const data = await response.json();
+        while (attempts < maxAttempts) {
+            try {
+                attempts++;
+                if (attempts > 1) {
+                    setError(`Riconnessione in corso... (Tentativo ${attempts}/${maxAttempts})`);
+                    await new Promise(r => setTimeout(r, 2000));
+                }
 
-            if (response.ok) {
-                onLogin({ 
-                    username: data.username, 
-                    station: data.station,
-                    bio: data.bio,
-                    profilePic: data.profilePic 
+                const response = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        username: username.toLowerCase().trim(), 
+                        password 
+                    }),
+                    signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : null
                 });
-            } else {
-                setError(data.error || 'OPS! Credenziali non valide.');
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    onLogin({ 
+                        username: data.username, 
+                        station: data.station,
+                        bio: data.bio,
+                        profilePic: data.profilePic 
+                    });
+                    return; // Success!
+                } else {
+                    setError(data.error || 'OPS! Credenziali non valide.');
+                    return; // Stop on logic errors (401, etc)
+                }
+            } catch (err) {
+                lastError = err;
+                console.error(`Login attempt ${attempts} failed:`, err);
+                
+                // Retry only on network/timeout errors
+                if (err.name === 'AbortError' || err.message.includes('fetch')) {
+                    continue;
+                }
+                break; // Stop on other unexpected errors
             }
-        } catch (err) {
-            console.error('Login error:', err);
-            setError(`DEBUG ERROR: ${err.message || String(err)}\nURL: ${API_BASE}/login`);
-        } finally {
-            setLoading(false);
         }
+
+        if (lastError) {
+            setError(`Errore di connessione: il server sembra non rispondere.\nPer favore, riprova tra qualche secondo.`);
+        }
+        setLoading(false);
     };
+
 
     return (
         <SafeAreaView style={styles.container}>

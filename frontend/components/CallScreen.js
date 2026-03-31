@@ -148,30 +148,73 @@ export default function CallScreen({
     }, []);
 
     const lkUrl = "wss://gsa-hotels-calls-ls2c6m36.livekit.cloud";
-    const API_BASE = "https://hotel-reception-app.onrender.com";
+    // Consistent with App.js
+    const API_BASE = (process.env.EXPO_PUBLIC_SIGNALING_URL || "https://hotel-reception-app.onrender.com").replace(/\/$/, "");
+
 
     const fetchTokenAndConnect = useCallback(async () => {
-        try {
-            setConnecting(true);
-            addLog(`Inizio connessione a ${roomId}...`);
+        let attempts = 0;
+        const maxAttempts = 5;
+        let lastError = null;
 
-            // 1. Get Token from Internal Server
-            addLog(`Richiesta token a ${API_BASE}...`);
-            const response = await fetch(`${API_BASE}/get-livekit-token`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ room: roomId, username: user.username })
-            });
+        while (attempts < maxAttempts) {
+            try {
+                setConnecting(true);
+                attempts++;
+                if (attempts > 1) {
+                    addLog(`Riprovo... (Tentativo ${attempts}/${maxAttempts})`);
+                    // Small delay before retry
+                    await new Promise(r => setTimeout(r, 2000));
+                } else {
+                    addLog(`Inizio connessione a ${roomId}...`);
+                }
 
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(`Server Token Error: ${response.status} ${errData.error || ''}`);
+                // 1. Get Token from Internal Server
+                addLog(`Richiesta token a ${API_BASE}...`);
+                const response = await fetch(`${API_BASE}/get-livekit-token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ room: roomId, username: user.username }),
+                    // Add a timeout signal if supported
+                    signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : null 
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(`Server Token Error: ${response.status} ${errData.error || ''}`);
+                }
+
+                const { token } = await response.json();
+                if (!token) throw new Error("Token non ricevuto dal server");
+                addLog("Token ricevuto correttamente.");
+                lastError = null;
+                
+                // If success, break the loop
+                await connectToRoom(token);
+                return;
+
+            } catch (err) {
+                lastError = err;
+                addLog(`⚠️ Errore (Tentativo ${attempts}): ${err.message}`);
+                // If it's a "Failed to fetch", it might be the server sleeping, so we continue the loop
+                if (err.name === 'AbortError' || err.message.includes('fetch')) {
+                    continue; 
+                }
+                // For other errors (like 400/500 from server that WAS reached), we might still want to retry or stop
+                if (attempts >= maxAttempts) break;
             }
+        }
 
-            const { token } = await response.json();
-            if (!token) throw new Error("Token non ricevuto dal server");
-            addLog("Token ricevuto correttamente.");
+        // If we reach here, all attempts failed
+        if (lastError) {
+            addLog(`❌ ERRORE CRITICO DOPO ${maxAttempts} TENTATIVI: ${lastError.message}`);
+            setConnectionErrors({ main: lastError.message });
+        }
+        setConnecting(false);
+    }, [roomId, user.username, lkUrl, API_BASE]);
 
+    const connectToRoom = async (token) => {
+        try {
             // 2. Initialize LiveKit Room
             const room = new Room({
                 adaptiveStream: true,
@@ -206,7 +249,7 @@ export default function CallScreen({
                 addLog(`Traccia sottoscritta: ${track.kind} da ${participant.identity}`);
                 if (track.kind === Track.Kind.Video || track.kind === Track.Kind.Audio) {
                     if (track.kind === Track.Kind.Audio) {
-                        track.attach(); // Essential for audio playback on Web/Mobile
+                        track.attach(); 
                     }
                     setRemoteStreams(prev => ({
                         ...prev,
@@ -253,23 +296,12 @@ export default function CallScreen({
                 });
                 addLog("Camera e Microfono attivati (HD).");
 
-                // Get the video track media stream
                 const videoPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
                 if (videoPub && videoPub.videoTrack) {
-                    addLog("Traccia video locale trovata.");
                     setLocalStream(videoPub.videoTrack.mediaStream);
-                } else {
-                    addLog("⚠️ ATTENZIONE: Traccia video locale non trovata dopo enable.");
-                    // In some versions, it might be in videoTracks map
-                    const vt = Array.from(room.localParticipant.videoTrackPublications.values()).find(p => p.source === Track.Source.Camera);
-                    if (vt && vt.videoTrack) {
-                        addLog("Traccia video locale trovata (fallback).");
-                        setLocalStream(vt.videoTrack.mediaStream);
-                    }
                 }
             } catch (mediaErr) {
                 addLog(`❌ Errore Media: ${mediaErr.message}`);
-                console.error("Media Error:", mediaErr);
             }
 
             lkRoomRef.current = room;
@@ -277,22 +309,18 @@ export default function CallScreen({
             updateParticipants();
             setConnecting(false);
 
-            // Fetch initial devices and select currently used ones
             refreshDevices().then(() => {
                 const audioTrack = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
                 const videoTrack = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
                 if (audioTrack) setSelectedAudioInput(audioTrack.getDeviceId());
                 if (videoTrack) setSelectedVideoInput(videoTrack.getDeviceId());
-                // Note: setSinkId for output might not be available on all browsers/LiveKit versions
-                // but we can at least track what our state says
             });
         } catch (err) {
-            addLog(`❌ ERRORE CRITICO: ${err.message}`);
-            console.error('[LiveKit] Connection Failed:', err);
-            setConnecting(false);
-            setConnectionErrors({ main: err.message });
+            addLog(`❌ Errore Connessione LiveKit: ${err.message}`);
+            throw err;
         }
-    }, [roomId, user.username, lkUrl, API_BASE]);
+    };
+
 
     useEffect(() => {
         const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
@@ -306,11 +334,33 @@ export default function CallScreen({
         lp.setCameraEnabled(camOn);
     }, [camOn, lkRoom]);
 
+    // Screen Share sync (with guard for mobile)
     useEffect(() => {
         const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
         if (!lp) return;
-        lp.setScreenShareEnabled(screenShareOn);
+        
+        // Guard: check if browser/device supports screen sharing
+        const canScreenShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+        if (!canScreenShare && screenShareOn) {
+            setScreenShareOn(false);
+            addLog("⚠️ Screen Sharing non supportato su questo dispositivo.");
+            return;
+        }
+
+        // Only call if supported or if we are turning it OFF
+        if (canScreenShare || !screenShareOn) {
+            lp.setScreenShareEnabled(screenShareOn, { audio: true })
+                .catch(err => {
+                    if (err.message.includes("getDisplayMedia")) {
+                        addLog(`⚠️ Screen Share non supportato: ${err.message}`);
+                        setScreenShareOn(false);
+                    } else {
+                        addLog(`❌ Errore Screen Share: ${err.message}`);
+                    }
+                });
+        }
     }, [screenShareOn, lkRoom]);
+
 
     useEffect(() => {
         const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
@@ -352,12 +402,7 @@ export default function CallScreen({
         });
     }, [deafenOn, participants]);
 
-    useEffect(() => {
-        const lp = lkRoom?.localParticipant || lkRoomRef.current?.localParticipant;
-        if (!lp) return;
-        lp.setScreenShareEnabled(screenShareOn, { audio: true })
-            .catch(err => addLog(`❌ Errore sync Screen Share: ${err.message}`));
-    }, [screenShareOn, lkRoom]);
+
 
     useEffect(() => {
         if (!socket || !roomId) return;
@@ -763,9 +808,12 @@ export default function CallScreen({
                             </TouchableOpacity>
                         </View>
 
-                        <TouchableOpacity onPress={toggleScreenShare} style={[styles.ctrlBtn, screenShareOn && styles.ctrlBtnActive]}>
-                            <Icon name="monitor" size={20} color="#fff" />
-                        </TouchableOpacity>
+                        {(!!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) && (
+                            <TouchableOpacity onPress={toggleScreenShare} style={[styles.ctrlBtn, screenShareOn && styles.ctrlBtnActive]}>
+                                <Icon name="monitor" size={20} color="#fff" />
+                            </TouchableOpacity>
+                        )}
+
 
                         <TouchableOpacity
                             style={[styles.ctrlBtn, handRaised && styles.ctrlBtnActive]}
