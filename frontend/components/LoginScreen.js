@@ -35,6 +35,9 @@ export default function LoginScreen({ onLogin }) {
                     await new Promise(r => setTimeout(r, 2000));
                 }
 
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000);
+
                 const response = await fetch(`${API_BASE}/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -42,8 +45,10 @@ export default function LoginScreen({ onLogin }) {
                         username: username.toLowerCase().trim(), 
                         password 
                     }),
-                    signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : null
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
 
                 const data = await response.json();
 

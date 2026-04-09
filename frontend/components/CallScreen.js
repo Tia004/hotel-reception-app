@@ -169,15 +169,17 @@ export default function CallScreen({
                     addLog(`Inizio connessione a ${roomId}...`);
                 }
 
-                // 1. Get Token from Internal Server
-                addLog(`Richiesta token a ${API_BASE}...`);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000);
+
                 const response = await fetch(`${API_BASE}/get-livekit-token`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ room: roomId, username: user.username }),
-                    // Add a timeout signal if supported
-                    signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : null 
+                    signal: controller.signal 
                 });
+                
+                clearTimeout(timeoutId);
 
                 if (!response.ok) {
                     const errData = await response.json().catch(() => ({}));
