@@ -64,7 +64,7 @@ try {
   console.warn('version.json not found, using fallback');
 }
 
-const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'https://hotel-reception-app.onrender.com/';
+const SIGNALING_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'https://gsahotels-calls.onrender.com/';
 const APP_VERSION = versionData.version;
 const SESSION_KEY = 'gsa_session';
 const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours

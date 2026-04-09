@@ -149,7 +149,7 @@ export default function CallScreen({
 
     const lkUrl = "wss://gsa-hotels-calls-ls2c6m36.livekit.cloud";
     // Consistent with App.js
-    const API_BASE = (process.env.EXPO_PUBLIC_SIGNALING_URL || "https://hotel-reception-app.onrender.com").replace(/\/$/, "");
+    const API_BASE = (process.env.EXPO_PUBLIC_SIGNALING_URL || "https://gsahotels-calls.onrender.com").replace(/\/$/, "");
 
 
     const fetchTokenAndConnect = useCallback(async () => {

@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const { width, height } = Dimensions.get('window');
 
-const API_BASE = (process.env.EXPO_PUBLIC_SIGNALING_URL || "https://hotel-reception-app.onrender.com").replace(/\/$/, "");
+const API_BASE = (process.env.EXPO_PUBLIC_SIGNALING_URL || "https://gsahotels-calls.onrender.com").replace(/\/$/, "");
 
 
 export default function LoginScreen({ onLogin }) {
