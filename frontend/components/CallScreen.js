@@ -433,6 +433,28 @@ export default function CallScreen({
         };
     }, [roomId, socket, fetchTokenAndConnect]); // Loop broken: lkRoom removed from deps
 
+    // ── Fullscreen Browser API Sync ──────────────────────────────────────
+    useEffect(() => {
+        if (Platform.OS !== 'web') return;
+
+        const handleFsChange = () => {
+            const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+            setFullScreen(isFs);
+        };
+
+        document.addEventListener('fullscreenchange', handleFsChange);
+        document.addEventListener('webkitfullscreenchange', handleFsChange);
+        document.addEventListener('mozfullscreenchange', handleFsChange);
+        document.addEventListener('MSFullscreenChange', handleFsChange);
+
+        return () => {
+            document.removeEventListener('fullscreenchange', handleFsChange);
+            document.removeEventListener('webkitfullscreenchange', handleFsChange);
+            document.removeEventListener('mozfullscreenchange', handleFsChange);
+            document.removeEventListener('MSFullscreenChange', handleFsChange);
+        };
+    }, []);
+
     // ── Actions ──────────────────────────────────────────────────────────
     const leaveCall = useCallback(async () => {
         addLog("ABBANDONO CHIAMATA...");
@@ -480,7 +502,31 @@ export default function CallScreen({
     };
 
     const toggleFullScreen = () => {
-        setFullScreen(!fullScreen);
+        const next = !fullScreen;
+        // setFullScreen(next); // This will be handled by the event listener
+
+        if (Platform.OS === 'web') {
+            try {
+                if (next) {
+                    const el = document.documentElement;
+                    if (el.requestFullscreen) el.requestFullscreen();
+                    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+                    else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
+                    else if (el.msRequestFullscreen) el.msRequestFullscreen();
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                    else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
+                    else if (document.msExitFullscreen) document.msExitFullscreen();
+                }
+            } catch (err) {
+                console.error("Fullscreen error:", err);
+                // Fallback for cases where FS API fails or is restricted
+                setFullScreen(next);
+            }
+        } else {
+            setFullScreen(next);
+        }
     };
 
     const toggleScreenShare = () => {
@@ -843,7 +889,7 @@ export default function CallScreen({
                         </TouchableOpacity>
 
                         <TouchableOpacity onPress={toggleFullScreen} style={styles.ctrlBtn}>
-                            <Icon name="maximize" size={20} color="#fff" />
+                            <Icon name="maximize-2" size={20} color="#fff" />
                         </TouchableOpacity>
 
                         <TouchableOpacity onPress={() => leaveCall()} style={styles.hangupBtn}>

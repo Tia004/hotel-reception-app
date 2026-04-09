@@ -44,6 +44,7 @@ const ICON_MAP = {
     'more-horizontal': { pack: 'feather', name: 'more-horizontal' },
     'search': { pack: 'feather', name: 'search' },
     'maximize-2': { pack: 'feather', name: 'maximize-2' },
+    'maximize': { pack: 'feather', name: 'maximize-2' },
     'minimize-2': { pack: 'feather', name: 'minimize-2' },
     // Media controls
     'play': { pack: 'feather', name: 'play' },

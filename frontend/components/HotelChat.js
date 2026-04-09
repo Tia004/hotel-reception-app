@@ -2100,13 +2100,13 @@ const styles = StyleSheet.create({
     statusBadgeDot: { width: 8, height: 8, borderRadius: 4 },
     statusBadgeTxt: { color: '#C8C4B8', fontSize: 12, fontWeight: '600' },
 
-    reactionSideBtn: { position: 'absolute', top: '50%', marginTop: -16, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(28, 26, 20, 0.9)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)', zIndex: 100 },
+    reactionSideBtn: { position: 'absolute', top: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(28, 26, 20, 0.9)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)', zIndex: 100 },
     bubbleCaretWrap: { position: 'absolute', top: 0, right: 0, borderTopRightRadius: 12, overflow: 'hidden', zIndex: 20 },
     bubbleCaretGradient: { position: 'absolute', top: 0, right: 0, width: 40, height: 40 },
     bubbleCaret: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
 
     messagesScroll: { flex: 1 },
-    msgRow: { flexDirection: 'row', marginBottom: 6, width: '100%', position: 'relative', paddingHorizontal: 16 },
+    msgRow: { flexDirection: 'row', marginBottom: 6, width: '100%', position: 'relative', paddingHorizontal: 16, alignItems: 'flex-start' },
     msgRowMine: { flexDirection: 'row-reverse' },
     bubbleWrap: { maxWidth: '85%', minWidth: 100, position: 'relative' },
     bubble: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 6, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 },
