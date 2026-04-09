@@ -410,6 +410,7 @@ export default function App() {
                   isTempProp={isTemp}
                   onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
                   onMinimize={() => setMobileView('chat')}
+                  onFullScreenChange={setIsCallFs}
                   micOn={micOn}
                   setMicOn={setMicOn}
                   camOn={camOn}
@@ -440,6 +441,7 @@ export default function App() {
                 user={user}
                 sidebarVisible={sidebarVisible}
                 onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
+                isCallFullScreen={isCallFs}
                 availableRooms={availableRooms}
                 settingsVisible={settingsVisible}
                 setSettingsVisible={setSettingsVisible}
@@ -519,6 +521,7 @@ export default function App() {
                   isPiP={true}
                   onExpand={() => setCallPiP(false)}
                   onOpenSettings={() => setSettingsVisible(true)}
+                  onFullScreenChange={setIsCallFs}
                   micOn={micOn}
                   setMicOn={setMicOn}
                   camOn={camOn}
