@@ -235,7 +235,8 @@ export default function HotelChat({
 
     // Server Keep-Alive
     useEffect(() => {
-        const ping = () => fetch('/ping').catch(() => { });
+        const pingUrl = (process.env.EXPO_PUBLIC_SIGNALING_URL || 'https://gsahotels-calls.onrender.com').replace(/\/$/, "") + '/ping';
+        const ping = () => fetch(pingUrl).catch(() => { });
         const interval = setInterval(ping, 5 * 60 * 1000); // 5 min
         ping();
         return () => clearInterval(interval);
@@ -727,7 +728,8 @@ export default function HotelChat({
 
         const checkPing = () => {
             const t = Date.now();
-            fetch(`${process.env.EXPO_PUBLIC_SIGNALING_URL || 'http://localhost:3000'}/ping`, { cache: 'no-store' })
+            const pingUrl = (process.env.EXPO_PUBLIC_SIGNALING_URL || 'https://gsahotels-calls.onrender.com').replace(/\/$/, "") + '/ping';
+            fetch(pingUrl, { cache: 'no-store' })
                 .then(() => {
                     const ms = Date.now() - t;
                     setPing(ms);
