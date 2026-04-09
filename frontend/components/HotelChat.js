@@ -136,7 +136,7 @@ const PollMessage = ({ msg, onVote, user }) => {
 
 // ─── Main Component ───────────────────────────────────────────────────────
 export default function HotelChat({
-    socket, user, sidebarVisible, onToggleSidebar, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId, onOpenDebug, onLeaveRoom,
+    socket, user, sidebarVisible, onToggleSidebar, isCallFullScreen, availableRooms = [], onJoinRoom, onLogout, inCall, hideChatColumn, onChannelClick, currentRoomId, onOpenDebug, onLeaveRoom,
     micOn, setMicOn, camOn, setCamOn, deafenOn, setDeafenOn, screenShareOn, setScreenShareOn,
     settingsVisible, setSettingsVisible, activeChannel: initialActiveChannel, // for prop name sync
 }) {
@@ -253,6 +253,13 @@ export default function HotelChat({
     const [leftCollapsedState, setLeftCollapsed] = useState(IS_MOBILE);
     const [rightCollapsedState, setRightCollapsed] = useState(IS_MOBILE);
     const [hoverBtn, setHoverBtn] = useState(null); // For general button hover states
+
+    useEffect(() => {
+        if (isCallFullScreen) {
+            setLeftCollapsed(true);
+            setRightCollapsed(true);
+        }
+    }, [isCallFullScreen]);
 
     const toggleLeft = () => {
         const next = !leftCollapsedState;

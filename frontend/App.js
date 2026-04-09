@@ -84,6 +84,7 @@ export default function App() {
   // On mobile: flip between "call view" and "chat view"
   const [mobileView, setMobileView] = useState('chat'); // 'chat' | 'call'
   const [showDebugCall, setShowDebugCall] = useState(false);
+  const [isCallFs, setIsCallFs] = useState(false);
 
   // Hoisted call media states for syncing with User Bar
   const [micOn, setMicOn] = useState(true);
@@ -484,6 +485,10 @@ export default function App() {
                   onRoomState={(room, isT) => { setCurrentRoom(room); setIsTemp(isT); }}
                   onMinimize={() => setCallPiP(true)}
                   onOpenSettings={() => setSettingsVisible(true)}
+                  onFullScreenChange={(fs) => {
+                    setIsCallFs(fs);
+                    if (fs) setSidebarVisible(false);
+                  }}
                   micOn={micOn}
                   setMicOn={setMicOn}
                   camOn={camOn}
